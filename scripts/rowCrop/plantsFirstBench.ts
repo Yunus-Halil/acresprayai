@@ -11,7 +11,8 @@ import { join } from "node:path";
 import { framesFromAnalysis, parseTwinAnalysis } from "../../src/lib/fieldTwin/analysis";
 import { type CornPhotoRead, cornField } from "../../src/lib/fieldTwin/cornField";
 import { stretchLine } from "../../src/lib/fieldTwin/cornPlants";
-import { PLANTS_FIRST, type Read, SEQUENCE, coverage, mergeDots, projectSightings, reconstruct, registerPhotos } from "../../src/lib/fieldTwin/plantsFirst";
+import { PLANTS_FIRST, type Read, SEQUENCE, coverage, mergeDots, projectSightings, registerPhotos } from "../../src/lib/fieldTwin/plantsFirst";
+import { reconstruct } from "../../src/lib/fieldTwin/layers/chain";
 import { fromEnu } from "../../src/lib/sourceFrames/odm";
 
 const argv = process.argv.slice(2);

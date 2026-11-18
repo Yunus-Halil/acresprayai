@@ -43,10 +43,14 @@ describe("the shared seedling mask", { timeout: 60_000 }, () => {
     const shared = readCornV1(px, P, { enteredCrop: "corn" });
     // The candidates for the field's rows (2026-11-16) are one more list on a photograph of seedlings; everything the read
     // held before is exactly as it was, and without them the read is corn-v1.0's to the byte.
-    const { low, ...rest } = compactCornRead("t", shared);
+    // The record of what each plant looks like (2026-11-18, read only, for the field profile) is one more too.
+    const { low, look, ...rest } = compactCornRead("t", shared);
     expect(JSON.stringify(rest)).toBe(JSON.stringify(compactCornRead("t", frozen)));
     expect(Array.isArray(low)).toBe(true);
-    expect(JSON.stringify(compactCornRead("t", readCornV1(px, P, { enteredCrop: "corn", rowCandidates: false })))).toBe(JSON.stringify(compactCornRead("t", frozen)));
+    expect(look?.size.length).toBe(rest.plants.length);
+    const { look: look2, ...noCandidates } = compactCornRead("t", readCornV1(px, P, { enteredCrop: "corn", rowCandidates: false }));
+    expect(look2).toBeDefined();
+    expect(JSON.stringify(noCandidates)).toBe(JSON.stringify(compactCornRead("t", frozen)));
     expect({ ...shared.summary, ms: null }).toEqual({ ...frozen.summary, ms: null });
   });
 });

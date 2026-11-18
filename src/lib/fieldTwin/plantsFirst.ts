@@ -22,16 +22,13 @@
 //                         joined window to window; a row runs from its first dot to its last.
 // Nothing here knows a field: the gate comes from the repeats, the row spacing from the dots, and the seed spacing
 // from the dots (bounded by what corn is sown at).
-import { obviousPlants } from "./layers/l4Obvious";
-import { rowProfile } from "./layers/l5Profile";
-import { judgeDots } from "./layers/l6Judge";
-import { secondLook } from "./layers/l7SecondLook";
 import { type GeorefFrame, pixelToGround } from "@/lib/directGeoref/projection";
 import { type LatLngAlt, toEnu } from "@/lib/sourceFrames/odm";
 import { ROW_GUIDED, bandBeatsControls, seedSpacing } from "./rowGuided";
 
 export type Read = { name: string; scale: number; plants: [number, number][] };
-export type Sight = { p: number; u: number; v: number; e: number; n: number };
+/** `k` (read only, 2026-11-18): the plant's index in its read's `plants` (the field profile reads its look by it). */
+export type Sight = { p: number; u: number; v: number; e: number; n: number; k?: number };
 
 /** Each photograph's plants on the ground, metres east and north of `origin`, through its own camera. */
 export function projectSightings(reads: Read[], frames: Map<string, GeorefFrame>, origin: LatLngAlt): { sights: Sight[]; photos: string[] } {
@@ -40,11 +37,11 @@ export function projectSightings(reads: Read[], frames: Map<string, GeorefFrame>
     const f = frames.get(r.name);
     if (!f) continue;
     const p = photos.length; photos.push(r.name);
-    for (const [x, y] of r.plants) {
-      const u = x * r.scale, v = y * r.scale, g = pixelToGround(f, u, v);
+    for (let k = 0; k < r.plants.length; k++) {
+      const [x, y] = r.plants[k], u = x * r.scale, v = y * r.scale, g = pixelToGround(f, u, v);
       if (!g) continue;
       const [e, n] = toEnu({ lat: g.lat, lng: g.lng, altM: 0 }, origin);
-      sights.push({ p, u, v, e, n });
+      sights.push({ p, u, v, e, n, k });
     }
   }
   return { sights, photos };
@@ -692,7 +689,7 @@ export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: fal
  * `cutFromRow`: placed on a row, then left on no row when the row was built (a piece of under three plants, a stretch
  * longer than `maxBridgeM` with no plant, or a stretch over ground judged scattered: `build` in reconstruct).
  */
-export const SETTLED = { none: 0, certainRow: 1, scattered: 2, noRow: 3, noSpacing: 4, alley: 5, tooClose: 6, tooFar: 7, offSpacing: 8, placedAtSpacing: 9, placedOffSpacing: 10, freeAlley: 11, freeTooClose: 12, freePlaced: 13, alone: 14, geometryRow: 15, cutFromRow: 16 } as const;
+export const SETTLED = { none: 0, certainRow: 1, scattered: 2, noRow: 3, noSpacing: 4, alley: 5, tooClose: 6, tooFar: 7, offSpacing: 8, placedAtSpacing: 9, placedOffSpacing: 10, freeAlley: 11, freeTooClose: 12, freePlaced: 13, alone: 14, geometryRow: 15, cutFromRow: 16, secondLook: 17 } as const;
 export type GroundJudge = { state: (e: number, n: number) => 0 | 1 | 2; dotState?: Uint8Array | null };
 export type RowSegment = { a0: number; a1: number; confirmed: boolean };
 /** A row's course in the rows' frame: its across position at knots along it, from its first plant to its last, and the dots it was fitted through. */
@@ -739,6 +736,11 @@ export type Reconstruction = {
   tooCloseM: number; certainGaps: number;
   /** Read only (SETTLED): per dot, the test that settled it. */
   settled: Uint8Array;
+  /** Read only (layers/chain.ts, 2026-11-18): what L5 learned beyond the above (layers/l5Profile.ts spacingSpread; the
+   * ground judged from L4's certain plants, with LAYERS.groundFromObvious). */
+  /** L7 (layers/l7SecondLook.ts, LAYERS.secondLook): per dot, 1 when the second look put it on its row or added it. */
+  secondLook?: Uint8Array;
+  profile?: { spread: { all: { q1: number | null; q2: number | null; q3: number | null; n: number }; single: { q1: number | null; q2: number | null; q3: number | null; n: number }; lowerFenceM: number | null; upperFenceM: number | null }; groundL4: unknown };
 };
 
 export type StretchCount = { /** Index into the courses given. */ row: number; a0: number; a1: number; /** Per class: dots within the band on the row's line, and in its two mid-alley strips together. */ band: Int32Array; alley: Int32Array };
@@ -772,15 +774,5 @@ export function bandAndAlley(courses: RowCourse[], A: ArrayLike<number>, C: Arra
   return { stretches: out, first, controlScale: halfM / halfC, stretchOf };
 }
 
-/** `notCertain`: dots that may be probable at most (the second look's plants: they confirm a stretch, never start a row).
- * `tier` (rowCandidates): per dot 0 a dot of the stricter marks, 1 / 2 a candidate for the rows; every dot of a lower tier
- * is placed on the rows before any of a higher one; a candidate joins a row the plants found first made, never makes one.
- * `pre`: rowsFromDots over the certain dots, when the caller already made it (the same dots in the same order).
- * `ground`: the field's planted / scattered judgement (used with `q.refuseScattered`). */
-export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: number, spacingGuessM: number, o: PlantsFirstOptions = PLANTS_FIRST, q = SEQUENCE, notCertain: Uint8Array | null = null, tier: Uint8Array | null = null, pre: RowsFromDots | null = null, ground: GroundJudge | null = null): Reconstruction {
-  // The layers (fieldTwin/layers, 2026-11-18): L4 the certain plants, L5 the field's profile from them, L6 every
-  // other dot judged against it, L7 a second look where they disagree (not built: it passes the reading through).
-  const L4 = obviousPlants(dots, covered, q, notCertain);
-  const L5 = rowProfile(dots, L4, directionDeg, spacingGuessM, o, q, pre, ground);
-  return secondLook(judgeDots(dots, L4, L5, o, q, tier));
-}
+// reconstruct (steps 4 on: the rows through the certain dots, every other dot against them) is the layers L4 to L7
+// chained: fieldTwin/layers/chain.ts (moved there 2026-11-18 so that this file imports no layer).

@@ -16,8 +16,11 @@
 //          <dir>/score-<name>[-hidden].json. --hidden scores the held-back tiles in place of the dev tiles.
 //
 // Options (the inspector's switches; without them every option is as the code has it):
-//   --read  { "cores": bool, "coresReference": "marks"|"strongest", "countGuard": bool, "rowSpans": bool }
-//   --field { "sequence": {...SEQUENCE}, "placing": {...PLANTS_FIRST}, "free": bool, "fieldSeed": bool, "groundAsked": bool }
+//   --read  { "cores": bool, "coresReference": "marks"|"strongest", "countGuard": bool, "rowSpans": bool,
+//             "coresBySize": "self" | <sizes.json: { photograph: typical plant px }> }   (layers phase 3a, L1)
+//   --field { "sequence": {...SEQUENCE}, "placing": {...PLANTS_FIRST}, "free": bool, "fieldSeed": bool, "groundAsked": bool,
+//             "layers": {...LAYERS} }   (layers/options.ts: groundFromObvious, tooCloseFromSpread, secondLook, unsureList)
+//   --photos <dir>  the flight's photographs, for the second look (L7 reads them again); field and score jobs
 import "../bench/nodeStorageShim";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -28,11 +31,15 @@ import { cornPhotoRead } from "../../src/lib/fieldTwin/build/corn";
 import { FIELD, type CornPhotoRead, compactCornRead, cornFieldAndGround, cornFlightGuard } from "../../src/lib/fieldTwin/cornField";
 import { type CornPlantsOptions, cornPlantsOf, placeDots, readRows } from "../../src/lib/fieldTwin/cornPlants";
 import { PLANTS_FIRST, SEQUENCE, SETTLED, certainEvidence } from "../../src/lib/fieldTwin/plantsFirst";
+import { fieldProfile, readsProfile } from "../../src/lib/fieldTwin/layers/l5Profile";
+import { LAYERS, type LayerOptions } from "../../src/lib/fieldTwin/layers/options";
+import { type Looker, secondLookOnField } from "../../src/lib/fieldTwin/layers/l7SecondLook";
+import { unsureList } from "../../src/lib/fieldTwin/layers/l8Report";
 import { CORN_CORES, CORN_COUNT_GUARD, cornV1AsRead, cornV1CoresAsked, cornV1PlantCache, cornV1RowCover, greenPitchPx, readCornV1 } from "../../src/lib/rowCrop/cornV1";
 import { GREEN_POINTS, plantPointsFromGreen } from "../../src/lib/rowCrop/greenPoints";
 import { coresView, vividGreen } from "../../src/lib/rowCrop/greenCores";
 import { rowCropParamsFor } from "../../src/lib/rowCrop/params";
-import { SEEDLING_GREEN, seedlingCache, sharedSeedlingMask } from "../../src/lib/rowCrop/seedlingGreen";
+import { SEEDLING_GREEN, SEEDLING_V1, seedlingCache, sharedSeedlingMask } from "../../src/lib/rowCrop/seedlingGreen";
 import { cropProfileFor } from "../../src/lib/cropProfiles/registry";
 import { HEADER_BYTES, estimateGsd, parsePhotoHeader } from "../../src/lib/photoScout/exif";
 import { type Label, type Mark, TIERS, fieldMarks, judgeTile, labelSpacingPx, labelTiles, within } from "./cornLabelJudge";
@@ -41,8 +48,8 @@ const ROOT = resolve(__dirname, "../..");
 const argv = process.argv.slice(2), job = argv[0];
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? null : argv[i + 1]; };
 const arg = (k: string) => { const v = opt(k); if (v == null) throw new Error(`--${k} is required`); return v; };
-type ReadOptions = { cores?: boolean; coresReference?: "marks" | "strongest"; countGuard?: boolean; rowSpans?: boolean };
-type FieldOptions = { sequence?: Partial<typeof SEQUENCE>; placing?: Partial<typeof PLANTS_FIRST>; free?: boolean; fieldSeed?: boolean; groundAsked?: boolean };
+type ReadOptions = { cores?: boolean; coresReference?: "marks" | "strongest"; countGuard?: boolean; rowSpans?: boolean; coresBySize?: string };
+type FieldOptions = { sequence?: Partial<typeof SEQUENCE>; placing?: Partial<typeof PLANTS_FIRST>; free?: boolean; fieldSeed?: boolean; groundAsked?: boolean; layers?: Partial<LayerOptions> };
 const READ: ReadOptions = opt("read") ? JSON.parse(opt("read")!) : {}, FOPT: FieldOptions = opt("field") ? JSON.parse(opt("field")!) : {};
 // The read's options are set where the code keeps them, for this process only (as a flipped default would).
 if (READ.cores != null) CORN_CORES.on = READ.cores;
@@ -53,17 +60,37 @@ const pixelsOf = (file: string) => { const img = decodeImage(new Uint8Array(read
 const fileOf = (dir: string, name: string) => [name, name.replace("_", "/")].flatMap(n => [".JPG", ".jpg", ".jpeg", ".JPEG"].map(e => join(dir, n + e))).find(existsSync);
 const r2 = (x: number) => Math.round(x * 100) / 100;
 /** A flight's photograph read as a build reads it: build/corn.ts cornPhotoRead, or (rowSpans off) the same read without the candidates' extents. */
+// Phase 3a (L1): the typical plant's size per photograph, from a field profile's sizes file, or each photograph's own ("self").
+// A sizes file is { photograph: px }, or a field.json whose L5 profile holds them (profile.perPhoto[].sizePx).
+const SIZES: Record<string, number> | null = READ.coresBySize && READ.coresBySize !== "self" ? (j => (j.profile?.perPhoto ? Object.fromEntries((j.profile.perPhoto as { name: string; sizePx?: number | null }[]).filter(x => x.sizePx != null).map(x => [x.name, x.sizePx!])) : j))(JSON.parse(readFileSync(READ.coresBySize, "utf8"))) : null;
+const sizeFor = (name: string): number | "self" | null => (!READ.coresBySize ? null : SIZES ? SIZES[name] ?? null : "self");
 const flightRead = (name: string, px: ReturnType<typeof pixelsOf>, gsd: number | null): CornPhotoRead =>
-  READ.rowSpans === false ? compactCornRead(name, readCornV1(px, rowCropParamsFor(cropProfileFor("corn")!, gsd), { enteredCrop: "corn" }), 1) : cornPhotoRead(name, px, gsd);
+  READ.rowSpans === false ? compactCornRead(name, readCornV1(px, rowCropParamsFor(cropProfileFor("corn")!, gsd), { enteredCrop: "corn", ...(READ.coresBySize ? { coresSizePx: sizeFor(name) } : {}) }), 1) : cornPhotoRead(name, px, gsd, false, sizeFor(name));
+/** L7's view of a photograph again: its pixels and the green view the plant read used (the read says which mask). */
+const lookerFor = (dir: string | null, reads: CornPhotoRead[]): Looker | null => {
+  if (!dir) return null;
+  const readOf = new Map(reads.map(r => [r.name, r]));
+  return name => {
+    const path = fileOf(dir, name); if (!path) return null;
+    const px = pixelsOf(path), seedlings = seedlingCache(px, SEEDLING_GREEN);
+    const cache = readOf.get(name)?.look?.plantMask === "v1" ? { ...seedlingCache(px, SEEDLING_V1), levels: seedlings.levels } : seedlings;
+    return { px, green: sharedSeedlingMask(cache, px) };
+  };
+};
 /** The field and the plants, as build/corn.ts cornStage makes them, with the field options asked. */
 function field(A: TwinAnalysis, readsDir: string) {
   const frames = framesFromAnalysis(A), dir = join(readsDir, "reads");
   // As the build: the guard over the flight (cornField.ts cornFlightGuard), then the field.
   const G = cornFlightGuard(A.reads.map(r => join(dir, `${r.name}.json`)).filter(existsSync).map(p => JSON.parse(readFileSync(p, "utf8")) as CornPhotoRead)), reads = G.reads;
   const { field: F, ground } = cornFieldAndGround(reads, frames, FIELD);
-  const opts: CornPlantsOptions = { ground: FOPT.groundAsked === false ? null : ground, ...(FOPT.sequence ? { sequence: { ...SEQUENCE, ...FOPT.sequence } } : {}), ...(FOPT.placing ? { placing: { ...PLANTS_FIRST, ...FOPT.placing } } : {}), ...(FOPT.free != null ? { free: FOPT.free } : {}), ...(FOPT.fieldSeed != null ? { fieldSeed: FOPT.fieldSeed } : {}) };
-  const P = placeDots(reads, frames, F, opts), rec = P ? readRows(P, F, opts) : null, plants = P && rec ? cornPlantsOf(P, rec, F, opts) : null;
-  return { A, frames, reads, F, ground, opts, P, rec, plants, guard: G };
+  const opts: CornPlantsOptions = { ground: FOPT.groundAsked === false ? null : ground, ...(FOPT.sequence ? { sequence: { ...SEQUENCE, ...FOPT.sequence } } : {}), ...(FOPT.placing ? { placing: { ...PLANTS_FIRST, ...FOPT.placing } } : {}), ...(FOPT.free != null ? { free: FOPT.free } : {}), ...(FOPT.fieldSeed != null ? { fieldSeed: FOPT.fieldSeed } : {}), ...(FOPT.layers ? { layers: FOPT.layers } : {}) };
+  const P0 = placeDots(reads, frames, F, opts), rec0 = P0 ? readRows(P0, F, opts) : null, L = { ...LAYERS, ...(FOPT.layers ?? {}) };
+  // L7 (LAYERS.secondLook): the spots where L6 and L5 disagree, read again in the photographs (--photos).
+  const second = P0 && rec0 && L.secondLook ? secondLookOnField(P0, rec0, frames, F.origin, reads, lookerFor(opt("photos"), reads), L) : null;
+  const P = second ? second.P : P0, rec = second ? second.rec : rec0, plants = P && rec ? cornPlantsOf(P, rec, F, opts) : null;
+  // L8's unsure list (LAYERS.unsureList): recorded only.
+  const unsure = P && rec && L.unsureList ? unsureList(P, rec, reads) : null;
+  return { A, frames, reads, F, ground, opts, P, rec, plants, guard: G, second: second?.record ?? null, unsure };
 }
 
 // ------------------------------------------------------------------------------------------------------------ reads
@@ -86,7 +113,7 @@ if (job === "reads") {
 if (job === "field") {
   const A = JSON.parse(readFileSync(arg("analysis"), "utf8")) as TwinAnalysis, OUT = arg("out"), t0 = Date.now();
   mkdirSync(OUT, { recursive: true });
-  const { reads, F, ground, opts, P, rec, plants, guard } = field(A, arg("reads"));
+  const { reads, F, ground, opts, P, rec, plants, guard, second, unsure } = field(A, arg("reads"));
   console.log(`${reads.length} of ${A.reads.length} photographs read; field and plants ${Date.now() - t0} ms; ${P ? P.all.length : 0} dots`);
   const q = opts.sequence ?? SEQUENCE;
   // Big arrays go in a binary file beside a small JSON that says where each is.
@@ -123,11 +150,17 @@ if (job === "field") {
       origin: F.origin, directionDeg: F.directionDeg, pitchM: F.pitchM, photos: P.photos, shifts: P.shifts, strict: P.strict, repeatM: P.repeatM, gateM: P.gateM, nDots: n, nSights: S.length, nCand: cf.length,
       frames: A.frames.filter(f => P.photos.includes(f.name)),
       ground: ground ? { e0, n0, cell, gw, gh, dcell, dw, dh, spacingM: ground.spacingM } : null, groundAsked: opts.ground != null, planting: F.planting,
+      // L5's record (layers/l5Profile.ts fieldProfile): every value measured or not.
+      profile: fieldProfile(P, rec, reads, F.planting, guard, CORN_COUNT_GUARD.misreadMessage, rec.profile ?? {}),
+      // L7 and L8's unsure list, when asked (LAYERS.secondLook, unsureList): every spot with what was decided and why.
+      secondLook: second ? { examined: second.examined, added: second.added, refusedBecause: second.refusedBecause, photographsRead: second.photographsRead,
+        spots: second.spots.map(s => ({ kind: s.kind, e: r2(s.e), n: r2(s.n), a0: s.a0, a1: s.a1, dot: s.dot, why: s.why, row: s.row, decision: s.decision, reason: s.reason, added: s.added, looked: new Set(s.looks.map(l => l.photo)).size, shows: s.looks.filter(l => l.shows).length, looks: s.looks.map(l => ({ photo: l.photo, u: Math.round(l.u), v: Math.round(l.v), shows: l.shows, why: l.why })) })) } : null,
+      unsure: unsure ? { recorded: unsure.recorded, plantsLooked: unsure.plantsLooked, count: unsure.dots.length, coresOnly: unsure.dots.filter(d => d.kind === "cores only").length, dots: unsure.dots } : null,
       geometry: rec.geometry, tooCloseM: rec.tooCloseM, certainGaps: rec.certainGaps, spacingRules: rec.spacingRules, gaps: rec.gaps, unplanted: rec.unplanted, alleyRefused: rec.alleyRefused, alone: rec.alone.dot.length,
       rows: rec.rows.map(r => ({ id: r.id, kind: r.kind, plants: r.dots.length, lengthM: r2(r.lengthM), perM: r2(r.perM), line: r.line.map(([e, nn]) => [r2(e), r2(nn)]), segments: r.segments })),
       sequence: q, placing: opts.placing ?? PLANTS_FIRST,
       settledNames: Object.fromEntries(Object.entries(SETTLED).map(([k, v]) => [v, k])), settledLine: at, source: SRC,
-      lines: { certainEvidence: lineOf(/^export const certainEvidence/, "src/lib/fieldTwin/plantsFirst.ts"), reconstruct: lineOf(/^export function reconstruct/, "src/lib/fieldTwin/plantsFirst.ts"), placeDots: lineOf(/^export function placeDots/, "src/lib/fieldTwin/layers/l3Place.ts"), obvious: lineOf(/^export function obviousPlants/, "src/lib/fieldTwin/layers/l4Obvious.ts"), profile: lineOf(/^export function rowProfile/, "src/lib/fieldTwin/layers/l5Profile.ts"), judge: lineOf(/^export function judgeDots/, "src/lib/fieldTwin/layers/l6Judge.ts") },
+      lines: { certainEvidence: lineOf(/^export const certainEvidence/, "src/lib/fieldTwin/plantsFirst.ts"), reconstruct: lineOf(/^export function reconstruct/, "src/lib/fieldTwin/layers/chain.ts"), placeDots: lineOf(/^export function placeDots/, "src/lib/fieldTwin/layers/l3Place.ts"), obvious: lineOf(/^export function obviousPlants/, "src/lib/fieldTwin/layers/l4Obvious.ts"), profile: lineOf(/^export function rowProfile/, "src/lib/fieldTwin/layers/l5Profile.ts"), judge: lineOf(/^export function judgeDots/, "src/lib/fieldTwin/layers/l6Judge.ts") },
       report: {
         plants: plants ? plants.summary : null, plantsNote: plants ? null : "The plants made no certain row: the build keeps the field's rows.", plantPoints: plants ? plants.points : [], plantShown: plants ? plants.shown : [],
         field: F.summary, weeds: F.weeds.map(w => ({ e: w.e, n: w.n, verdict: w.verdict, areaM2: w.areaM2, seenBy: w.seenBy, coveredBy: w.coveredBy })),
@@ -135,7 +168,7 @@ if (job === "field") {
       },
     };
     const unset = Array.from(rec.settled).filter(x => x === SETTLED.none).length; console.log(`settled: ${unset} dots by no named test`);
-  } else meta = { ...meta, failed: "the photographs made no dot (placeDots returned null)" };
+  } else meta = { ...meta, failed: "the photographs made no dot (placeDots returned null)", profile: readsProfile(reads, guard, CORN_COUNT_GUARD.misreadMessage) };
   let offset = 0; const desc = bins.map(b => { const d = { name: b.name, type: b.type, length: (b.data as unknown as { length: number }).length, offset }; offset += b.data.byteLength; offset = Math.ceil(offset / 8) * 8; return d; });
   const buf = Buffer.alloc(offset); for (let k = 0; k < bins.length; k++) Buffer.from(bins[k].data.buffer, bins[k].data.byteOffset, bins[k].data.byteLength).copy(buf, desc[k].offset);
   writeFileSync(join(OUT, "field.bin"), buf); writeFileSync(join(OUT, "field.json"), JSON.stringify({ ...meta, arrays: desc }));
@@ -153,11 +186,12 @@ if (job === "photo") {
   const est = estimateGsd(parsePhotoHeader(new Uint8Array(readFileSync(PHOTO)).subarray(0, HEADER_BYTES)), { imageWidth: W });
   const gsd = frame ? groundSampleAt(frame, frame.intrinsics.cx, frame.intrinsics.cy) : est.gsdM;
   // The read: a flight's as a build makes it (rowSpans, unless switched off), a single photograph's as Photo Scout makes it.
-  const v = readCornV1(px, rowCropParamsFor(cropProfileFor("corn")!, gsd), { enteredCrop: "corn", ...(frame && READ.rowSpans !== false ? { rowSpans: true } : {}) });
+  const v = readCornV1(px, rowCropParamsFor(cropProfileFor("corn")!, gsd), { enteredCrop: "corn", ...(frame && READ.rowSpans !== false ? { rowSpans: true } : {}), ...(READ.coresBySize ? { coresSizePx: sizeFor(NAME) } : {}) });
   const tRead = Date.now(), ad = v.green;
   // The plant read's own marks, then the same with the cores asked (the cores option's own settings).
   const first = plantPointsFromGreen(px, GREEN_POINTS, cornV1PlantCache(px, ad, seedlingCache(px, SEEDLING_GREEN)), null);
-  const asked = cornV1CoresAsked(ad), withCores = asked ? plantPointsFromGreen(px, GREEN_POINTS, cornV1PlantCache(px, ad, seedlingCache(px, SEEDLING_GREEN)), asked) : null;
+  // Phase 3a: with the cores by size the read's own blurs (its record), else the row spacing's.
+  const cr = v.plants.coresRef, asked = READ.coresBySize && cr ? { finePx: cr.finePx, widePx: cr.widePx, share: CORN_CORES.share, reference: CORN_CORES.reference, factor: CORN_CORES.factor } : cornV1CoresAsked(ad), withCores = asked ? plantPointsFromGreen(px, GREEN_POINTS, cornV1PlantCache(px, ad, seedlingCache(px, SEEDLING_GREEN)), asked) : null;
   // Self-check: the read's marks are the first pass (cores off) or the pass with the cores (cores on).
   const readMarks = v.plants.points, expect = CORN_CORES.on && withCores ? withCores.points : first.points;
   const marksEqual = v.count?.withheld ? null : readMarks.length === expect.length && readMarks.every((p, i) => p.x === expect[i].x && p.y === expect[i].y);
@@ -187,6 +221,8 @@ if (job === "photo") {
     candidates: v.plants.low ? v.plants.low.length : null, rows: v.rows.map(r => ({ points: r.points, identity: r.identity, evidence: r.evidence, plants: r.plants })),
     guard: { on: CORN_COUNT_GUARD.on, share: cover.share, cut: CORN_COUNT_GUARD.cut, withheld: v.count?.withheld ?? null },
     summary: v.summary, notes: v.notes,
+    // What the read alone says of this photograph (layers/l5Profile.ts readsProfile): its marks' look, the cores' reference.
+    profile: readsProfile([compactCornRead(NAME, v)], null, null),
     scout: scout ? { rows: scout.rows.map(r => ({ points: r.points, identity: r.identity, gaps: r.gaps })), weeds: scout.weeds.map(w => ({ x: w.x, y: w.y, hull: w.hull, areaM2: w.areaM2 })), excluded: scout.excluded.length, summary: scout.summary, cornV1: scout.cornV1, notes: scout.notes } : null,
   };
   writeFileSync(join(OUT, "info.json"), JSON.stringify(info));
@@ -195,6 +231,7 @@ if (job === "photo") {
 }
 
 // ------------------------------------------------------------------------------------------------------------ score
+let lastField: ReturnType<typeof field> | null = null;
 if (job === "score") {
   const LAB = JSON.parse(readFileSync(arg("labels"), "utf8")) as { images: { image: string; width: number; height: number; points: Label[] }[] };
   const NAME = arg("image"), HIDDEN = argv.includes("--hidden"), OUT = arg("out"), stem = (s: string) => s.replace(/\.[^.]+$/, "");
@@ -206,7 +243,7 @@ if (job === "score") {
   let R: number, Rfull: number | null, unit: "m" | "px", marks: Mark[], place: (u: number, v: number) => [number, number] | null, extra: Record<string, unknown> = {};
   if (opt("analysis")) {
     // A flight: the field's final dots brought into the photograph, matched on the ground within half the plant spacing.
-    const A = JSON.parse(readFileSync(arg("analysis"), "utf8")) as TwinAnalysis, X = field(A, arg("reads"));
+    const A = JSON.parse(readFileSync(arg("analysis"), "utf8")) as TwinAnalysis, X = field(A, arg("reads")); lastField = X;
     const f = X.frames.get(NAME); if (!f || !X.P || !X.rec) throw new Error(`${NAME}: not in the flight, or the flight made no dot`);
     if (IM.width !== f.intrinsics.width || IM.height !== f.intrinsics.height) throw new Error(`${NAME}: labelled at ${IM.width} x ${IM.height}, the photograph is ${f.intrinsics.width} x ${f.intrinsics.height}`);
     const pi = X.P.photos.indexOf(NAME), seedM = X.rec.geometry.seedM;
@@ -219,13 +256,19 @@ if (job === "score") {
     // One photograph: its read's own marks, matched in pixels within half the median distance between the dev tiles' neighbouring labels.
     const PHOTO = arg("photo"), px = pixelsOf(PHOTO);
     const est = estimateGsd(parsePhotoHeader(new Uint8Array(readFileSync(PHOTO)).subarray(0, HEADER_BYTES)), { imageWidth: px.width });
-    const v = readCornV1(px, rowCropParamsFor(cropProfileFor("corn")!, est.gsdM), { enteredCrop: "corn" });
+    const v = readCornV1(px, rowCropParamsFor(cropProfileFor("corn")!, est.gsdM), { enteredCrop: "corn", ...(READ.coresBySize ? { coresSizePx: sizeFor(NAME) } : {}) });
     marks = v.plants.points.map(p => ({ u: p.x, v: p.y, e: p.x, n: p.y, tier: 0 })); place = (u, vv) => [u, vv];
     const L = labelSpacingPx(dev, labelsOf); R = L.medianPx / 2; Rfull = null; unit = "px";
     extra = { labelSpacing: { medianPx: L.medianPx, medianPerTile: L.medianPerTile, pairs: L.gapsPx.length }, marksInPhoto: [marks.length, 0, 0, 0, 0, 0] };
   }
   const judgeAt = (r: number) => tiles.map(t => judgeTile(t, marks, place, r, labelsOf(t)));
   const half = judgeAt(R), full = Rfull ? judgeAt(Rfull) : null;
+  // The marks L7 put there, and the marks of L8's unsure list, by what the labels make of them (half the spacing).
+  if (opt("analysis")) {
+    const X = lastField!, isL7 = (i: number | undefined) => i != null && !!X.rec!.secondLook?.[i], uns = new Set((X.unsure?.dots ?? []).map(d => d.dot));
+    const tally = (pick: (i: number | undefined) => boolean) => { const t = { marks: 0, found: 0, wrongSecond: 0, wrongNothing: 0, onUnsure: 0, atEdge: 0 }; half.forEach((J, k) => J.ms.forEach((m, j) => { if (!within(tiles[k], m.u, m.v) || !pick(m.i)) return; t.marks++; const s = J.state[j]; if (s === 1) t.found++; else if (s === 2) t.onUnsure++; else if (s === 3) t.atEdge++; else if (s === 0) (J.second[j] ? t.wrongSecond++ : t.wrongNothing++); })); return t; };
+    extra = { ...extra, secondLook: X.second ? { examined: X.second.examined, added: X.second.added, refusedBecause: X.second.refusedBecause, marksInTiles: tally(isL7) } : null, unsure: X.unsure ? { count: X.unsure.dots.length, marksInTiles: tally(i => i != null && uns.has(i)) } : null };
+  }
   // What the page draws (half the spacing): every label of the scored tiles with what it got, every mark in them with its verdict.
   const labels: { x: number; y: number; type: string; tile: string; found: boolean }[] = [], drawn: { u: number; v: number; tier: number; state: number; second: number; tile: string }[] = [];
   half.forEach((J, k) => {

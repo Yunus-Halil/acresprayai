@@ -11,7 +11,7 @@ import { type GeorefFrame, pixelToGround } from "@/lib/directGeoref/projection";
 import { ROW_POINTS } from "@/lib/rowCrop/greenPoints";
 import { type LatLngAlt, fromEnu, toEnu } from "@/lib/sourceFrames/odm";
 import type { CornFieldResult, CornPhotoRead, FieldGround } from "./cornField";
-import { type Dot, PLANTS_FIRST, type PhotoShift, type PlantsFirstOptions, ROW_RECALL, type Reconstruction, type RowsFromDots, SEQUENCE, certainEvidence, coverage, mergeDots, projectSightings, reconstruct, registerPhotos, rowCandidates, rowsFromDots, type Sight } from "./plantsFirst";
+import { PLANTS_FIRST, type Reconstruction, SEQUENCE } from "./plantsFirst";
 
 export type CornStretch = {
   /** The field row it belongs to, and whether plants were seen along it. */
@@ -30,7 +30,8 @@ export type CornPlants = {
   /** Per plant: latitude, longitude. */
   points: [number, number][];
   /** Per plant: 0 a certain plant on a row, 1 a probable one, 2 seen on no row, 3 between two rows (not the crop);
-   * found along a row at the lower bar (2026-11-16, probable): 4 by two or more photographs, 5 by one photograph's sharp view. */
+   * found along a row at the lower bar (2026-11-16, probable): 4 by two or more photographs, 5 by one photograph's sharp view;
+   * 6 a plant the second look added (L7, LAYERS.secondLook, development only). */
   shown: number[];
   /** Per plant: photographs that located it. */
   photos: number[];
@@ -42,7 +43,9 @@ export type CornPlants = {
     /** Plants found along the rows at the lower bar (shown 4 and 5), when a photograph carried candidates. */
     alongRowsTwo?: number; alongRowsOne?: number;
     /** Of the plants on rows, those there only by the loosened placement (development, `free`). */
-    loosened?: number };
+    loosened?: number;
+    /** Of the plants on rows, those the second look put there (L7, development). */
+    secondLook?: number };
   /** Per plant: 1 when it is on its row only by the loosened placement (development, `free`). */
   loose?: number[];
 };
@@ -50,55 +53,20 @@ export type CornPlants = {
 /** Shortest stretch kept, metres (a sliver at a row's end says nothing). */
 const MIN_STRETCH_M = 0.3;
 
-export type CornPlantsOptions = {
-  /** Development: the loosened placement on a row (plantsFirst.ts SEQUENCE.free, ROW_RECALL.anyView). */
-  free?: boolean;
-  /** The rules the rows are read by (default: SEQUENCE). */
-  sequence?: typeof SEQUENCE;
-  /** How the photographs are registered, the dots made and the first rows read (default: PLANTS_FIRST). */
-  placing?: PlantsFirstOptions;
-  /** The field's planted / scattered judgement of the ground (cornField.ts cornFieldAndGround): with it, nothing on
-   * ground judged scattered is read as the planting (SEQUENCE.refuseScattered). Without it the ground is not asked. */
-  ground?: FieldGround | null;
-  /** false: a candidate that carries its extent along the rows (Corn V1 `rowSpans`) is split at the plant spacing one
-   * photograph assumes (greenPoints.ts ROW_POINTS.seedM). Default: at the spacing the field's certain plants show,
-   * and at the assumed one only where they show none. */
-  fieldSeed?: boolean;
-};
-
-/**
- * A read's candidates for the rows as points: one per candidate, or, where a candidate's green runs along the
- * photograph's rows for more than `splitFrom` plant spacings (plants touching), one per plant spacing along it.
- * `seedM` is the plant spacing on the ground. Reads without extents (`lowSpan`) are returned as they are.
- */
-export function candidatePoints(r: CornPhotoRead, f: GeorefFrame | undefined, origin: LatLngAlt, seedM: number, o: Pick<typeof ROW_POINTS, "splitFrom" | "maxSplit"> = ROW_POINTS): [number, number][] {
-  const low = r.low ?? [], span = r.lowSpan, ax = r.lowAxis;
-  if (!f || !span || !ax) return low;
-  const out: [number, number][] = [];
-  low.forEach(([x, y], i) => {
-    const [lo, hi] = span[i] ?? [0, 0];
-    const x0 = x + lo * ax[0], y0 = y + lo * ax[1], x1 = x + hi * ax[0], y1 = y + hi * ax[1];
-    const g0 = hi > lo ? pixelToGround(f, x0 * r.scale, y0 * r.scale) : null, g1 = g0 ? pixelToGround(f, x1 * r.scale, y1 * r.scale) : null;
-    if (!g0 || !g1) { out.push([x, y]); return; }
-    const p0 = toEnu({ lat: g0.lat, lng: g0.lng, altM: 0 }, origin), p1 = toEnu({ lat: g1.lat, lng: g1.lng, altM: 0 }, origin), L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
-    if (L <= o.splitFrom * seedM) { out.push([x, y]); return; }
-    const k = Math.min(o.maxSplit, Math.max(2, Math.round(L / seedM)));
-    for (let b = 0; b < k; b++) { const t = (b + 0.5) / k; out.push([x0 + t * (x1 - x0), y0 + t * (y1 - y0)]); }
-  });
-  return out;
-}
-
 /** A flight's dots before any row is read: the stricter marks' dots first (`strict` of them), then the candidates for
  * the rows with their tier (plantsFirst.ts rowCandidates); how many photographs looked at each; and the first reading
  * of rows through the certain dots (direction, row spacing, plant spacing). */
-// L3 Place (fieldTwin/layers/l3Place.ts): the dots on the ground, merged across the photographs.
-export { type PlacedDots, placeDots } from "./layers/l3Place";
-import { type PlacedDots, placeDots } from "./layers/l3Place";
+// L3 Place (fieldTwin/layers/l3Place.ts): the dots on the ground, merged across the photographs; the options and the
+// candidates' points live there too (moved 2026-11-18: no import cycle), re-exported here.
+export { type CornPlantsOptions, type PlacedDots, candidatePoints, placeDots } from "./layers/l3Place";
+import { type CornPlantsOptions, type PlacedDots, placeDots } from "./layers/l3Place";
+import { reconstruct } from "./layers/chain";
+import { LAYERS } from "./layers/options";
 
 /** Steps 4 on: the rows through the certain dots, and every other dot against them (plantsFirst.ts reconstruct). */
 export function readRows(P: PlacedDots, F: CornFieldResult, opts: CornPlantsOptions = {}): Reconstruction {
   const q = opts.sequence ?? SEQUENCE;
-  return reconstruct(P.all, P.covered, F.directionDeg ?? 0, F.pitchM ?? 0.76, opts.placing ?? PLANTS_FIRST, opts.free ? { ...q, free: true } : q, P.tier ? Uint8Array.from(P.tier, t => (t ? 1 : 0)) : null, P.tier, P.pre, opts.ground ? { state: opts.ground.state, dotState: P.groundState ?? null } : null);
+  return reconstruct(P.all, P.covered, F.directionDeg ?? 0, F.pitchM ?? 0.76, opts.placing ?? PLANTS_FIRST, opts.free ? { ...q, free: true } : q, P.tier ? Uint8Array.from(P.tier, t => (t ? 1 : 0)) : null, P.tier, P.pre, opts.ground ? { state: opts.ground.state, dotState: P.groundState ?? null } : null, opts.layers ? { ...LAYERS, ...opts.layers } : LAYERS);
 }
 
 /** The plants and the rows through them; null when the plants make no certain row (the caller keeps cornField's rows). */
@@ -137,14 +105,14 @@ export function cornPlantsOf(P: PlacedDots, rec: Reconstruction, F: CornFieldRes
   if (!stretches.some(s => s.confirmed)) return null;
   // Every dot of the stricter marks, as before; a candidate only when it stands on a row.
   const kept: number[] = []; for (let i = 0; i < all.length; i++) if (i < strict || rec.rowOf[i] >= 0) kept.push(i);
-  const shown = kept.map(i => (i >= strict ? (tier![i] === 1 ? 4 : 5) : rec.rowOf[i] >= 0 ? (rec.certainty[i] === 0 ? 0 : 1) : rec.between[i] ? 3 : 2));
-  const cnt = [0, 0, 0, 0, 0, 0]; for (const v of shown) cnt[v]++;
+  const shown = kept.map(i => (i >= strict ? (rec.secondLook?.[i] ? 6 : tier![i] === 1 ? 4 : 5) : rec.rowOf[i] >= 0 ? (rec.certainty[i] === 0 ? 0 : 1) : rec.between[i] ? 3 : 2));
+  const cnt = [0, 0, 0, 0, 0, 0, 0]; for (const v of shown) cnt[v]++;
   const sumM = (ok: boolean) => Math.round(stretches.filter(s => s.confirmed === ok).reduce((t, s) => t + s.lengthM, 0) * 10) / 10;
   return {
     points: kept.map(i => ll(all[i].e, all[i].n)), shown, photos: kept.map(i => all[i].photos), stretches, rows: fieldRows,
     ...(opts.free ? { loose: kept.map(i => (rec.rowOf[i] >= 0 && (rec.loose[i] || tier?.[i] === 3) ? 1 : 0)) } : {}),
     geometry: { spacingM: G.spacingM, directionDeg: G.directionDeg, seedM: G.seedM, certainRows: G.certainRows, certainDots: G.certainDots },
-    summary: { plants: kept.length, certain: cnt[0], probable: cnt[1], onNoRow: cnt[2], betweenRows: cnt[3], rows: rec.rows.length, confirmedM: sumM(true), notConfirmedM: sumM(false), ...(tier ? { alongRowsTwo: cnt[4], alongRowsOne: cnt[5] } : {}), ...(opts.free ? { loosened: kept.filter(i => rec.rowOf[i] >= 0 && (rec.loose[i] || tier?.[i] === 3)).length } : {}) },
+    summary: { plants: kept.length, certain: cnt[0], probable: cnt[1], onNoRow: cnt[2], betweenRows: cnt[3], rows: rec.rows.length, confirmedM: sumM(true), notConfirmedM: sumM(false), ...(tier ? { alongRowsTwo: cnt[4], alongRowsOne: cnt[5] } : {}), ...(opts.free ? { loosened: kept.filter(i => rec.rowOf[i] >= 0 && (rec.loose[i] || tier?.[i] === 3)).length } : {}), ...(rec.secondLook ? { secondLook: kept.filter(i => rec.secondLook![i]).length } : {}) },
   };
 }
 

@@ -58,6 +58,9 @@ export function cornInspectorDev(root: string): Plugin {
   const body = async (req: IncomingMessage) => JSON.parse((await raw(req)) || "{}") as Record<string, unknown>;
 
   /** Run a job: node + vite-node + the script, its output kept in the session's folder. */
+  /** The read options as a job takes them: "coresBySize": "setup:<key>" (layers phase 3a) becomes the path of that
+   * setup's field.json, whose profile holds each photograph's typical plant size. */
+  const readArg = (s: Session, read: Options) => { const c = read.coresBySize; if (typeof c === "string" && c.startsWith("setup:")) { const b = s.setups[c.slice(6)]; return JSON.stringify({ ...read, coresBySize: b ? join(fieldDir(s, b), "field.json") : "self" }); } return JSON.stringify(read); };
   const run = (s: Session, args: string[], logName: string, onEnd: (ok: boolean) => void) => {
     mkdirSync(dirOf(s), { recursive: true });
     const log = join(dirOf(s), `${logName}.log`), p = spawn(process.execPath, [VITE_NODE, ...args], { cwd: root, windowsHide: true });
@@ -93,7 +96,7 @@ export function cornInspectorDev(root: string): Plugin {
   const startField = (s: Session, st: Setup) => {
     if (existsSync(join(fieldDir(s, st), "field.json"))) { st.fieldJob = { state: "done" }; save(s); return; }
     st.fieldJob = { state: "running", started: Date.now() }; save(s);
-    st.fieldJob.log = run(s, [SCRIPT, "--", "field", "--analysis", s.analysis!, "--reads", readsDir(s, st.readKey), "--out", fieldDir(s, st), "--read", JSON.stringify(st.read), "--field", JSON.stringify(st.field)], `field-${st.key}`, ok => { st.fieldJob = { ...st.fieldJob!, state: ok ? "done" : "failed", ended: Date.now(), ...(ok ? {} : { error: "see the field log" }) }; save(s); });
+    st.fieldJob.log = run(s, [SCRIPT, "--", "field", "--analysis", s.analysis!, "--reads", readsDir(s, st.readKey), "--out", fieldDir(s, st), "--read", readArg(s, st.read), "--field", JSON.stringify(st.field), "--photos", s.path], `field-${st.key}`, ok => { st.fieldJob = { ...st.fieldJob!, state: ok ? "done" : "failed", ended: Date.now(), ...(ok ? {} : { error: "see the field log" }) }; save(s); });
   };
   const startSetup = (s: Session, st: Setup) => {
     if (!s.analysis) return; // the build runs first; it starts the default setup when done
@@ -104,7 +107,7 @@ export function cornInspectorDev(root: string): Plugin {
     s.reads[rk] = { state: "running", started: Date.now(), done: countReads(s, rk), total }; st.fieldJob = { state: "waiting", error: "waiting for the reads" }; save(s);
     for (let a = 0; a < total; a += step) {
       left++;
-      run(s, [SCRIPT, "--", "reads", "--analysis", s.analysis, "--photos", s.path, "--out", readsDir(s, rk), "--range", `${a}:${Math.min(total, a + step)}`, "--read", JSON.stringify(st.read)], `reads-${rk}-${a}`, ok => {
+      run(s, [SCRIPT, "--", "reads", "--analysis", s.analysis, "--photos", s.path, "--out", readsDir(s, rk), "--range", `${a}:${Math.min(total, a + step)}`, "--read", readArg(s, st.read)], `reads-${rk}-${a}`, ok => {
         left--; if (!ok) s.reads[rk].error = "a part of the reads failed (see its log)";
         if (left) return;
         s.reads[rk] = { ...s.reads[rk], state: s.reads[rk].error ? "failed" : "done", ended: Date.now(), done: countReads(s, rk) }; save(s);
@@ -139,7 +142,7 @@ export function cornInspectorDev(root: string): Plugin {
     if (s.kind === "flight" && !s.analysis) { s.photoJobs[k] = { state: "waiting", error: "waiting for the flight's cameras" }; save(s); return s.photoJobs[k]; }
     if (s.kind === "flight" && !(JSON.parse(readFileSync(s.analysis!, "utf8")) as { reads: { name: string }[] }).reads.some(r => r.name === name)) { s.photoJobs[k] = { state: "failed", error: "this photograph is not in the flight's record (it has no camera)" }; save(s); return s.photoJobs[k]; }
     s.photoJobs[k] = { state: "running", started: Date.now() }; save(s);
-    s.photoJobs[k].log = run(s, [SCRIPT, "--", "photo", "--photo", p.file, "--name", name, "--out", readsDir(s, rk), "--read", JSON.stringify(read), ...(s.analysis ? ["--analysis", s.analysis] : [])], `photo-${rk}-${name}`, ok => { s.photoJobs[k] = { ...s.photoJobs[k], state: ok ? "done" : "failed", ended: Date.now(), ...(ok ? {} : { error: "see the photograph's log" }) }; save(s); });
+    s.photoJobs[k].log = run(s, [SCRIPT, "--", "photo", "--photo", p.file, "--name", name, "--out", readsDir(s, rk), "--read", readArg(s, read), ...(s.analysis ? ["--analysis", s.analysis] : [])], `photo-${rk}-${name}`, ok => { s.photoJobs[k] = { ...s.photoJobs[k], state: ok ? "done" : "failed", ended: Date.now(), ...(ok ? {} : { error: "see the photograph's log" }) }; save(s); });
     return s.photoJobs[k];
   };
   const startScore = (s: Session, st: Setup, name: string, hidden: boolean) => {
@@ -149,8 +152,8 @@ export function cornInspectorDev(root: string): Plugin {
     if (s.scores[k]?.state === "running") return s.scores[k];
     if (s.kind === "flight" && st.fieldJob?.state !== "done") { s.scores[k] = { state: "failed", error: "the setup's field is not done yet" }; save(s); return s.scores[k]; }
     s.scores[k] = { state: "running", started: Date.now() }; save(s);
-    const args = [SCRIPT, "--", "score", "--labels", join(dirOf(s), "labels.json"), "--image", name, "--out", join(file, ".."), "--read", JSON.stringify(st.read), "--field", JSON.stringify(st.field), ...(hidden ? ["--hidden"] : []),
-      ...(s.kind === "flight" ? ["--analysis", s.analysis!, "--reads", readsDir(s, st.readKey)] : ["--photo", p.file])];
+    const args = [SCRIPT, "--", "score", "--labels", join(dirOf(s), "labels.json"), "--image", name, "--out", join(file, ".."), "--read", readArg(s, st.read), "--field", JSON.stringify(st.field), ...(hidden ? ["--hidden"] : []),
+      ...(s.kind === "flight" ? ["--analysis", s.analysis!, "--reads", readsDir(s, st.readKey), "--photos", s.path] : ["--photo", p.file])];
     s.scores[k].log = run(s, args, `score-${st.key}-${name}${hidden ? "-hidden" : ""}`, ok => { s.scores[k] = { ...s.scores[k], state: ok ? "done" : "failed", ended: Date.now(), ...(ok ? {} : { error: "see the score log" }) }; save(s); });
     return s.scores[k];
   };

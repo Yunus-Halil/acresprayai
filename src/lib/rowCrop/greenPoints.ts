@@ -86,6 +86,11 @@ export type GreenPoints = {
   /** Read only, per point: which views found it (bit 1 the green, bit 2 a vivid core). Cores are paired with points
    * only in a piece that holds more cores than points; elsewhere a point says green alone. */
   foundBy?: Uint8Array;
+  /** Read only (2026-11-18, for the field profile, fieldTwin/layers/l5Profile.ts), per point: what it looks like.
+   * `sizePx` the square root of its green's area, photo pixels (the piece's, or the square's of a long piece; NaN for a
+   * point a core added); `green` the mean (2g - r - b) / (r + g + b) of its piece's green, sampled once per work pixel;
+   * `solidity` its outline's (PlantShape, a lone plant; NaN where none was measured). */
+  look?: { sizePx: Float32Array; green: Float32Array; solidity: Float32Array };
 };
 
 /**
@@ -139,6 +144,12 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
   let typical = o.minPiecePx;
   for (let acc = 0, i = 0; i < sizing.length; i++) { acc += area[sizing[i]]; if (acc >= total / 2) { typical = area[sizing[i]]; break; } }
   const d = Math.sqrt(typical), minPiece = Math.max(o.minPiecePx, typical * o.speckShare);
+  // Read only: each piece's mean greenness, one photo pixel per work pixel (its centre) where the mask is green there.
+  const gSum = new Float64Array(area.length), gN = new Int32Array(area.length);
+  { const rgba = px.rgba, c = Math.min(f - 1, f >> 1);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const id = label[y * w + x]; if (id < 0) continue; const P = (y * f + c) * W + x * f + c; if (!full[P]) continue; const q = P * 4, r = rgba[q], g = rgba[q + 1], b = rgba[q + 2], t = r + g + b; if (!t) continue; gSum[id] += (2 * g - r - b) / t; gN[id]++; } }
+  const lkSize: number[] = [], lkGreen: number[] = [], lkSol: number[] = [];
+  const pieceGreen = (id: number) => (gN[id] ? gSum[id] / gN[id] : NaN);
   const toPhoto = (x: number, y: number): PlantPoint => ({ x: (x + 0.5) * f, y: (y + 0.5) * f });
   const points: GreenPoint[] = [];
   /** The piece each point came from, and the pieces read as cover (only kept for the vivid cores). */
@@ -162,7 +173,7 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
   };
   for (const id of kept) {
     const a = area[id]; if (a < minPiece) continue;
-    if (a <= o.wholeUpTo * typical) { points.push({ ...toPhoto(sx[id] / a, sy[id] / a), shape: shapeOf(id) }); pieceOf.push(id); continue; }
+    if (a <= o.wholeUpTo * typical) { const sh = shapeOf(id); points.push({ ...toPhoto(sx[id] / a, sy[id] / a), shape: sh }); pieceOf.push(id); lkSize.push(Math.sqrt(a) * f); lkGreen.push(pieceGreen(id)); lkSol.push(sh ? sh.solidity : NaN); continue; }
     // A large piece: cover (it fills its box, wide both ways) gives no points: squares cut from a lawn or a canopy line
     // up in a perfect lattice the row builder would take for rows. A long piece (plants touching along a row) gives
     // points along its long axis, one per typical plant.
@@ -176,12 +187,13 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
     for (let y = by0[id]; y <= by1[id]; y++) for (let x = bx0[id]; x <= bx1[id]; x++) if (label[y * w + x] === id) {
       const k = Math.floor(((x - mx) * ux + (y - my) * uy) / step), b = bins.get(k) ?? [0, 0, 0]; b[0]++; b[1] += x; b[2] += y; bins.set(k, b);
     }
-    for (const [n, bxs, bys] of bins.values()) if (n >= minPiece) { points.push(toPhoto(bxs / n, bys / n)); pieceOf.push(id); }
+    for (const [n, bxs, bys] of bins.values()) if (n >= minPiece) { points.push(toPhoto(bxs / n, bys / n)); pieceOf.push(id); lkSize.push(Math.sqrt(n) * f); lkGreen.push(pieceGreen(id)); lkSol.push(NaN); }
     if (points.length > o.maxPoints) break;
   }
   // Which views found each point (read only): 1 the green; 2 a vivid core (a point the cores add, or one that took a core).
   const foundBy = new Uint8Array(points.length).fill(1);
-  if (!cores || points.length > o.maxPoints) return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f, foundBy };
+  const lookOf = () => { const n = points.length, L = { sizePx: new Float32Array(n).fill(NaN), green: new Float32Array(n).fill(NaN), solidity: new Float32Array(n).fill(NaN) }; L.sizePx.set(lkSize.slice(0, n)); L.green.set(lkGreen.slice(0, n)); L.solidity.set(lkSol.slice(0, n)); return L; };
+  if (!cores || points.length > o.maxPoints) return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f, foundBy, look: lookOf() };
   // The vivid cores (greenCores.ts), each in the piece under it or the nearest within reach.
   const pointsIn = new Map<number, number[]>(); pieceOf.forEach((id, k) => (pointsIn.get(id) ?? pointsIn.set(id, []).get(id)!).push(k));
   // The cores view: as given (L1, computed once for the photograph), else made here.
@@ -219,11 +231,11 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
     const pairs: [number, number, number][] = []; for (const m of ms) for (const c of cs) pairs.push([Math.hypot(points[m].x - found[c].x, points[m].y - found[c].y), m, c]);
     pairs.sort((p, q) => p[0] - q[0]); const usedM = new Set<number>(), usedC = new Set<number>();
     for (const [, m, c] of pairs) { if (usedM.has(m) || usedC.has(c)) continue; usedM.add(m); usedC.add(c); foundBy[m] |= 2; }
-    for (const c of cs) if (!usedC.has(c)) { points.push({ x: found[c].x, y: found[c].y }); coresAdded++; }
+    for (const c of cs) if (!usedC.has(c)) { points.push({ x: found[c].x, y: found[c].y }); coresAdded++; lkSize.push(NaN); lkGreen.push(pieceGreen(id)); lkSol.push(NaN); }
     if (points.length > o.maxPoints) break;
   }
   const tagged = new Uint8Array(points.length); tagged.set(foundBy); tagged.fill(2, foundBy.length);
-  return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f, coresAdded, coresInfo: info, foundBy: tagged };
+  return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f, coresAdded, coresInfo: info, foundBy: tagged, look: lookOf() };
 }
 
 export const ROW_POINTS = {

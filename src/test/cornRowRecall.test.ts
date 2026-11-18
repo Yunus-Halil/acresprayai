@@ -8,7 +8,8 @@
 import { describe, expect, it } from "vitest";
 import type { PhotoPixels } from "@/lib/photoScout/pattern";
 import { type GeorefFrame, UNCALIBRATED_BORESIGHT, groundToPixel } from "@/lib/directGeoref/projection";
-import { type Dot, type PhotoShift, PLANTS_FIRST, ROW_RECALL, SEQUENCE, projectSightings, reconstruct, rowCandidates } from "@/lib/fieldTwin/plantsFirst";
+import { type Dot, type PhotoShift, PLANTS_FIRST, ROW_RECALL, SEQUENCE, projectSightings, rowCandidates } from "@/lib/fieldTwin/plantsFirst";
+import { reconstruct } from "@/lib/fieldTwin/layers/chain";
 import { ROW_POINTS, rowPlantPoints } from "@/lib/rowCrop/greenPoints";
 import { SEEDLING_GREEN, SEEDLING_ROW, seedlingMask } from "@/lib/rowCrop/seedlingGreen";
 import { rowAngleOf } from "@/lib/rowCrop/cornV1";

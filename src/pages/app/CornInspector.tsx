@@ -10,6 +10,7 @@ import { framesFromAnalysis, type TwinAnalysis } from "@/lib/fieldTwin/analysis"
 import { PLANTS_FIRST, PLANTS_FIRST_V1, type PhotoShift, SEQUENCE, SEQUENCE_V1, shiftOf } from "@/lib/fieldTwin/plantsFirst";
 import { CORN_CORES, CORN_COUNT_GUARD } from "@/lib/rowCrop/cornV1";
 import { CORN_CANDIDATE_FINAL3 } from "@/lib/fieldTwin/cornSetups";
+import { LAYERS } from "@/lib/fieldTwin/layers/options";
 import { fromEnu, toEnu, type LatLngAlt } from "@/lib/sourceFrames/odm";
 
 const API = "/__corn-inspector";
@@ -41,10 +42,18 @@ type FieldMeta = {
   sequence: Record<string, unknown>; placing: Record<string, unknown>; settledNames: Record<string, string>; settledLine: Record<string, number>; source: string; lines: { certainEvidence: number; reconstruct: number; placeDots: number };
   report: { plants: Record<string, number> | null; plantsNote: string | null; plantPoints: Pt[]; plantShown: number[]; field: Record<string, unknown>; weeds: { e: number; n: number; verdict: string; areaM2: number; seenBy: number; coveredBy: number }[]; gaps: { aEN: Pt; bEN: Pt; verdict: string; lengthM: number }[]; fieldRows: number };
   arrays: { name: string; type: "f32" | "f64" | "i32" | "u8"; length: number; offset: number }[];
+  /** L5's record (layers/l5Profile.ts fieldProfile; readsProfile where the flight made no dot). */
+  profile?: Record<string, { value: unknown; measured: boolean; note?: string }> & { perPhoto?: Record<string, unknown>[] };
+  /** L7 (LAYERS.secondLook): every spot looked at again. */
+  secondLook?: { examined: { gaps: number; refused: number }; added: { inGaps: number; refusedPlaced: number }; refusedBecause: Record<string, number>; photographsRead: number;
+    spots: { kind: "gap" | "refused"; e: number; n: number; decision: "added" | "refused"; reason: string; added: number[]; looked: number; shows: number; dot?: number; looks: { photo: string; u: number; v: number; shows: boolean; why: string }[] }[] } | null;
+  /** L8's unsure list (LAYERS.unsureList). */
+  unsure?: { recorded: boolean; plantsLooked: number; count: number; coresOnly: number; dots: { dot: number; kind: string; photographs: { name: string; foundBy: number }[] }[] } | null;
 };
 type Field = { meta: FieldMeta; a: Record<string, Float32Array | Float64Array | Int32Array | Uint8Array>; frames: Map<string, GeorefFrame>; sightDot: Int32Array; candDot: Int32Array };
 type ScoreT = { tile: string; labelled: number; unsure: number; marks: number[]; found: number[]; wrong: number[]; wrongSecond: number[]; wrongNothing: number[]; onUnsure: number[]; atEdge: number[]; missed: number };
-type ScoreFile = { image: string; hidden: boolean; unit: "m" | "px"; R: number; Rfull: number | null; tiers: string[]; tiles: { id: string; x: number; y: number; w: number; h: number }[]; heldBack?: { id: string; x: number; y: number; w: number; h: number }[]; half: ScoreT[]; full: ScoreT[] | null; labels: { x: number; y: number; type: string; tile: string; found: boolean }[]; marks: { u: number; v: number; tier: number; state: number; second: number; tile: string }[] };
+type Tally = { marks: number; found: number; wrongSecond: number; wrongNothing: number; onUnsure: number; atEdge: number };
+type ScoreFile = { secondLook?: { marksInTiles: Tally } | null; unsure?: { count: number; marksInTiles: Tally } | null; image: string; hidden: boolean; unit: "m" | "px"; R: number; Rfull: number | null; tiers: string[]; tiles: { id: string; x: number; y: number; w: number; h: number }[]; heldBack?: { id: string; x: number; y: number; w: number; h: number }[]; half: ScoreT[]; full: ScoreT[] | null; labels: { x: number; y: number; type: string; tile: string; found: boolean }[]; marks: { u: number; v: number; tier: number; state: number; second: number; tile: string }[] };
 
 // ---- The options on this branch, read from the code (their defaults are the code's own).
 type OptionDef = { group: "read" | "field"; path: string[]; label: string; def: unknown; values?: string[]; where: string };
@@ -68,6 +77,10 @@ function normal(o: { read: Opts; field: Opts }) {
   for (const [k, v] of Object.entries((o.field.placing ?? {}) as Opts)) if (v !== (PLANTS_FIRST as Opts)[k]) plc[k] = v;
   if (Object.keys(seq).length) field.sequence = seq; if (Object.keys(plc).length) field.placing = plc;
   for (const k of ["free", "fieldSeed", "groundAsked"]) { const d = OPTIONS.find(x => x.path[0] === k)!; if (o.field[k] !== undefined && o.field[k] !== d.def) field[k] = o.field[k]; }
+  // The layers' own options (layers/options.ts): only what differs from LAYERS.
+  const lay: Opts = {}; for (const [k, v] of Object.entries((o.field.layers ?? {}) as Opts)) if (v !== (LAYERS as Opts)[k]) lay[k] = v;
+  if (Object.keys(lay).length) field.layers = lay;
+  if (read.coresBySize === undefined || read.coresBySize === null || read.coresBySize === false) delete read.coresBySize;
   return { read, field };
 }
 const diffOf = (a: Opts, b: Opts) => Object.fromEntries(Object.entries(a).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(b[k])));
@@ -78,6 +91,16 @@ const PRESETS: { name: string; set: { read: Opts; field: Opts } }[] = [
   { name: "Candidate: variant A with the cores", set: { read: { cores: true }, field: { sequence: { placeOffSpacing: true, offSpacingStricterOnly: true } } } },
   // The setup frozen for FINAL-3.md (fieldTwin/cornSetups.ts).
   { name: CORN_CANDIDATE_FINAL3.name, set: { read: CORN_CANDIDATE_FINAL3.read, field: CORN_CANDIDATE_FINAL3.field as Opts } },
+];
+/** The frozen preset (FINAL-3), the Layers panel's base. */
+const FROZEN = { read: CORN_CANDIDATE_FINAL3.read as Opts, field: CORN_CANDIDATE_FINAL3.field as Opts };
+/** The layers' options the panel switches (phases 2a, 3a, 3b, 4), each off at the frozen preset. */
+const LAYER_SWITCHES: { key: string; layer: string; label: string; group: "read" | "field"; where: string }[] = [
+  { key: "groundFromObvious", layer: "L5", label: "2a. Ground judged from L4's plants only", group: "field", where: "layers/l5Profile.ts groundFromObvious (LAYERS.groundFromObvious)" },
+  { key: "coresBySize", layer: "L1", label: "3a. Cores' blurs from the typical plant size (re-reads the flight with the frozen preset's L5 sizes)", group: "read", where: "layers/l1Views.ts coresAsked (LAYERS.coresBySize)" },
+  { key: "tooCloseFromSpread", layer: "L6", label: "3b. Too-close limit from the spacing's spread", group: "field", where: "layers/l5Profile.ts rowProfile (LAYERS.tooCloseFromSpread)" },
+  { key: "secondLook", layer: "L7", label: "4. Second look where L6 and L5 disagree", group: "field", where: "layers/l7SecondLook.ts secondLookOnField (LAYERS.secondLook)" },
+  { key: "unsureList", layer: "L8", label: "4. Unsure list (recorded only)", group: "field", where: "layers/l8Report.ts unsureList (LAYERS.unsureList)" },
 ];
 const sortDeep = (v: unknown): unknown => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v as Opts).sort().map(k => [k, sortDeep((v as Opts)[k])])) : v);
 const same = (a: unknown, b: unknown) => JSON.stringify(sortDeep(a)) === JSON.stringify(sortDeep(b));
@@ -101,11 +124,12 @@ const VERDICT: Record<string, { col: string; words: string; placed: boolean }> =
   freeAlley: { col: "#b482ff", words: "refused by the loosened placement: band does not beat the alley", placed: false },
   freeTooClose: { col: "#ff3c3c", words: "refused by the loosened placement: too close to a plant on the row", placed: false },
   alone: { col: "#ff78c8", words: "taken off its row by the final sweep: a second-look mark with no located plant near it on that row", placed: false },
+  secondLook: { col: "#ff40ff", words: "placed by the second look (L7): photographs show a plant of its own there", placed: true },
   cutFromRow: { col: "#ffffff", words: "placed on a row, then left on no row when the row was built (a piece of under three plants, a stretch with no plant over the bridge limit, or over ground judged scattered)", placed: false },
   none: { col: "#000000", words: "settled by no named test", placed: false },
 };
 const TIER = ["a mark of the stricter bar", "second look, 2+ photographs", "second look, 1 photograph near its frame's middle", "second look, 1 photograph anywhere"];
-const SHOWN = [{ col: "#3cff5a", name: "certain" }, { col: "#40d8ff", name: "probable" }, { col: "#8c8c8c", name: "on no row" }, { col: "#ff9a00", name: "between rows" }, { col: "#ffe628", name: "along a row, 2+ photographs" }, { col: "#ff78c8", name: "along a row, 1 photograph" }];
+const SHOWN = [{ col: "#3cff5a", name: "certain" }, { col: "#40d8ff", name: "probable" }, { col: "#8c8c8c", name: "on no row" }, { col: "#ff9a00", name: "between rows" }, { col: "#ffe628", name: "along a row, 2+ photographs" }, { col: "#ff78c8", name: "along a row, 1 photograph" }, { col: "#ff40ff", name: "added by the second look (L7)" }];
 const ADDED = "#ff40ff", REMOVED = "#ff3030";
 const fmt = (x: number | null | undefined, d = 0) => (x == null || !Number.isFinite(x) ? "–" : x.toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: d }));
 const cm = (m: number | null | undefined) => (m == null ? "not measured" : `${fmt(m * 100, 1)} cm`);
@@ -190,6 +214,8 @@ export default function CornInspector() {
   const [draft, setDraft] = useState<{ read: Opts; field: Opts }>({ read: {}, field: {} });
   const [applied, setApplied] = useState<{ read: Opts; field: Opts }>({ read: {}, field: {} });
   const [showDiff, setShowDiff] = useState(true);
+  // What "this setup" is compared with: the defaults, or (the Layers panel) the frozen preset.
+  const [base, setBase] = useState<"defaults" | "frozen">("defaults");
   const [fields, setFields] = useState<Record<string, Field>>({});
   const [infos, setInfos] = useState<Record<string, PhotoInfo>>({});
   const [scores, setScores] = useState<Record<string, ScoreFile>>({});
@@ -202,18 +228,30 @@ export default function CornInspector() {
 
   useEffect(() => { fetch(`${API}/known`).then(r => r.json()).then(setKnown).catch(() => setKnown([])); fetch(`${API}/hidden-spent`).then(r => r.json()).then(setSpent).catch(() => setSpent([])); }, []);
   const open = async () => {
-    setError(null); setFields({}); setInfos({}); setScores({}); asked.current.clear(); setPhoto(null); setPicked(null); setApplied({ read: {}, field: {} }); setDraft({ read: {}, field: {} }); setHiddenTick(false);
+    setError(null); setFields({}); setInfos({}); setScores({}); asked.current.clear(); setPhoto(null); setPicked(null); setApplied({ read: {}, field: {} }); setDraft({ read: {}, field: {} }); setHiddenTick(false); setBase("defaults");
     try { localStorage.setItem("cornInspector.path", path); } catch { /* not kept */ }
     const r = await fetch(`${API}/open`, { method: "POST", body: JSON.stringify({ path, analysis: analysisPath || undefined }) }), j = await r.json();
     if (!r.ok) { setError(j.error); return; }
     setSession(j); setPhoto(j.photos[0]?.name ?? null);
   };
   const setupFor = (o: { read: Opts; field: Opts }) => (session ? Object.values(session.setups).find(s => same(s.read, o.read) && same(s.field, o.field)) ?? null : null);
-  const defSetup = setupFor({ read: {}, field: {} }), curSetup = setupFor(applied), isDefault = same(applied, { read: {}, field: {} });
+  const baseSet = useMemo(() => (base === "frozen" ? normal(FROZEN) : { read: {}, field: {} }), [base]), BN = base === "frozen" ? "the frozen preset" : "the defaults", BNc = base === "frozen" ? "Frozen preset" : "Defaults";
+  const defSetup = setupFor(baseSet), curSetup = setupFor(applied), isDefault = same(applied, baseSet);
   const apply = async (o: { read: Opts; field: Opts }) => {
     if (!session) return;
     const n = normal(o); setApplied(n); setDraft(n); setPicked(null);
     const r = await fetch(`${API}/setup/${session.id}`, { method: "POST", body: JSON.stringify(n) }); if (r.ok) setSession(await r.json());
+  };
+  /** The Layers panel: the frozen preset with these layer options; the frozen preset itself is run first (the base). */
+  const applyLayers = async (on: Record<string, boolean>) => {
+    if (!session) return;
+    setBase("frozen");
+    let sess = session;
+    if (!setupFor(normal(FROZEN))) { const r = await fetch(`${API}/setup/${session.id}`, { method: "POST", body: JSON.stringify(normal(FROZEN)) }); if (r.ok) { sess = await r.json(); setSession(sess); } }
+    const frozenKey = Object.values(sess.setups).find(x => same(x.read, normal(FROZEN).read) && same(x.field, normal(FROZEN).field))?.key;
+    const lay: Opts = {}; for (const d of LAYER_SWITCHES) if (d.group === "field" && on[d.key]) lay[d.key] = true;
+    const set = { read: { ...FROZEN.read, ...(on.coresBySize ? { coresBySize: session.kind === "flight" ? `setup:${frozenKey}` : "self" } : {}) }, field: { ...FROZEN.field, ...(Object.keys(lay).length ? { layers: lay } : {}) } };
+    await apply(set);
   };
   // The session's jobs, polled while any runs.
   useEffect(() => {
@@ -238,7 +276,7 @@ export default function CornInspector() {
     if (!session || !photo) return;
     for (const { rk } of photoKeys) { const k = `${rk}/${photo}`; if (session.photoJobs[k]?.state === "done" && !asked.current.has(`info:${k}`)) { asked.current.add(`info:${k}`); fetch(`${API}/cache/${session.id}/R-${rk}/photo/${encodeURIComponent(photo)}/info.json`).then(async r => { if (!r.ok) { asked.current.delete(`info:${k}`); return; } const j = await r.json(); setInfos(x => ({ ...x, [k]: j })); }); } }
   }, [session, photo, photoKeys, infos]);
-  const curRk = curSetup?.readKey ?? "default", info = photo ? infos[`${curRk}/${photo}`] ?? null : null, baseInfo = photo ? infos[`default/${photo}`] ?? null : null, photoJob = photo && session ? session.photoJobs[`${curRk}/${photo}`] : undefined;
+  const curRk = curSetup?.readKey ?? "default", info = photo ? infos[`${curRk}/${photo}`] ?? null : null, baseInfo = photo ? infos[`${defSetup?.readKey ?? "default"}/${photo}`] ?? null : null, photoJob = photo && session ? session.photoJobs[`${curRk}/${photo}`] : undefined;
   useEffect(() => {
     if (!session || !photo) return;
     const load = (src: string) => new Promise<HTMLImageElement>((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = no; im.src = src; });
@@ -328,9 +366,16 @@ export default function CornInspector() {
       if (comparing && Dd) for (const row of Dd.rows) line(row.px, "rgba(255,255,255,0.8)", 1.5, [6, 5]);
       for (const row of D.rows) line(row.px, row.kind === "certain" ? "#40d8ff" : "#ff60ff", 2);
     }
+    if (step === 6 && fieldCur?.meta.secondLook && photo) {
+      // L7: every spot it looked at in this photograph: a ring where it looked (filled where this photograph shows a
+      // plant there), green where the second look added, red where it refused.
+      for (const sp of fieldCur.meta.secondLook.spots) for (const l of sp.looks) if (l.photo === photo) { const col = sp.decision === "added" ? "#3cff5a" : "#ff3030"; dot(l.u, l.v, r + (sp.kind === "gap" ? 6 : 4), col, false); if (l.shows) dot(l.u, l.v, r * 0.6, col); }
+    }
     if ((step === 5 || step === 6) && D && a && fieldCur) { for (const d of D.dots) { const name = fieldCur.meta.settledNames[a["dot.settled"][d.i]] ?? "none"; dot(d.u, d.v, comparing ? r * 0.7 : r, comparing ? "rgba(140,140,140,0.5)" : VERDICT[name]?.col ?? "#000"); } if (comparing) showDiffOf("onRows"); }
     if (step === 7) {
-      if (fieldCur && D) { for (const g of D.gaps) if (g.verdict === "stand gap") line([g.a, g.b], "#ff9a00", 3); for (const p of D.plants) dot(p.u, p.v, comparing ? r * 0.7 : r, comparing ? "rgba(140,140,140,0.5)" : SHOWN[p.shown]?.col ?? "#fff"); for (const w of D.weeds) if (w.verdict === "weed candidate") dot(w.px![0], w.px![1], r + 5, "#ff3c3c", false); if (comparing) showDiffOf("plants"); }
+      if (fieldCur && D) { for (const g of D.gaps) if (g.verdict === "stand gap") line([g.a, g.b], "#ff9a00", 3); for (const p of D.plants) dot(p.u, p.v, comparing ? r * 0.7 : r, comparing ? "rgba(140,140,140,0.5)" : SHOWN[p.shown]?.col ?? "#fff"); for (const w of D.weeds) if (w.verdict === "weed candidate") dot(w.px![0], w.px![1], r + 5, "#ff3c3c", false); if (comparing) showDiffOf("plants");
+        // L8's unsure list: a violet ring on each unsure plant.
+        for (const u of fieldCur.meta.unsure?.dots ?? []) { const q = D.at.get(u.dot); if (q) dot(q.u, q.v, r + 4, "#b482ff", false); } }
       else if (info?.scout) { for (const row of info.scout.rows) { line(row.points, row.identity === "corn" ? "#40d8ff" : "#ffe628", 2, row.identity === "corn" ? [] : [8, 6]); for (const g of row.gaps) line([[g.x1, g.y1], [g.x2, g.y2]], "#ff9a00", 3); } for (const w of info.scout.weeds) line([...w.hull, w.hull[0]], "#ff3c3c", 2); }
     }
     if (step === 8 && shownScore) {
@@ -360,7 +405,7 @@ export default function CornInspector() {
   // ---- What went in and what came out, per step.
   const flight = session?.kind === "flight", M = fieldCur?.meta, A = fieldCur?.a, Md = fieldDef?.meta;
   const counts = (pick: (i: number) => string, list: number[]) => { const c: Record<string, number> = {}; for (const i of list) { const k = pick(i); c[k] = (c[k] ?? 0) + 1; } return c; };
-  const change = (name: string, unit = "") => { const d = diff?.[name]; return d ? [[`Against the defaults: added (magenta) / removed (red ×)${unit}`, `+${fmt(d.added.length)} / −${fmt(d.removed.length)} (${sgn(d.added.length - d.removed.length)})`]] as [string, string][] : []; };
+  const change = (name: string, unit = "") => { const d = diff?.[name]; return d ? [[`Against ${BN}: added (magenta) / removed (red ×)${unit}`, `+${fmt(d.added.length)} / −${fmt(d.removed.length)} (${sgn(d.added.length - d.removed.length)})`]] as [string, string][] : []; };
   const waitingFlight = (): { title: string; rows: [string, string][] }[] => {
     const st = curSetup, rj = st ? session?.reads[st.readKey] : undefined;
     return [{ title: "Waiting", rows: [["The flight", session?.build?.state === "running" ? "building its cameras (the app's build pipeline)" : rj?.state === "running" ? `reading its photographs for this setup: ${rj.done ?? 0} of ${rj.total ?? "?"}` : st?.fieldJob?.state === "running" ? "combining the photographs over the field" : st?.fieldJob?.state === "failed" || rj?.state === "failed" || session?.build?.state === "failed" ? `failed: ${st?.fieldJob?.error ?? rj?.error ?? "see the logs in the session's folder"}` : "waiting"]] }];
@@ -393,25 +438,50 @@ export default function CornInspector() {
     ]; }
     if (step === 4) return [
       { title: "In", rows: [["Certain dots over the flight", fmt(M.geometry.certainDots)]] },
-      { title: "Out", rows: [["Rows (certain: blue, found in a free slot: magenta)", `${M.rows.length}: ${M.rows.filter(r => r.kind === "certain").length} + ${M.rows.filter(r => r.kind === "geometry").length}; ${M.geometry.certainRows} row lines from the certain plants${comparing && Md ? ` (defaults: ${Md.rows.length} rows, ${Md.geometry.certainRows} lines; dashed white)` : ""}`], ["Row spacing", `${cm(M.geometry.spacingM)} (${M.geometry.certainRows ? "measured" : "not measured: no row line from the certain plants"})`], ["Plant spacing", M.geometry.seedM == null ? "not measured" : `${cm(M.geometry.seedM)} (measured)`], ["Plant spacing spread", "not in the profile yet (phase 2)"], ["Typical plant size", "not in the profile yet (phase 2)"], ["Cores reference", "per photograph, at L1 (see L1 Views); not in the field's profile yet"], ["Too-close limit", `${cm(M.tooCloseM)} (${M.sequence.tooCloseFromField ? `learned from ${fmt(M.certainGaps)} gaps between certain plants` : "half the plant spacing"})`], ["Rows' direction", `${fmt(M.geometry.directionDeg, 1)}°`], ["Spacing rules run", M.spacingRules ? "yes" : "no: the plant spacing is not measured"], ["A gap is long from", M.spacingRules ? cm(M.gaps.gapM) : "–"],
+      { title: "Out", rows: [["Rows (certain: blue, found in a free slot: magenta)", `${M.rows.length}: ${M.rows.filter(r => r.kind === "certain").length} + ${M.rows.filter(r => r.kind === "geometry").length}; ${M.geometry.certainRows} row lines from the certain plants${comparing && Md ? ` (defaults: ${Md.rows.length} rows, ${Md.geometry.certainRows} lines; dashed white)` : ""}`], ["Row spacing", `${cm(M.geometry.spacingM)} (${M.geometry.certainRows ? "measured" : "not measured: no row line from the certain plants"})`], ["Plant spacing", M.geometry.seedM == null ? "not measured" : `${cm(M.geometry.seedM)} (measured)`], ...profileRows(), ["Too-close limit", `${cm(M.tooCloseM)} (${M.sequence.tooCloseFromField ? `learned from ${fmt(M.certainGaps)} gaps between certain plants` : "half the plant spacing"})`], ["Rows' direction", `${fmt(M.geometry.directionDeg, 1)}°`], ["Spacing rules run", M.spacingRules ? "yes" : "no: the plant spacing is not measured"], ["A gap is long from", M.spacingRules ? cm(M.gaps.gapM) : "–"],
         ["Ground (shaded)", !M.groundAsked ? "not asked in this setup (groundAsked off)" : M.planting.judged ? `judged: ${fmt(M.planting.plantedM2)} m² planted (green), ${fmt(M.planting.scatteredM2)} m² scattered (red), the rest not judged (grey)` : `not judged on this flight${M.planting.why ? `: ${M.planting.why}` : ""}`]] },
     ];
-    if (step === 6) return [{ title: "L7 Second look: not built yet", rows: [["What it does now", "Nothing: it passes L6's reading through (fieldTwin/layers/l7SecondLook.ts). The picture is L6's."], ["To come (an option, off by default)", "Only where L6 and L5 disagree: a gap longer than the profile's spacing spread allows, or a dot L6 refused that 3 or more photographs saw. The spot read again in the photographs that cover it; a plant added only where a photograph shows one."]] }];
+    if (step === 6) { const SL = M.secondLook; if (!SL) return [{ title: "L7 Second look: off in this setup", rows: [["What it does", "Only where L6 and L5 disagree (a gap over the spacing spread's upper fence; a dot L6 refused on a row's line that 3 or more photographs made): the spot read again in the photographs over it, the green view to find, the cores view to part. A plant is added only where photographs show one (fieldTwin/layers/l7SecondLook.ts). Switch it on in the Layers panel."], ["The picture", "L6's"]] }];
+      const here = SL.spots.filter(sp => sp.looks.some(l => l.photo === photo)), tal = scoreCur?.secondLook?.marksInTiles;
+      return [{ title: "L7 Second look", rows: [["Spots examined (flight)", `${fmt(SL.examined.gaps)} gaps, ${fmt(SL.examined.refused)} refused dots`], ["Added (flight)", `${fmt(SL.added.inGaps)} in gaps, ${fmt(SL.added.refusedPlaced)} refused dots put on their row`], ["Photographs read again", fmt(SL.photographsRead)], ["In this photograph", `${fmt(here.length)} spots looked at: ${fmt(here.filter(x => x.decision === "added").length)} added (green rings), ${fmt(here.filter(x => x.decision === "refused").length)} refused (red); a filled centre where this photograph shows a plant`], ...(tal ? [["Its marks in the scored tiles", `${fmt(tal.marks)}: ${fmt(tal.found)} on a labelled plant, ${fmt(tal.wrongSecond)} second marks, ${fmt(tal.wrongNothing)} on nothing`] as [string, string]] : [])] },
+        { title: "Refused, and why (flight)", rows: Object.entries(SL.refusedBecause).sort((x, y) => y[1] - x[1]).map(([k, v]) => [k, fmt(v)] as [string, string]) }]; }
     if (step === 5) { const name = (i: number) => M.settledNames[A["dot.settled"][i]] ?? "none", here = counts(name, D.dots.map(d => d.i)), all = counts(name, Array.from({ length: M.nDots }, (_, i) => i)); return [
-      ...(comparing ? [{ title: "Against the defaults (on a row)", rows: change("onRows", ", on a row") }] : []),
+      ...(comparing ? [{ title: `Against ${BN} (on a row)`, rows: change("onRows", ", on a row") }] : []),
       { title: "Verdicts (here / over the flight); click a dot", rows: Object.keys(VERDICT).filter(k => all[k]).map(k => [`${VERDICT[k].placed ? "✓" : "✗"} ${k}`, `${fmt(here[k] ?? 0)} / ${fmt(all[k])}  (${M.source}:${M.settledLine[k] ?? "?"})`] as [string, string]) },
     ]; }
-    if (step === 7) { const R = M.report, p = R.plants, pd = Md?.report.plants, vs = (k: string) => (comparing && pd ? ` (defaults ${fmt(pd[k])}, ${sgn((p?.[k] ?? 0) - pd[k])})` : ""); return [
+    if (step === 7) { const R = M.report, p = R.plants, pd = Md?.report.plants, vs = (k: string) => (comparing && pd ? ` (${BN} ${fmt(pd[k])}, ${sgn((p?.[k] ?? 0) - pd[k])})` : ""); return [
       { title: "Plants (as the Field Twin keeps them)", rows: p ? [["Plants", `${fmt(p.plants)}${vs("plants")}`], ["certain / probable", `${fmt(p.certain)} / ${fmt(p.probable)}`], ["on no row / between rows", `${fmt(p.onNoRow)} / ${fmt(p.betweenRows)}`], ...(p.alongRowsTwo != null ? [["along the rows, 2+ / 1 photograph", `${fmt(p.alongRowsTwo)} / ${fmt(p.alongRowsOne)}`]] as [string, string][] : []), ["Rows", `${fmt(p.rows)}${vs("rows")}`], ["Row length with plants seen / not confirmed", `${fmt(p.confirmedM)} / ${fmt(p.notConfirmedM)} m`], ["In this photograph", fmt(D.plants.length)], ...change("plants")] : [["Plants", R.plantsNote ?? "–"]] },
+      ...(M.unsure ? [{ title: "L8 Unsure list (violet rings)", rows: [["Plants the views disagree on", `${fmt(M.unsure.count)} of ${fmt(M.unsure.plantsLooked)} plants on a row (${fmt(M.unsure.coresOnly)} found by a core alone in every photograph)`], ["In this photograph", fmt(M.unsure.dots.filter(u => D.at.has(u.dot)).length)], ...(scoreCur?.unsure ? [["Unsure marks in the scored tiles", `${fmt(scoreCur.unsure.marksInTiles.marks)}: ${fmt(scoreCur.unsure.marksInTiles.found)} on a labelled plant, ${fmt(scoreCur.unsure.marksInTiles.wrongSecond)} second marks, ${fmt(scoreCur.unsure.marksInTiles.wrongNothing)} on nothing`] as [string, string]] : [])] as [string, string][] }] : []),
       { title: "The field", rows: [["Corn rows / planted rows", `${R.field.cornRows} / ${R.field.probableRows}`], ["Weed candidates (red rings)", `${R.field.weeds} (withheld ${R.field.weedsWithheld}); here ${D.weeds.filter(w => w.verdict === "weed candidate").length}`], ["Stand gaps (orange)", `${R.field.gaps}; here ${D.gaps.filter(g => g.verdict === "stand gap").length}`]] },
     ]; }
     return [];
+  };
+  /** L5's record as rows: every value with measured / not measured. */
+  const profileRows = (): [string, string][] => {
+    const R = M?.profile; if (!R) return [["Profile", "not in this field's record (made before the profile was recorded)"]];
+    const ms = (k: string) => (R[k]?.measured ? "measured" : "not measured"), V = (k: string) => R[k]?.value as Record<string, unknown> | null;
+    const sp = V("plantSpacingSpreadM") as { all: Record<string, number | null>; single: Record<string, number | null>; lowerFenceM: number | null; upperFenceM: number | null } | null;
+    const tp = V("typicalPlant") as Record<string, number | null> | null, rl = V("rowLengthM") as Record<string, number | null> | null, mr = V("misreads") as { medianSpacingM: number | null; photographs: { name: string; ratio: number }[]; count: number } | null;
+    const cr = V("coresReference") as { reference: string; photographs: number; threshold: Record<string, number | null>; finePx: Record<string, number | null>; widePx: Record<string, number | null> } | null, g4 = V("groundFromObvious") as Record<string, number> | null;
+    const mine = R.perPhoto?.find(x => x.name === photo) as Record<string, unknown> | undefined, mineAll = mine?.allMarks as Record<string, number | null> | undefined;
+    return [
+      ["Plant spacing spread", sp ? `single spacings: ${cm(sp.single.q1)} / ${cm(sp.single.q2)} / ${cm(sp.single.q3)} (quartiles, ${fmt(sp.single.n as number)} gaps); every gap: ${cm(sp.all.q1)} / ${cm(sp.all.q2)} / ${cm(sp.all.q3)}; fences ${cm(sp.lowerFenceM)} and ${cm(sp.upperFenceM)} (${ms("plantSpacingSpreadM")})` : "not measured"],
+      ["Typical plant (flight, L4's plants)", tp ? `${fmt(tp.sizePx, 1)} px across, green ${fmt(tp.green, 3)}, solidity ${fmt(tp.solidity, 2)} (${fmt(tp.sightings)} sightings; ${ms("typicalPlant")})` : `${R.typicalPlant?.note ?? "not measured"}`],
+      ["… in this photograph", mine ? (mine.look === null ? "its read does not record the look" : `${fmt(mine.sizePx as number, 1)} px, green ${fmt(mine.green as number, 3)}, solidity ${fmt(mine.solidity as number, 2)} from ${fmt(mine.certainSightings as number)} certain sightings; all its marks: ${fmt(mineAll?.sizePx, 1)} px, green ${fmt(mineAll?.green, 3)}`) : "–"],
+      ["Row length (certain lines)", rl ? `mean ${fmt(rl.mean, 1)} m, median ${fmt(rl.median, 1)} m over ${fmt(rl.n)} lines (${ms("rowLengthM")})` : "not measured"],
+      ["Row spacing misread", mr ? `${fmt(mr.count)} photographs over ${fmt(CORN_COUNT_GUARD.misreadRatio ?? NaN, 1)} × the flight's median ${cm(mr.medianSpacingM)}${mr.photographs.length ? `: ${mr.photographs.map(x => `${x.name.replace(/^DJI_\d+_/, "")} ×${fmt(x.ratio, 2)}`).join(", ")}` : ""} (${ms("misreads")})` : "not measured"],
+      ["Cores reference", cr ? `${cr.reference}: bar ${fmt(cr.threshold.q2, 4)} (quartiles ${fmt(cr.threshold.q1, 4)}–${fmt(cr.threshold.q3, 4)}) over ${fmt(cr.photographs)} photographs; blurs ${fmt(cr.finePx.q2, 1)} and ${fmt(cr.widePx.q2, 1)} px (recorded from the reads, L1)` : R.coresReference?.note ?? "not recorded"],
+      ["Ground from L4 only (2a)", g4 ? `${fmt(g4.planted)} planted, ${fmt(g4.scattered)} scattered of ${fmt(g4.judged)} squares judged (${fmt(g4.points)} sightings of certain plants)` : R.groundFromObvious?.note ?? "off"],
+    ];
   };
   const scoutNumbers = (): { title: string; rows: [string, string][] }[] => {
     const S = info?.scout; if (!S) return [];
     const s = S.summary as Record<string, number | null>, v = S.cornV1 as Record<string, unknown> | undefined;
     return [{ title: "Photo Scout's read (as the page shows it)", rows: [["Rows", `${s.rows} (${v?.cornRows ?? "?"} corn: blue; ${v?.probableRows ?? "?"} crop not confirmed: dashed yellow)`], ["Plants located", v?.plants == null ? `withheld: ${String(v?.countWithheld ?? "–")}` : fmt(v.plants as number)], ["Weed candidates (red outlines)", fmt(s.weeds)], ["Stand gaps (orange)", `${fmt(s.gaps)}, ${fmt(s.gapLengthM, 1)} m`], ["Not judged", `${fmt(S.excluded)} borders, cover or withheld findings`], ["Pixel size", `${fmt(info!.readScale.gsdM * 1000, 2)} mm (${info!.readScale.basis})`]] }];
   };
+  /** This setup against the base: the change in found, wrong and count error (half the spacing). */
+  const scoreTotals = (S: ScoreFile) => { const ts = S.half, lab = sum(ts.map(t => t.labelled)), f = sum(ts.map(t => sum(t.found))), w = sum(ts.map(t => sum(t.wrong))), m = sum(ts.map(t => sum(t.marks))), un = sum(ts.map(t => sum(t.onUnsure))); return { f, w, err: m - un - lab }; };
+  const scoreDelta = (a: ScoreFile, b: ScoreFile): string[] => { const x = scoreTotals(a), y = scoreTotals(b); return [`found ${sgn(x.f - y.f)}`, "", `wrong ${sgn(x.w - y.w)}`, "", `count error ${sgn(x.err)} vs ${sgn(y.err)}`]; };
   /** A score as a table row: found of N, found in 100, wrong (second / nothing), wrong in 100 marks, count error. */
   const scoreRow = (S: ScoreFile, half = true): string[] => {
     const ts = half ? S.half : S.full!, lab = sum(ts.map(t => t.labelled)), f = sum(ts.map(t => sum(t.found))), w = sum(ts.map(t => sum(t.wrong))), ws = sum(ts.map(t => sum(t.wrongSecond))), wn = sum(ts.map(t => sum(t.wrongNothing))), m = sum(ts.map(t => sum(t.marks))), un = sum(ts.map(t => sum(t.onUnsure))), err = m - un - lab;
@@ -458,10 +528,34 @@ export default function CornInspector() {
         </div>
       ))}
       <div className="mt-2 flex items-center gap-2"><button className="rounded bg-sky-600 px-2 py-1 hover:bg-sky-500" onClick={() => apply(draft)}>Run this setup</button>{!same(normal(draft), applied) && <span className="text-amber-300">changed, not run yet</span>}</div>
-      {!isDefault && <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={showDiff} onChange={e => setShowDiff(e.target.checked)} />Show what changed against the defaults (magenta added, red × removed)</label>}
+      {!isDefault && <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={showDiff} onChange={e => setShowDiff(e.target.checked)} />Show what changed against {BN} (magenta added, red × removed)</label>}
       {!isDefault && <div className="mt-1 text-white/50">Applied: {JSON.stringify(applied)}</div>}
     </details>
   );
+
+  // ---- The Layers panel: the new layer options against the frozen preset.
+  const layersPanel = () => {
+    if (!session) return null;
+    const frozenNow = same(applied, normal(FROZEN)), onOf = (k: string) => (k === "coresBySize" ? applied.read.coresBySize != null : !!((applied.field.layers ?? {}) as Opts)[k]);
+    const inFrozenFamily = base === "frozen";
+    const tot = scoreCur && scoreDef && !isDefault ? { c: scoreTotals(scoreCur), d: scoreTotals(scoreDef) } : null;
+    const flip = (k: string, v: boolean) => { const on: Record<string, boolean> = {}; for (const d of LAYER_SWITCHES) on[d.key] = inFrozenFamily ? onOf(d.key) : false; on[k] = v; applyLayers(on); };
+    return (
+      <details className="mt-3 rounded border border-sky-500/40 p-2 text-xs" open>
+        <summary className="cursor-pointer font-semibold">Layers {inFrozenFamily ? `(against the frozen preset${frozenNow ? ": this is it" : ""})` : "(compared with the defaults until a layer is switched)"}</summary>
+        <div className="mt-2"><button className={`rounded px-2 py-0.5 ${inFrozenFamily && frozenNow ? "bg-sky-700" : "bg-white/10 hover:bg-white/20"}`} onClick={() => applyLayers({})}>Frozen preset (FINAL-3)</button></div>
+        <div className="mt-2 text-white/50">L1 Views, L2 Find, L3 Place and L4 Obvious are shown in the steps below but have no switch here: they run as the frozen preset sets them.</div>
+        {LAYER_SWITCHES.map(d => (
+          <label key={d.key} className={`flex items-center justify-between gap-2 py-0.5 ${inFrozenFamily && onOf(d.key) ? "text-amber-300" : ""}`} title={d.where}>
+            <span><span className="text-white/50">{d.layer}</span> {d.label} <span className="text-white/40">(default off)</span></span>
+            <input type="checkbox" checked={inFrozenFamily && onOf(d.key)} disabled={session.kind !== "flight" && d.key !== "coresBySize"} onChange={e => flip(d.key, e.target.checked)} />
+          </label>
+        ))}
+        <div className="mt-1 text-white/50">A switch re-runs from the layer it changes: L1 re-reads the photographs; L5 to L8 re-run the field from the cached reads. Magenta: added against the frozen preset; red ×: removed. {session.kind !== "flight" ? "On a single photograph only L1 runs: the other layers need a flight." : ""}</div>
+        {tot ? <div className="mt-1">Dev tiles: found {sgn(tot.c.f - tot.d.f)}, wrong {sgn(tot.c.w - tot.d.w)}, count error {sgn(tot.c.err)} (frozen preset {sgn(tot.d.err)})</div> : labelsFor ? <button className="mt-1 rounded bg-sky-600 px-2 py-0.5 hover:bg-sky-500" onClick={() => score(false)}>Score this photograph with both</button> : null}
+      </details>
+    );
+  };
 
   // ---- Labels and score (step 8).
   const labelsPanel = () => {
@@ -472,18 +566,19 @@ export default function CornInspector() {
         <label className="block">Labels file from the labeler: <input type="file" accept=".json" className="mt-1 block w-full text-xs" onChange={e => e.target.files?.[0] && uploadLabels(e.target.files[0])} /></label>
         {session?.labels && <div className="text-white/60">Loaded: {session.labels.images.filter(i => i.plants + i.unsure).map(i => `${i.image} (${i.plants} plant, ${i.unsure} unsure)`).join("; ")}</div>}
         {session?.labels && !labelsFor && <div className="text-amber-300">The labels file holds nothing for this photograph.</div>}
-        {labelsFor && <button className="rounded bg-sky-600 px-2 py-1 hover:bg-sky-500" onClick={() => score(false)}>Score this photograph (dev tiles){isDefault ? "" : ": this setup and the defaults"}</button>}
-        {[["Defaults", defSetup], ...(isDefault ? [] : [["This setup", curSetup]])].map(([nm, st]) => { const j = scoreJob(st as Setup | null, false); return j && j.state !== "done" ? <div key={String(nm)}>{String(nm)}: {j.state}{j.error ? `: ${j.error}` : ""}</div> : null; })}
+        {labelsFor && <button className="rounded bg-sky-600 px-2 py-1 hover:bg-sky-500" onClick={() => score(false)}>Score this photograph (dev tiles){isDefault ? "" : `: this setup and ${BN}`}</button>}
+        {[[BNc, defSetup], ...(isDefault ? [] : [["This setup", curSetup]])].map(([nm, st]) => { const j = scoreJob(st as Setup | null, false); return j && j.state !== "done" ? <div key={String(nm)}>{String(nm)}: {j.state}{j.error ? `: ${j.error}` : ""}</div> : null; })}
         {(scoreDef || scoreCur) && (
           <table className="w-full"><thead><tr className="text-white/50"><td>Dev tiles, matched within {scoreCur ? (scoreCur.unit === "m" ? cm(scoreCur.R) : `${fmt(scoreCur.R, 1)} px`) : ""}</td><td>Found</td><td>in 100</td><td>Wrong (second / nothing)</td><td>in 100 marks</td><td>Count error</td></tr></thead>
             <tbody>
-              {scoreDef && <tr><td>Defaults</td>{scoreRow(scoreDef).map((c, i) => <td key={i}>{c}</td>)}</tr>}
+              {scoreDef && <tr><td>{BNc}</td>{scoreRow(scoreDef).map((c, i) => <td key={i}>{c}</td>)}</tr>}
               {!isDefault && scoreCur && <tr className="text-amber-300"><td>This setup</td>{scoreRow(scoreCur).map((c, i) => <td key={i}>{c}</td>)}</tr>}
-              {scoreDef?.full && <tr className="text-white/60"><td>Defaults, one full spacing</td>{scoreRow(scoreDef, false).map((c, i) => <td key={i}>{c}</td>)}</tr>}
+              {!isDefault && scoreCur && scoreDef && <tr className="text-white/70"><td>Change</td>{scoreDelta(scoreCur, scoreDef).map((c, i) => <td key={i}>{c}</td>)}</tr>}
+              {scoreDef?.full && <tr className="text-white/60"><td>{BNc}, one full spacing</td>{scoreRow(scoreDef, false).map((c, i) => <td key={i}>{c}</td>)}</tr>}
               {!isDefault && scoreCur?.full && <tr className="text-amber-300/70"><td>This setup, one full spacing</td>{scoreRow(scoreCur, false).map((c, i) => <td key={i}>{c}</td>)}</tr>}
             </tbody></table>
         )}
-        {shownScore && <div className="text-white/60">Drawn: {shownScore.hidden ? "the HELD-BACK tiles" : "the dev tiles"} of {isDefault ? "the defaults" : "this setup"}. Green dot: a labelled plant found (white ring: its mark). Red square: a labelled plant missed. Orange ×: a second mark on a plant. Red ×: a mark on nothing. Grey ring: a mark at a tile's edge, not judged. Violet: unsure. The held-back tiles are greyed out.</div>}
+        {shownScore && <div className="text-white/60">Drawn: {shownScore.hidden ? "the HELD-BACK tiles" : "the dev tiles"} of {isDefault ? BN : "this setup"}. Green dot: a labelled plant found (white ring: its mark). Red square: a labelled plant missed. Orange ×: a second mark on a plant. Red ×: a mark on nothing. Grey ring: a mark at a tile's edge, not judged. Violet: unsure. The held-back tiles are greyed out.</div>}
         {shownScore && <table className="w-full"><thead><tr className="text-white/50"><td>Tile</td><td>Labelled</td><td>Found</td><td>Wrong</td><td>Count error</td></tr></thead><tbody>{shownScore.half.map(t => <tr key={t.tile}><td>{t.tile}</td><td>{t.labelled}</td><td>{sum(t.found)}</td><td>{sum(t.wrong)}</td><td>{sgn(sum(t.marks) - sum(t.onUnsure) - t.labelled)}</td></tr>)}</tbody></table>}
         {labelsFor && (
           <div className="rounded border border-amber-500/40 p-2">
@@ -510,7 +605,7 @@ export default function CornInspector() {
     2: [["#40d8ff", "this photo's mark, a line to its dot"], ["#ff3c3c", "this photo's mark in no dot"], ["#ff9a00", "this photo's second-look sighting"], ["#ffffff", "dot of the stricter marks (ring)"], ["#ffe628", "candidate dot (ring)"], ...(comparing ? [[ADDED, "dot only in this setup"], [REMOVED, "dot only in the defaults"]] as [string, string][] : [])],
     3: comparing ? [[ADDED, "certain only in this setup"], [REMOVED, "certain only in the defaults"]] : [["#3cff5a", "certain dot"], ["#c8c8c8", "other dots"]],
     4: [["#40d8ff", "row from the certain plants"], ["#ff60ff", "row found in a free slot"], ["#3cff5a", "ground planted"], ["#ff3c3c", "ground scattered"], ["#969696", "ground not judged"], ...(comparing ? [["#ffffff", "the defaults' rows (dashed)"]] as [string, string][] : [])],
-    6: comparing ? [[ADDED, "on a row only in this setup"], [REMOVED, "on a row only in the defaults"]] : Object.entries(VERDICT).filter(([k]) => k !== "none").map(([k, v]) => [v.col, k]),
+    6: [...(fieldCur?.meta.secondLook ? [["#3cff5a", "spot the second look added (ring)"], ["#ff3030", "spot it refused (ring)"]] as [string, string][] : []), ...(comparing ? [[ADDED, `on a row only in this setup`], [REMOVED, `on a row only in ${BN}`]] as [string, string][] : Object.entries(VERDICT).filter(([k]) => k !== "none").map(([k, v]) => [v.col, k] as [string, string]))],
     5: comparing ? [[ADDED, "on a row only in this setup"], [REMOVED, "on a row only in the defaults"]] : Object.entries(VERDICT).filter(([k]) => k !== "none").map(([k, v]) => [v.col, k]),
     7: flight ? (comparing ? [[ADDED, "a plant only in this setup"], [REMOVED, "a plant only in the defaults"]] : [...SHOWN.map(s => [s.col, s.name] as [string, string]), ["#ff3c3c", "weed candidate (ring)"], ["#ff9a00", "stand gap"]]) : [["#40d8ff", "corn row"], ["#ffe628", "row, crop not confirmed"], ["#ff3c3c", "weed candidate"], ["#ff9a00", "stand gap"]],
   };
@@ -538,6 +633,7 @@ export default function CornInspector() {
           <>
             <div className="mt-3 text-xs text-white/60">Photograph</div>
             <select className="w-full rounded bg-white/10 px-2 py-1" value={photo ?? ""} onChange={e => { setPhoto(e.target.value); setPicked(null); setHiddenTick(false); }}>{session.photos.map(p => <option key={p.name} value={p.name} className="bg-neutral-800">{p.name}</option>)}</select>
+            {layersPanel()}
             {switches()}
             <ol className="mt-3 space-y-1">
               {STEPS.map((sname, k) => {

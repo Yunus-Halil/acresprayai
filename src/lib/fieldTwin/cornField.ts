@@ -163,6 +163,14 @@ export type CornPhotoRead = {
    * it (read pixels, back and forward), and the rows' direction in the photograph (unit vector). The field splits the
    * long ones at the plant spacing it measured (cornPlants.ts). */
   lowSpan?: [number, number][]; lowAxis?: [number, number];
+  /** Read only (2026-11-18, for the field profile, fieldTwin/layers/l5Profile.ts): per plant in `plants`, its size
+   * (photo pixels, null where not measured), its green's mean (2g - r - b) / (r + g + b) and its outline's solidity (null
+   * where not measured); the photograph's typical plant piece (photo pixels); and the cores' reference as the
+   * photograph measured it (null where the cores were not asked). Absent in reads made before it. */
+  look?: { typicalPx: number | null; size: (number | null)[]; green: (number | null)[]; solidity: (number | null)[];
+    /** Per plant, which views found it (L2: 1 the green, 2 a core, 3 both), and which mask the plant read used. */
+    foundBy?: number[]; plantMask?: "seedlings" | "v1";
+    cores: { reference: "strongest" | "marks"; strongest: number; medianOnMarks: number | null; onMarks: number | null; threshold: number | null; finePx: number; widePx: number } | null };
 };
 
 /**
@@ -176,7 +184,7 @@ export function cornFlightGuard(reads: CornPhotoRead[], o = CORN_COUNT_GUARD): {
   const spacingM = (r: CornPhotoRead) => (r.guard?.rowSpacingPx && r.guard.gsdM ? r.guard.rowSpacingPx * r.scale * r.guard.gsdM : null);
   const sp = reads.map(spacingM).filter((x): x is number => x != null).sort((a, b) => a - b), med = sp.length ? sp[sp.length >> 1] : null;
   const misread = (r: CornPhotoRead) => { const s = spacingM(r); return o.misreadRatio != null && med != null && s != null && (s > o.misreadRatio * med || (o.misreadBelow && s < med / o.misreadRatio)); };
-  const out = reads.map(r => (misread(r) ? { ...r, plants: [], low: undefined, lowSpan: undefined, lowAxis: undefined, countWithheld: true, countReason: o.misreadMessage } : r));
+  const out = reads.map(r => (misread(r) ? { ...r, plants: [], low: undefined, lowSpan: undefined, lowAxis: undefined, countWithheld: true, countReason: o.misreadMessage, ...(r.look ? { look: { ...r.look, size: [], green: [], solidity: [], foundBy: [] } } : {}) } : r));
   return { reads: out, medianSpacingM: med, withheld: out.filter(r => r.countWithheld).map(r => { const s = spacingM(r); return { name: r.name, reason: r.countReason ?? o.message, rowSpacingM: s, ratio: s != null && med ? s / med : null, rowGreenShare: r.guard?.rowGreenShare ?? null }; }) };
 }
 
@@ -192,7 +200,21 @@ export function compactCornRead(name: string, v: CornV1Read, scale = 1): CornPho
     ...(v.count?.withheld ? { countWithheld: true, countReason: CORN_COUNT_GUARD.message } : {}),
     ...(v.count ? { guard: { rowGreenShare: v.count.rowGreenShare, rowSpacingPx: v.count.rowSpacingPx ?? null, gsdM: Number.isFinite(v.green.gsdM) ? v.green.gsdM : null } } : {}),
     ...(v.plants.low ? { low: v.plants.low.map(p => [Math.round(p.x), Math.round(p.y)] as [number, number]) } : {}),
+    ...(v.plants.typicalPx != null ? { look: lookOf(v) } : {}),
     ...(v.plants.low && v.plants.lowSpan && v.plants.lowAxis ? { lowSpan: v.plants.lowSpan.map(([a, b]) => [Math.round(a * 10) / 10, Math.round(b * 10) / 10] as [number, number]), lowAxis: v.plants.lowAxis } : {}),
+  };
+}
+
+const r3 = (x: number, k: number) => (Number.isFinite(x) ? Math.round(x * k) / k : null);
+/** The read's record of what its plants look like (CornPhotoRead.look), parallel to its plants. */
+function lookOf(v: CornV1Read): NonNullable<CornPhotoRead["look"]> {
+  const n = v.plants.points.length, L = v.plants.look, ok = !!L && L.sizePx.length === n;
+  const cr = v.plants.coresRef;
+  return {
+    typicalPx: r3(v.plants.typicalPx ?? NaN, 10),
+    size: ok ? Array.from(L!.sizePx, x => r3(x, 10)) : [], green: ok ? Array.from(L!.green, x => r3(x, 1000)) : [], solidity: ok ? Array.from(L!.solidity, x => r3(x, 100)) : [],
+    foundBy: ok && v.plants.foundBy && v.plants.foundBy.length === n ? Array.from(v.plants.foundBy) : [], plantMask: v.plants.plantMask ?? "seedlings",
+    cores: cr ? { reference: cr.reference, strongest: r3(cr.strongest, 1e5) ?? 0, medianOnMarks: cr.medianOnMarks == null ? null : r3(cr.medianOnMarks, 1e5), onMarks: cr.onMarks, threshold: cr.threshold == null ? null : r3(cr.threshold, 1e5), finePx: r3(cr.finePx, 100) ?? 0, widePx: r3(cr.widePx, 100) ?? 0 } : null,
   };
 }
 
