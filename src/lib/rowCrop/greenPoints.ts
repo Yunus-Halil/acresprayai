@@ -53,7 +53,11 @@ export const GREEN_POINTS = {
  *                photograph: per piece of green that holds marks, as many of its strongest cores as it has marks.
  *                With no core on any mark the photograph gets no cores.
  */
-export type CoresAsked = { finePx: number; widePx: number; share: number; reference?: "strongest" | "marks"; factor?: number };
+export type CoresAsked = { finePx: number; widePx: number; share: number; reference?: "strongest" | "marks"; factor?: number;
+  /** CORES-2 (fieldTwin/layers/options.ts LAYERS.coresStartOnNoGreen, off: null): with the "marks" reference, a core on
+   * no piece of green (none within GREEN_POINTS.coreReachPx) at or over this many times the median core on the read's
+   * own marks starts a mark of its own. Off, such a core is never a mark. */
+  startOnNoGreen?: number | null };
 /** What the cores pass found (for the record and for measuring): strengths are as measured, not shares. */
 export type CoresInfo = {
   reference: "strongest" | "marks"; strongest: number;
@@ -218,12 +222,15 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
     found = info.threshold == null ? [] : peaks.filter(c => c.v >= info.threshold!);
   }
   const coresIn = new Map<number, number[]>();
+  // CORES-2: the cores on no green strong enough to start a mark (off unless asked, and only against the read's marks).
+  const startAt = byMarks && cores.startOnNoGreen != null && info.medianOnMarks != null ? cores.startOnNoGreen * info.medianOnMarks : null, onNoGreen: number[] = [];
   found.forEach((c, k) => {
     const cx = Math.round(c.x / f - 0.5), cy = Math.round(c.y / f - 0.5); let best = -1, bd = Infinity;
     for (let dy = -reach; dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) { const xx = cx + dx, yy = cy + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const id = label[yy * w + xx]; if (id < 0) continue; const q = dx * dx + dy * dy; if (q < bd) { bd = q; best = id; } }
     const inPiece = best >= 0 && bd <= reach * reach;
     info.kept.push({ x: c.x, y: c.y, v: c.v, where: !inPiece ? "none" : cover.has(best) ? "cover" : "piece" });
     if (inPiece && !cover.has(best)) (coresIn.get(best) ?? coresIn.set(best, []).get(best)!).push(k);
+    else if (!inPiece && startAt != null && c.v >= startAt) onNoGreen.push(k);
   });
   let coresAdded = 0;
   for (const [id, cs] of coresIn) {
@@ -234,6 +241,8 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
     for (const c of cs) if (!usedC.has(c)) { points.push({ x: found[c].x, y: found[c].y }); coresAdded++; lkSize.push(NaN); lkGreen.push(pieceGreen(id)); lkSol.push(NaN); }
     if (points.length > o.maxPoints) break;
   }
+  // CORES-2: each such core a mark (a core alone found it: foundBy 2).
+  for (const k of onNoGreen) { if (points.length > o.maxPoints) break; points.push({ x: found[k].x, y: found[k].y }); coresAdded++; lkSize.push(NaN); lkGreen.push(NaN); lkSol.push(NaN); }
   const tagged = new Uint8Array(points.length); tagged.set(foundBy); tagged.fill(2, foundBy.length);
   return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f, coresAdded, coresInfo: info, foundBy: tagged, look: lookOf() };
 }

@@ -44,8 +44,10 @@ export const CORN_CORES = {
  * (LAYERS.coresBySize, phase 3a, off by default) the blurs are shares of the typical plant's size instead
  * (LAYERS.coresSizeFine, coresSizeWide), and a photograph with a size but no row spacing gets cores too. */
 export function coresAsked(pitchPx: number | null, reference: "strongest" | "marks" = CORN_CORES.reference, sizePx: number | null = null): CoresAsked | null {
-  if (sizePx != null && sizePx > 0 && Number.isFinite(LAYERS.coresSizeFine) && Number.isFinite(LAYERS.coresSizeWide)) return { finePx: LAYERS.coresSizeFine * sizePx, widePx: LAYERS.coresSizeWide * sizePx, share: CORN_CORES.share, reference, factor: CORN_CORES.factor };
-  return pitchPx && pitchPx > 0 ? { finePx: CORN_CORES.fineShare * pitchPx, widePx: CORN_CORES.wideShare * pitchPx, share: CORN_CORES.share, reference, factor: CORN_CORES.factor } : null;
+  // CORES-2 (LAYERS.coresStartOnNoGreen): asked only when on, so a read with it off carries exactly what it did.
+  const start = LAYERS.coresStartOnNoGreen != null ? { startOnNoGreen: LAYERS.coresStartOnNoGreen } : {};
+  if (sizePx != null && sizePx > 0 && Number.isFinite(LAYERS.coresSizeFine) && Number.isFinite(LAYERS.coresSizeWide)) return { finePx: LAYERS.coresSizeFine * sizePx, widePx: LAYERS.coresSizeWide * sizePx, share: CORN_CORES.share, reference, factor: CORN_CORES.factor, ...start };
+  return pitchPx && pitchPx > 0 ? { finePx: CORN_CORES.fineShare * pitchPx, widePx: CORN_CORES.wideShare * pitchPx, share: CORN_CORES.share, reference, factor: CORN_CORES.factor, ...start } : null;
 }
 
 export type PhotoViews = { green: SeedlingCache; plant: SeedlingCache; cores: { asked: CoresAsked; strength: Float32Array; top: number } | null };

@@ -20,6 +20,7 @@
 //   --read  { "cores": bool, "coresReference": "marks"|"strongest", "countGuard": bool, "rowSpans": bool,
 //             "coresBySize": "self" | <sizes.json: { photograph: typical plant px }>,   (layers phase 3a, L1)
 //             "learnedGreen": bool,   (L1, COLOUR-1: the green view learned per photograph, layers/l1Learned.ts)
+//             "coresStart": number,   (L2, CORES-2: a core on no green at or over this many times the median core on the marks starts a mark)
 //             "preset": "today" | "final3" }   (reads job: the app's named preset, fieldTwin/cornPreset.ts; the other read options are then not used)
 //   --field { "sequence": {...SEQUENCE}, "placing": {...PLANTS_FIRST}, "free": bool, "fieldSeed": bool, "groundAsked": bool,
 //             "layers": {...LAYERS} }   (layers/options.ts: groundFromObvious, tooCloseFromSpread, secondLook, unsureList)
@@ -52,7 +53,7 @@ const ROOT = resolve(__dirname, "../..");
 const argv = process.argv.slice(2), job = argv[0];
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? null : argv[i + 1]; };
 const arg = (k: string) => { const v = opt(k); if (v == null) throw new Error(`--${k} is required`); return v; };
-type ReadOptions = { cores?: boolean; coresReference?: "marks" | "strongest"; countGuard?: boolean; rowSpans?: boolean; coresBySize?: string; learnedGreen?: boolean; /** A named app preset (fieldTwin/cornPreset.ts): the reads exactly as an app build makes them under it. */ preset?: "today" | "final3" };
+type ReadOptions = { cores?: boolean; coresReference?: "marks" | "strongest"; countGuard?: boolean; rowSpans?: boolean; coresBySize?: string; learnedGreen?: boolean; /** CORES-2 (L2): a core on no green starts a mark at this many times the median core on the marks. */ coresStart?: number | null; /** A named app preset (fieldTwin/cornPreset.ts): the reads exactly as an app build makes them under it. */ preset?: "today" | "final3" };
 type FieldOptions = { sequence?: Partial<typeof SEQUENCE>; placing?: Partial<typeof PLANTS_FIRST>; free?: boolean; fieldSeed?: boolean; groundAsked?: boolean; layers?: Partial<LayerOptions> };
 const READ: ReadOptions = opt("read") ? JSON.parse(opt("read")!) : {}, FOPT: FieldOptions = opt("field") ? JSON.parse(opt("field")!) : {};
 // The read's options are set where the code keeps them, for this process only (as a flipped default would).
@@ -60,6 +61,7 @@ if (READ.cores != null) CORN_CORES.on = READ.cores;
 if (READ.coresReference) CORN_CORES.reference = READ.coresReference;
 if (READ.countGuard != null) CORN_COUNT_GUARD.on = READ.countGuard;
 if (READ.learnedGreen != null) LAYERS.learnedGreen = READ.learnedGreen;
+if (READ.coresStart != null && Number.isFinite(Number(READ.coresStart))) LAYERS.coresStartOnNoGreen = Number(READ.coresStart);
 const pixelsOf = (file: string) => { const img = decodeImage(new Uint8Array(readFileSync(file))); return { width: img.width, height: img.height, rgba: new Uint8ClampedArray(img.data.buffer, img.data.byteOffset, img.data.byteLength) }; };
 /** A photograph's file: its name in the folder, or (a record whose names join folder and file) the first "_" as a folder. */
 const fileOf = (dir: string, name: string) => [name, name.replace("_", "/")].flatMap(n => [".JPG", ".jpg", ".jpeg", ".JPEG"].map(e => join(dir, n + e))).find(existsSync);

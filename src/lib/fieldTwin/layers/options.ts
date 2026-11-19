@@ -12,6 +12,7 @@
 //   learnedGreen        L1 (COLOUR-1, 2026-11-18): the green view learned per photograph (layers/l1Learned.ts): the
 //                       corn and soil colours of the strict pass's sure plants and the soil away from them; L2 reads its
 //                       mask in place of the fixed thresholds' (everything after L2 as before)
+//   coresStartOnNoGreen L2 (CORES-2, 2026-11-18): a core strong enough on no green starts a mark (rowCrop/greenPoints.ts)
 export const LAYERS = {
   groundFromObvious: false,
   coresBySize: false,
@@ -32,5 +33,8 @@ export const LAYERS = {
   secondLookMinShow: 2, secondLookShowShare: 0.5,
   unsureList: false,
   learnedGreen: false,
+  /** CORES-2 (L2, 2026-11-18): a vivid core on no piece of green starts a mark when it is at or over this many times the
+   * median core on the read's own marks (the cores' bar is 0.4 of it). null: off, such a core is never a mark. */
+  coresStartOnNoGreen: null as number | null,
 };
 export type LayerOptions = typeof LAYERS;
