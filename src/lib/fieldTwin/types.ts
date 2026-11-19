@@ -161,6 +161,9 @@ export type TwinCorn = {
   fieldRows?: TwinCornFieldRow[];
   /** The field's soil and corn colours from its photographs (2026-11-19 on), for the Realistic view. */
   look?: TwinCornLook | null;
+  /** How late the flight is (2026-11-19 on, lateStage.ts): the photographs read, how many read as a closed canopy,
+   * the cut, and the verdict the viewer's banner follows. Absent in older twins (no banner). */
+  stage?: TwinCornStage | null;
   summary: {
     cornRows: number; unconfirmedRows: number; cornRowLengthM: number; offLatticeDropped: number;
     weeds: { confirmed: number; unconfirmed: number; contested: number };
@@ -187,6 +190,8 @@ export type TwinCornLook = {
   plantSizeM: number | null;
   note: string;
 };
+
+export type TwinCornStage = { version: 1; looked: number; late: number; photoCut: number; verdict: "late" | "ok" };
 
 export type TwinCornPlants = {
   /** Per plant: latitude, longitude. */
@@ -270,6 +275,10 @@ function checkCorn(c: unknown, atlases: number): string | null {
     const rgb = (c: unknown) => c === null || (isArr(c) && c.length === 3 && c.every(v => isNum(v) && v >= 0 && v <= 255));
     if (L.version !== 1 || !isArr(L.samples) || !rgb(L.soil) || !rgb(L.corn) || (L.plantSizeM != null && !(isNum(L.plantSizeM) && L.plantSizeM > 0))) return "the field's colours are not a version 1 record";
     for (const q of L.samples) if (!q || !isNum(q.lat) || !isNum(q.lng) || !rgb(q.soil) || !rgb(q.corn)) return "a colour sample has no position or a broken colour";
+  }
+  if (k.stage != null) {
+    const g = k.stage as Partial<TwinCornStage>;
+    if (g.version !== 1 || !isNum(g.looked) || !isNum(g.late) || !isNum(g.photoCut) || (g.verdict !== "late" && g.verdict !== "ok") || g.late > g.looked) return "the flight's stage is not a version 1 record";
   }
   for (const w of k.weeds) {
     if (!["confirmed", "unconfirmed", "contested"].includes(w.status as string)) return `weed ${w.id} has an unknown status`;

@@ -22,6 +22,7 @@ import TwinMap, { type PhotoGroundLayer, type ReferenceImagery, type TwinMapHand
 import { type DetailState, PhotoEvidence, PhotoGroundAbsent, PhotoGroundPanel } from "./PhotoGround";
 import { usePhotoGround } from "@/lib/fieldTwin/photoGroundFlag";
 import { CORN_VIEWS, CORN_VIEW_HINT, CORN_VIEW_LABEL, type CornViewMode, cornLookOf } from "@/lib/fieldTwin/cornRender";
+import LateFlightBanner from "./LateFlightBanner";
 import type { GroundManifest } from "@/lib/fieldTwin/photoGround";
 import { type PhotoAccess, cutDetail, detailPlanFor, photoAccessFrom } from "@/lib/fieldTwin/photoAccess";
 import ReviewBar, { reviewTargetOf } from "./ReviewBar";
@@ -440,6 +441,10 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
         onMove={c => setCentre(c)} onReady={h => { handle.current = h; setStats(h.layer.stats); }} reference={reference} onSwipe={setRefSwipe} findings={findings}
         operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} rowEdits={rowEditsProp} plants={plantsProp} onRowEnd={onRowEnd} photoGround={photoGroundLayer} cornView={twin.corn && !photosUnder && !reference ? cornView : null} />
 
+      {/* A corn twin from a late flight: said over the map, closable (twin.corn.stage, from the build). */}
+      {twin.corn?.stage?.verdict === "late" && !rowEditing && (
+        <div className={`pointer-events-none absolute right-3 top-3 z-[720] flex justify-center ${narrow ? "left-3 top-14" : "left-[300px]"}`}><LateFlightBanner twinId={twin.id} stage={twin.corn.stage} /></div>
+      )}
       {/* The row editor's card for a tapped row and its Undo bar, bottom centre over the map. */}
       {rowEditing && (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 z-[730] flex flex-col items-center gap-2 px-3">

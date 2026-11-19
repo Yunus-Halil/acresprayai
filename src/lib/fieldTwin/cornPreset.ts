@@ -23,7 +23,7 @@ export const CORN_PRESETS: readonly CornPreset[] = ["today", "final3"];
 
 export type CornPresetSettings = {
   /** Each photograph's read (rowCrop/cornV1.ts readCornV1 options). */
-  read: { rowSpans: boolean; rowCandidates: boolean; cores: boolean; coresReference: "marks" | "strongest"; countGuard: boolean; learnedGreen: boolean; /** SPEED-1: the cores only where the plants are big enough to touch (cornV1.ts CORES_WHEN_TOUCHING). */ coresWhenTouching: boolean };
+  read: { rowSpans: boolean; rowCandidates: boolean; cores: boolean; coresReference: "marks" | "strongest"; countGuard: boolean; /** The late guard (lateStage.ts): a closed canopy withholds the count too. */ lateGuard: boolean; learnedGreen: boolean; /** SPEED-1: the cores only where the plants are big enough to touch (cornV1.ts CORES_WHEN_TOUCHING). */ coresWhenTouching: boolean };
   /** The compact read keeps what the plants look like (cornField.ts CornPhotoRead.look); "today" does not have it. */
   keepLook: boolean;
   /** The emergence guard over the flight (cornField.ts cornFlightGuard): a photograph that misread its row spacing gives no plants. */
@@ -37,12 +37,12 @@ export type CornPresetSettings = {
 const F3 = CORN_CANDIDATE_FINAL3;
 export const CORN_PRESET_SETTINGS: Record<CornPreset, CornPresetSettings> = {
   today: {
-    read: { rowSpans: false, rowCandidates: false, cores: false, coresReference: "marks", countGuard: false, learnedGreen: false, coresWhenTouching: false },
+    read: { rowSpans: false, rowCandidates: false, cores: false, coresReference: "marks", countGuard: false, lateGuard: false, learnedGreen: false, coresWhenTouching: false },
     keepLook: false, flightGuard: false, ground: false,
     plants: { sequence: SEQUENCE_V1, placing: PLANTS_FIRST_V1 },
   },
   final3: {
-    read: { rowSpans: true, rowCandidates: true, cores: F3.read.cores as boolean, coresReference: F3.read.coresReference as "marks", countGuard: F3.read.countGuard as boolean, learnedGreen: false, coresWhenTouching: true },
+    read: { rowSpans: true, rowCandidates: true, cores: F3.read.cores as boolean, coresReference: F3.read.coresReference as "marks", countGuard: F3.read.countGuard as boolean, lateGuard: true, learnedGreen: false, coresWhenTouching: true },
     keepLook: true, flightGuard: true, ground: true,
     plants: { sequence: { ...SEQUENCE, ...F3.field.sequence }, placing: PLANTS_FIRST, layers: {} },
   },

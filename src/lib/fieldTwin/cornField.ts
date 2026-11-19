@@ -37,6 +37,7 @@
 //
 // Everything is review-only decision support: the outputs are rows, identities and candidate findings with the
 // photographs behind each; nothing decides a treatment.
+import { LATE_STAGE } from "./lateStage";
 import { CORN_COUNT_GUARD } from "../rowCrop/cornV1";
 import { fromEnu, toEnu, type LatLngAlt } from "../sourceFrames/odm";
 import { frameFootprint, groundSampleAt, groundToPixel, pixelToGround, type GeorefFrame } from "../directGeoref/projection";
@@ -156,7 +157,9 @@ export type CornPhotoRead = {
   countReason?: string;
   /** What the guard read (only when it ran): the share of the rows' length under green, the row spacing in the
    * photograph's pixels, and the pixel size the read used (metres). */
-  guard?: { rowGreenShare: number | null; rowSpacingPx: number | null; gsdM: number | null };
+  guard?: { rowGreenShare: number | null; rowSpacingPx: number | null; gsdM: number | null;
+    /** With the late guard (lateStage.ts, 2026-11-19): the share of the photograph read as canopy or closed. */
+    lateShare?: number };
   /** Candidates for the field's rows at the lower bar (read pixels; a photograph of seedlings on soil only). Only ever
    * used along a row the plants above made (cornPlants.ts): absent in reads made before 2026-11-16. */
   low?: [number, number][];
@@ -203,8 +206,8 @@ export function compactCornRead(name: string, v: CornV1Read, scale = 1, keepLook
     patches: v.green.weeds.flatMap((w, i) => { const vd = verdictOf.get(i); return vd ? [{ x: w.x, y: w.y, hull: w.hull, touchesEdge: w.touchesEdge, verdict: vd }] : []; }),
     gaps: v.gaps.map(g => ({ x1: g.x1, y1: g.y1, x2: g.x2, y2: g.y2, verdict: g.verdict })),
     plants: v.plants.points.map(p => [Math.round(p.x), Math.round(p.y)] as [number, number]),
-    ...(v.count?.withheld ? { countWithheld: true, countReason: CORN_COUNT_GUARD.message } : {}),
-    ...(v.count ? { guard: { rowGreenShare: v.count.rowGreenShare, rowSpacingPx: v.count.rowSpacingPx ?? null, gsdM: Number.isFinite(v.green.gsdM) ? v.green.gsdM : null } } : {}),
+    ...(v.count?.withheld ? { countWithheld: true, countReason: v.count.late ? LATE_STAGE.message : CORN_COUNT_GUARD.message } : {}),
+    ...(v.count ? { guard: { rowGreenShare: v.count.rowGreenShare, rowSpacingPx: v.count.rowSpacingPx ?? null, gsdM: Number.isFinite(v.green.gsdM) ? v.green.gsdM : null, ...(v.count.lateShare != null ? { lateShare: Math.round(v.count.lateShare * 1e4) / 1e4 } : {}) } } : {}),
     ...(v.plants.low ? { low: v.plants.low.map(p => [Math.round(p.x), Math.round(p.y)] as [number, number]) } : {}),
     // What the plants look like (2026-11-18): not kept by the "today" preset (cornPreset.ts), whose reads did not have it.
     ...(keepLook && v.plants.typicalPx != null ? { look: lookOf(v) } : {}),

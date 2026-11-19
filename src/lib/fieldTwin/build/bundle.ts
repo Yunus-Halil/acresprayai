@@ -10,6 +10,7 @@ import { type EvidenceMeasures, downsampleEvidence, encodeEvidence } from "../bo
 import { localFrame, pointInRing } from "../intelligence";
 import { FIELD_TWIN_FORMAT, type TwinBundle, type TwinCorn, type TwinCornGap, type TwinCornLook, type TwinCornRow, type TwinCornWeed, type TwinEvidence, type TwinRow } from "../types";
 import { fieldColour } from "../cornColours";
+import { LATE_STAGE, flightStageOf } from "../lateStage";
 import type { CornStageResult } from "./corn";
 import { yieldToEvents } from "./cameras";
 import type { PhotoRead } from "./photos";
@@ -230,6 +231,8 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
         summary: { plants: P.summary.plants, certain: P.summary.certain, probable: P.summary.probable, onNoRow: P.summary.onNoRow, betweenRows: P.summary.betweenRows, confirmedM: P.summary.confirmedM, notConfirmedM: P.summary.notConfirmedM, ...(P.summary.alongRowsTwo != null ? { alongRowsTwo: P.summary.alongRowsTwo, alongRowsOne: P.summary.alongRowsOne ?? 0 } : {}) },
       } } : {}),
       ...(look ? { look } : {}),
+      // How late the flight is, from the reads' own assessments (reads made with the late guard carry their share).
+      ...(() => { const shares = cornRes.reads.map(r => r.guard?.lateShare ?? null); if (!shares.some(s => s != null)) return {}; const g = flightStageOf(shares); return { stage: { version: 1 as const, looked: g.looked, late: g.late, photoCut: LATE_STAGE.photoCut, verdict: g.verdict ?? "ok" } }; })(),
       summary: {
         cornRows: fieldRows.filter(r => r.status === "corn").length, unconfirmedRows: fieldRows.filter(r => r.status !== "corn").length,
         cornRowLengthM: P ? P.summary.confirmedM : F.summary.cornRowLengthM, offLatticeDropped: F.summary.offLatticeDropped,

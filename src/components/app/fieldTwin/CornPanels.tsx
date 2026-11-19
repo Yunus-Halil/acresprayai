@@ -82,7 +82,7 @@ export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, units,
         ) : (
           <div className="mt-1.5 rounded-sm border border-[#2e322e] bg-[#111311] px-2 py-1.5" role="group" aria-label="Plant count">
             <div className="flex items-baseline justify-between"><span className="text-[11px] text-neutral-300">Plants counted</span><span className="text-[11px] font-semibold text-neutral-200">not counted on this flight</span></div>
-            <p className="mt-1 text-[10px] leading-snug text-neutral-500">{withheld ?? "The photographs gave no plant-by-plant count here (plants too large to tell apart, or no row of plants found). The rows are drawn as bands instead of single plants."}</p>
+            <p className="mt-1 text-[10px] leading-snug text-neutral-500">{corn.stage?.verdict === "late" ? `The corn canopy has closed in ${corn.stage.late} of the ${corn.stage.looked} photographs, so plants cannot be told apart. The rows are drawn as bands instead of single plants.` : withheld ?? "The photographs gave no plant-by-plant count here (plants too large to tell apart, or no row of plants found). The rows are drawn as bands instead of single plants."}</p>
           </div>
         )}
         <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
