@@ -94,6 +94,16 @@ export const CORN_V1 = {
   bandedShare: 0.2,
 };
 
+/**
+ * SPEED-1 (2026-11-18): with `coresWhenTouching`, the vivid cores run on a photograph only when its plants are big
+ * enough to touch: the median size of the first pass's marks over the row spacing (greenPitchPx, the cores' own scale)
+ * at or over `cut`. The cut is halfway between the two photographs the cores were measured on: Levi's flight (typical
+ * plant 9.5 px against 152 px, 0.0625: the plants rarely touch and the cores added little) and 53.JPG (49.6 px against
+ * 212.1 px, 0.2339: the cores split touching plants, TOUCH-3). No row spacing, no ratio: the cores need one anyway.
+ */
+export const CORES_WHEN_TOUCHING = { cut: 0.148 };
+export type CoresGate = { sizePx: number | null; pitchPx: number | null; ratio: number | null; cut: number; ran: boolean };
+
 // The vivid cores (CORN_CORES): an L1 option, defined in fieldTwin/layers/l1Views.ts (2026-11-18), re-exported here.
 export { CORN_CORES } from "../fieldTwin/layers/l1Views";
 
@@ -190,6 +200,8 @@ export type CornV1Read = {
     look?: { sizePx: Float32Array; green: Float32Array; solidity: Float32Array }; typicalPx?: number; plantMask?: "seedlings" | "v1" | "learned";
     /** With the learned green view (LAYERS.learnedGreen, L1): what it learned of this photograph (layers/l1Learned.ts). */
     learned?: LearnedRecord | null;
+    /** With `coresWhenTouching` (SPEED-1): whether the cores ran on this photograph, and on what. */
+    coresGate?: CoresGate;
     coresRef?: { reference: "strongest" | "marks"; strongest: number; medianOnMarks: number | null; onMarks: number | null; threshold: number | null; finePx: number; widePx: number } | null;
     /** With `rowSpans`: per candidate, how far its green reaches along the photograph's rows either way of it (pixels,
      * back and forward), and the rows' direction in the photograph (unit vector). Absent when the photograph made no row. */
@@ -235,6 +247,9 @@ export type CornV1Options = RowCropOptions & {
   countGuard?: boolean;
   /** The learned green view (L1, LAYERS.learnedGreen when not given): L2 reads its mask in place of the fixed one. */
   learnedGreen?: boolean;
+  /** SPEED-1 (the FINAL-3 preset): with the cores asked, run them only where the photograph's plants are big enough to
+   * touch (CORES_WHEN_TOUCHING). Off unless given. */
+  coresWhenTouching?: boolean;
 };
 
 const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[s.length >> 1] : null; };
@@ -487,12 +502,25 @@ export function readCornV1(px: PhotoPixels, params: RowCropParams, opts: CornV1O
   const plantCache = learned ? learned.cache : fixedCache;
   let sizePx = typeof opts.coresSizePx === "number" ? opts.coresSizePx : null;
   if (opts.coresSizePx === "self" && plantCache) { const s = Array.from(findMarks(px, photoViews(px, { seedlings, plant: plantCache, pitchPx: greenPitchPx(ad) }, false)).look?.sizePx ?? []).filter(Number.isFinite).sort((a, b) => a - b); sizePx = s.length ? s[s.length >> 1] : null; }
-  const views = plantCache ? photoViews(px, { seedlings, plant: plantCache, pitchPx: greenPitchPx(ad), sizePx }, opts.baselineSeedlings ? false : opts.cores ?? CORN_CORES.on, opts.coresReference ?? CORN_CORES.reference) : null;
-  const found = views ? findMarks(px, views) : null;
+  // SPEED-1 (`coresWhenTouching`): the cores only on a photograph whose plants are big enough to touch, decided before
+  // they run from the first pass's marks (their median size) against the row spacing the cores' blurs are scaled by.
+  let coresOn = opts.baselineSeedlings ? false : opts.cores ?? CORN_CORES.on, first: ReturnType<typeof findMarks> | null = null, gate: CoresGate | null = null;
+  if (coresOn && opts.coresWhenTouching && plantCache) {
+    const pitchPx = greenPitchPx(ad);
+    first = findMarks(px, photoViews(px, { seedlings, plant: plantCache, pitchPx, sizePx }, false));
+    const s = Array.from(first.look?.sizePx ?? []).filter(Number.isFinite).sort((a, b) => a - b), size = s.length ? s[s.length >> 1] : null;
+    const ratio = size != null && pitchPx ? size / pitchPx : null;
+    gate = { sizePx: size, pitchPx, ratio, cut: CORES_WHEN_TOUCHING.cut, ran: ratio != null && ratio >= CORES_WHEN_TOUCHING.cut };
+    coresOn = gate.ran;
+  }
+  const views = plantCache ? photoViews(px, { seedlings, plant: plantCache, pitchPx: greenPitchPx(ad), sizePx }, coresOn, opts.coresReference ?? CORN_CORES.reference) : null;
+  // Cores not run: the first pass made above is the marks (the same function on the same views without the cores).
+  const found = views ? (first && !coresOn ? first : findMarks(px, views)) : null;
   const points = opts.detectorPoints ?? found!.points;
   const t2 = Date.now();
   const v = fuseCornV1(ad, points, params, { enteredCrop: opts.enteredCrop ?? params.crop?.id ?? null, source: opts.detectorPoints ? "detector" : "green", greenMs: t1 - t0, plantsMs: t2 - t1 });
   if (found?.foundBy) v.plants.foundBy = found.foundBy;
+  if (gate) v.plants.coresGate = gate;
   if (found) { v.plants.look = found.look; v.plants.typicalPx = found.typicalPx; v.plants.plantMask = learned ? "learned" : views!.plant === seedlings ? "seedlings" : "v1"; if (fixedCache && !opts.baselineSeedlings && (opts.learnedGreen ?? LAYERS.learnedGreen)) v.plants.learned = learned?.record ?? null; v.plants.coresRef = found.coresInfo && views?.cores ? { reference: found.coresInfo.reference, strongest: found.coresInfo.strongest, medianOnMarks: found.coresInfo.medianOnMarks ?? null, onMarks: found.coresInfo.onMarks ?? null, threshold: found.coresInfo.threshold, finePx: views.cores.asked.finePx, widePx: views.cores.asked.widePx } : null; }
   // The emergence guard: past the cut the plant count is withheld; the rows, gaps and weed candidates above stand.
   if (opts.baselineSeedlings ? false : opts.countGuard ?? CORN_COUNT_GUARD.on) {

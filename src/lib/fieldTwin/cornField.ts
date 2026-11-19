@@ -164,6 +164,8 @@ export type CornPhotoRead = {
    * it (read pixels, back and forward), and the rows' direction in the photograph (unit vector). The field splits the
    * long ones at the plant spacing it measured (cornPlants.ts). */
   lowSpan?: [number, number][]; lowAxis?: [number, number];
+  /** SPEED-1: whether the cores ran on this photograph and on what (only on a read that asked for the gate). */
+  coresGate?: { sizePx: number | null; pitchPx: number | null; ratio: number | null; cut: number; ran: boolean };
   /** Read only (2026-11-18, for the field profile, fieldTwin/layers/l5Profile.ts): per plant in `plants`, its size
    * (photo pixels, null where not measured), its green's mean (2g - r - b) / (r + g + b) and its outline's solidity (null
    * where not measured); the photograph's typical plant piece (photo pixels); and the cores' reference as the
@@ -206,6 +208,7 @@ export function compactCornRead(name: string, v: CornV1Read, scale = 1, keepLook
     ...(v.plants.low ? { low: v.plants.low.map(p => [Math.round(p.x), Math.round(p.y)] as [number, number]) } : {}),
     // What the plants look like (2026-11-18): not kept by the "today" preset (cornPreset.ts), whose reads did not have it.
     ...(keepLook && v.plants.typicalPx != null ? { look: lookOf(v) } : {}),
+    ...(v.plants.coresGate ? { coresGate: { ...v.plants.coresGate, ratio: v.plants.coresGate.ratio == null ? null : Math.round(v.plants.coresGate.ratio * 1e5) / 1e5, pitchPx: v.plants.coresGate.pitchPx == null ? null : Math.round(v.plants.coresGate.pitchPx * 10) / 10 } } : {}),
     ...(v.plants.low && v.plants.lowSpan && v.plants.lowAxis ? { lowSpan: v.plants.lowSpan.map(([a, b]) => [Math.round(a * 10) / 10, Math.round(b * 10) / 10] as [number, number]), lowAxis: v.plants.lowAxis } : {}),
   };
 }
