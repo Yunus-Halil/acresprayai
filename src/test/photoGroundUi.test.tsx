@@ -99,7 +99,9 @@ describe("a twin opened again", () => {
     role = "founder";
     for (const stop of ["simple", "standard", "full"] as const) expect(DETAIL_PRESETS[stop].rowsEdgeOverPhotos).toBe(false);
     const r = render(view());
-    fireEvent.click(screen.getByRole("button", { name: "Full" }));
+    // A corn twin has the View switch in place of the detail dial; the founder's "All layers" tick opens the layers.
+    expect(screen.queryByRole("button", { name: "Full" })).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", { name: /^All layers/ }));
     fireEvent.click(screen.getByRole("button", { name: /Diagnostics/ }));
     const edge = screen.getByRole("checkbox", { name: /Field edge from the rows, over the photographs/ });
     expect(edge).not.toBeChecked();
@@ -125,11 +127,12 @@ describe("a twin opened again", () => {
 });
 
 describe("a plant, selected", () => {
-  it("says what it is drawn as and how many photographs located it, never a stand count", () => {
+  it("says what it is drawn as, how many photographs located it, and that it is counted", () => {
     const plants = { points: [[40.00005, -90] as [number, number]], certainty: [1], photos: [4] };
     render(<TwinInspector twin={CORN_TWIN} scene={buildScene(CORN_TWIN)} selection={{ kind: "plant", index: 0, lat: 40.00005, lng: -90 }} plants={plants} atlasUrl={async () => ""} onClose={() => undefined} />);
     expect(screen.getByText("Plant on a row, probable")).toBeInTheDocument();
     expect(screen.getByText("4 photographs")).toBeInTheDocument();
-    expect(screen.getByText(/not a stand count/)).toBeInTheDocument();
+    expect(screen.getByText(/counted in the field's plant count/)).toBeInTheDocument();
+    expect(screen.queryByText(/not a stand count/)).toBeNull();
   });
 });

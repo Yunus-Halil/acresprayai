@@ -12,6 +12,7 @@ import type { CrownRef } from "./weeds";
 import { cornPhotoRead } from "./corn";
 import type { CornPhotoRead } from "../cornField";
 import type { CornPreset } from "../cornPreset";
+import { type PhotoColours, samplePhotoColours } from "../cornColours";
 
 export type PoolTask =
   /** Keep a photograph's grey raster for later tie tasks. */
@@ -32,7 +33,7 @@ export type PoolResult =
   | { kind: "ties"; ties: SoilTie[]; rejected: Record<string, number>; pairsWithTies: number; /** The task's own time (the camera report's per-helper work). */ ms: number }
   | { kind: "colour"; name: string; observations: Observation[] }
   | { kind: "crops"; name: string; cells: Uint8ClampedArray[] }
-  | { kind: "corn"; name: string; read: CornPhotoRead; ms: number }
+  | { kind: "corn"; name: string; read: CornPhotoRead; ms: number; /** The photograph's soil and corn colours (cornColours.ts), read after the corn read from the same pixels, and what that cost. */ colours: PhotoColours; colourMs: number }
   | { kind: "release"; rasters: number };
 
 export type Pool = {
@@ -89,7 +90,10 @@ export async function handleTask(task: PoolTask, ctx: TaskContext): Promise<{ re
     case "corn": {
       const t = Date.now();
       const px = await ctx.photo(task.file, task.name).decode(1);
-      return { result: { kind: "corn", name: task.name, read: cornPhotoRead(task.name, px, task.gsdM, task.baseline ?? false, null, task.preset ?? null), ms: Date.now() - t }, transfer: [] };
+      const read = cornPhotoRead(task.name, px, task.gsdM, task.baseline ?? false, null, task.preset ?? null), ms = Date.now() - t;
+      // The colours for the Realistic view: after the read, from the pixels it has just read (no second decode).
+      const tc = performance.now(), colours = samplePhotoColours(px, read.plants);
+      return { result: { kind: "corn", name: task.name, read, ms, colours, colourMs: performance.now() - tc }, transfer: [] };
     }
     case "crops": {
       const cells = await ctx.photo(task.file, task.name).crops(task.reqs);

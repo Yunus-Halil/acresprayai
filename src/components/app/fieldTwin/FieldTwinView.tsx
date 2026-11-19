@@ -10,7 +10,7 @@ import { fmtArea } from "@/lib/units";
 import { FindingsEngine, type FindingsQuery, type FindingsResult } from "@/lib/fieldTwin/findings";
 import { HEAT_STOPS, heatScaleFor } from "@/lib/fieldTwin/heatmap";
 import { fieldIntelligence } from "@/lib/fieldTwin/intelligence";
-import { type Detail, buildScene, zoomForSize } from "@/lib/fieldTwin/scene";
+import { type Detail, buildScene, toWorld, zoomForSize } from "@/lib/fieldTwin/scene";
 import { DEFAULT_LAYERS, DETAIL_LABEL, DETAIL_PRESETS, DETAIL_STOPS, TWIN_COLOURS, type TwinDetail, type TwinDetailStop, type TwinLayers, detailOf } from "@/lib/fieldTwin/style";
 import type { LatLngPair, TwinBundle } from "@/lib/fieldTwin/types";
 import { FindingsControl, FindingsPanel } from "./FindingsPanel";
@@ -21,6 +21,7 @@ import { isLocalTwin } from "@/lib/fieldTwin/cornView";
 import TwinMap, { type PhotoGroundLayer, type ReferenceImagery, type TwinMapHandle } from "./TwinMap";
 import { type DetailState, PhotoEvidence, PhotoGroundAbsent, PhotoGroundPanel } from "./PhotoGround";
 import { usePhotoGround } from "@/lib/fieldTwin/photoGroundFlag";
+import { CORN_VIEWS, CORN_VIEW_HINT, CORN_VIEW_LABEL, type CornViewMode, cornLookOf } from "@/lib/fieldTwin/cornRender";
 import type { GroundManifest } from "@/lib/fieldTwin/photoGround";
 import { type PhotoAccess, cutDetail, detailPlanFor, photoAccessFrom } from "@/lib/fieldTwin/photoAccess";
 import ReviewBar, { reviewTargetOf } from "./ReviewBar";
@@ -104,6 +105,8 @@ type Props = {
    * from a resolver. Absent, or with the flag off, the viewer is exactly the geometry-only twin.
    */
   ground?: { manifest: GroundManifest; overview: (z: number, x: number, y: number) => Promise<string | null> } | null;
+  /** Corn twins: the view to open at, instead of the remembered one (the dev preview's ?view=). */
+  cornView?: CornViewMode;
   /** The flight's own photographs, when this tab holds them (it just built the twin): detail and evidence from them. */
   photoFiles?: File[] | null;
   /** Photo ground could be shown, but this twin has no overview in this tab (a reopened twin): say why, once. */
@@ -111,6 +114,11 @@ type Props = {
 };
 
 const DETAIL_KEY = "swathwise:twin-detail";
+const CORN_VIEW_KEY = "swathwise:twin-corn-view";
+function rememberedCornView(): CornViewMode {
+  try { const v = localStorage.getItem(CORN_VIEW_KEY); if (v && (CORN_VIEWS as string[]).includes(v)) return v as CornViewMode; } catch { /* private window, blocked storage */ }
+  return "realistic";
+}
 const BOUNDARY_KEY = (id: string) => `swathwise:twin-boundary:${id}`;
 const KEY_OPEN_KEY = "swathwise:twin-key";
 
@@ -159,7 +167,7 @@ function measured<T>(name: string, fn: () => T): T {
   return v;
 }
 
-export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], initialReference = null, expose = false, detail: detailProp, audience = "founder", review, focus = null, onFocus, plants: plantsOverride = null, ground: groundProp = null, photoFiles = null, groundAbsent = false }: Props) {
+export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], initialReference = null, expose = false, detail: detailProp, audience = "founder", review, focus = null, onFocus, plants: plantsOverride = null, ground: groundProp = null, photoFiles = null, groundAbsent = false, cornView: cornViewProp }: Props) {
   const units = useUnitSystem();
   // A corn twin built with the plants first carries its plants; the dev preview can lay its own plants.json over them.
   const plants = useMemo(() => plantsOverride ?? (twin.corn?.plants ? { points: twin.corn.plants.points, note: twin.corn.plants.note, certainty: twin.corn.plants.certainty, photos: twin.corn.plants.photos } : null), [plantsOverride, twin.corn?.plants]);
@@ -187,8 +195,14 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const intel = useMemo(() => measured("twin:intelligence", () => fieldIntelligence(twin, 4, boundary.corrected)), [twin, boundary.corrected]);
   const scene = useMemo(() => measured("twin:scene", () => buildScene(twin, intel)), [twin, intel]);
   const engine = useMemo(() => new FindingsEngine(twin, intel), [twin, intel]);
-  const [layers, setLayers] = useState<TwinLayers>(() => DETAIL_PRESETS[detailProp && stops.includes(detailProp) ? detailProp : rememberedDetail(stops)] ?? DEFAULT_LAYERS);
+  // A corn twin has the View switch in place of the detail dial (the dial's stops are orchard layers): its layers are
+  // the Simple preset, or Full while the founder's "All layers" tick is on.
+  const [layers, setLayers] = useState<TwinLayers>(() => (twin.corn ? DETAIL_PRESETS[founderView && detailProp === "full" ? "full" : "simple"] : DETAIL_PRESETS[detailProp && stops.includes(detailProp) ? detailProp : rememberedDetail(stops)] ?? DEFAULT_LAYERS));
   const detailStop = detailOf(layers);
+  const [cornView, setCornViewState] = useState<CornViewMode>(() => cornViewProp ?? rememberedCornView());
+  // The founder's "All layers" tick on a corn twin: its own state, so one layer ticked by hand does not read as all.
+  const [allLayers, setAllLayers] = useState(() => !!twin.corn && founderView && detailProp === "full");
+  const chooseCornView = useCallback((v: CornViewMode) => { setCornViewState(v); setSelection(null); try { localStorage.setItem(CORN_VIEW_KEY, v); } catch { /* storage blocked */ } }, []);
   /** A stop on the dial: the preset's layers, remembered for next time. */
   const chooseDetail = useCallback((stop: TwinDetailStop) => { setLayers(DETAIL_PRESETS[stop]); setPanelOpen(stop === "full"); try { localStorage.setItem(DETAIL_KEY, stop); } catch { /* storage blocked */ } }, []);
   const [selection, setSelection] = useState<TwinPick>(null);
@@ -257,6 +271,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const reference = useMemo<ReferenceImagery | null>(() => (refOption ? { url: refOption.url, maxNativeZoom: refOption.maxNativeZoom, opacity: refOpacity, swipe: refSwipe, minZoom: refOption.minZoom, underlay: refOption.underlay ?? null } : null), [refOption, refOpacity, refSwipe]);
   const local = isLocalTwin(twin);
   const corn = !!twin.corn;
+  const cornLook = useMemo(() => cornLookOf(twin.corn, toWorld), [twin.corn]);
   // A corn twin has no orchard weed pass: no pressure heatmap or findings regions (they would read 0 % everywhere).
   // Photo ground: only with the flag on and an overview for this twin; off, nothing below changes the viewer.
   const groundAllowed = usePhotoGround();
@@ -423,7 +438,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
       <style>{`.twin-root .leaflet-top.leaflet-right, .twin-root .leaflet-bottom.leaflet-right { right: var(--twin-right, 0); transition: right .15s ease; } .twin-root .leaflet-control-scale-line { background: rgba(24,26,24,.85); color: #d9ddd6; border-color: #8a8f88; } .twin-root .leaflet-control-attribution { background: rgba(24,26,24,.85); color: #9aa09a; }`}</style>
       <TwinMap scene={scene} layers={effectiveLayers} selection={selection} units={units} onPick={onMapPick} onDetail={setDetail} onStats={setStats}
         onMove={c => setCentre(c)} onReady={h => { handle.current = h; setStats(h.layer.stats); }} reference={reference} onSwipe={setRefSwipe} findings={findings}
-        operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} rowEdits={rowEditsProp} plants={plantsProp} onRowEnd={onRowEnd} photoGround={photoGroundLayer} />
+        operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} rowEdits={rowEditsProp} plants={plantsProp} onRowEnd={onRowEnd} photoGround={photoGroundLayer} cornView={twin.corn && !photosUnder && !reference ? cornView : null} />
 
       {/* The row editor's card for a tapped row and its Undo bar, bottom centre over the map. */}
       {rowEditing && (
@@ -441,7 +456,21 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
       )}
       {/* Left column: the detail dial, Explore Findings, then the layers (Standard and Full). */}
       <div className={`absolute left-3 z-[700] flex flex-col gap-2 overflow-y-auto ${narrow ? "top-14 max-h-[calc(100%-72px)]" : "top-3 max-h-[calc(100%-120px)]"} ${narrow && !panelsOpen ? "hidden" : ""}`}>
-        <div className={`w-[272px] px-3 py-2 ${panel}`} role="group" aria-label="Detail">
+        {twin.corn && (
+          <div className={`w-[272px] px-3 py-2 ${panel}`} role="group" aria-label="View">
+            <span className="text-xs font-semibold text-neutral-100">View</span>
+            <div className="mt-1.5 grid grid-cols-3 gap-0.5 rounded-sm border border-[#3a3f3a] bg-[#111311] p-0.5">
+              {CORN_VIEWS.map(v => (
+                <button key={v} type="button" onClick={() => { chooseCornView(v); setGroundShown(false); }} aria-pressed={cornView === v && !photosUnder} disabled={rowEditing}
+                  className={`rounded-[2px] px-1 py-1.5 text-[11px] disabled:opacity-50 ${cornView === v && !photosUnder ? "bg-[#f0a63a] font-semibold text-[#171a18]" : "text-neutral-300 hover:bg-[#262a26] hover:text-neutral-100"}`}>{CORN_VIEW_LABEL[v]}</button>
+              ))}
+            </div>
+            <p className="mt-1 text-[10px] leading-snug text-neutral-500">{rowEditing ? "Editing rows: the rows and the located plants are shown as marks until you finish." : photosUnder || reference ? "The photographs are the ground now, with the rows and plants marked on them. Pick a view to go back to the drawn field." : CORN_VIEW_HINT[cornView]}</p>
+            {cornView === "realistic" && !rowEditing && !photosUnder && !reference && <p className="mt-1 text-[10px] leading-snug text-neutral-500">{cornLook.sampled ? "Soil and corn colours are this field's own, read from its photographs." : "Standard soil and corn colours: this twin was built before colours were read from the photographs. Building it again gives this field's own."} Each plant's place is measured; its leaves are drawn.</p>}
+            {founderView && <label className="mt-1.5 flex items-start gap-2 border-t border-[#2e322e] pt-1.5 text-[11px] text-neutral-200"><input type="checkbox" className="mt-0.5 accent-[#f0a63a]" checked={allLayers} onChange={e => { setAllLayers(e.target.checked); chooseDetail(e.target.checked ? "full" : "simple"); }} /><span>All layers<span className="block text-[10px] leading-snug text-neutral-500">every layer, the observations not confirmed and the diagnostics (founder only)</span></span></label>}
+          </div>
+        )}
+        {!twin.corn && <div className={`w-[272px] px-3 py-2 ${panel}`} role="group" aria-label="Detail">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-neutral-100">Detail</span>
             {detailStop === "custom" && <span className="text-[10px] text-neutral-400">{DETAIL_LABEL.custom}</span>}
@@ -453,10 +482,10 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
             ))}
           </div>
           <p className="mt-1 text-[10px] leading-snug text-neutral-500">{DETAIL_HINT[detailStop]}</p>
-        </div>
+        </div>}
         {groundAllowed && !groundProp && groundAbsent && <PhotoGroundAbsent />}
         {groundOn && groundProp && <PhotoGroundPanel manifest={groundProp.manifest} shown={groundShown} setShown={setGroundShown} access={photoAccess} setAccess={setPhotoAccess} detail={detailState} onDetail={() => { void requestDetail(); }} />}
-        {twin.corn && <CornFieldPanel twin={twin} corn={twin.corn} layers={layers} setLayers={setLayers} units={units} showPlants={showPlants} setShowPlants={setShowPlants} plantCount={plants?.points.length ?? null} onSelect={(p, lat, lng, across) => { setSelection(p); zoomTo(lat, lng, across); }} />}
+        {twin.corn && <CornFieldPanel twin={twin} corn={twin.corn} layers={layers} setLayers={setLayers} units={units} view={cornView} technical={founderView && allLayers} onSelect={(p, lat, lng, across) => { setSelection(p); zoomTo(lat, lng, across); }} />}
         {twin.corn && founderView && <RowEditPanel edits={rowEdits} editing={rowEditing} onStart={startRowEditing} onDone={finishRowEditing}
           onClearAll={() => { commitRows(NO_ROW_EDITS, "All corrections cleared"); }} hideRows={hideRows} setHideRows={setHideRows}
           plants={plants ? { count: plants.points.length, note: plants.note } : null} showPlants={showPlants} setShowPlants={setShowPlants} photographsOn={!!reference} />}
@@ -613,7 +642,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
         </div>
         <p className="mt-0.5 text-neutral-300">Review-only: these are observations for you to check, not treatment decisions.</p>
         {!local && <p className="mt-0.5 text-neutral-400">{placementText(twin)}</p>}
-        {twin.corn ? <><p className="mt-0.5 text-neutral-400">Click a row, weed or gap to inspect it.{layers.cornUncertain ? "" : " Observations the photographs do not confirm are hidden: the Corn panel counts them and shows them."}</p><CornLegend corn={twin.corn} showPlants={!!plants && showPlants} uncertain={layers.cornUncertain} overPhotos={photosUnder} /></> : <p className="mt-0.5 text-neutral-400">{detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>}
+        {twin.corn ? <><p className="mt-0.5 text-neutral-400">{cornView === "geometry" || rowEditing || photosUnder || !!reference ? "Click a row or a weed to inspect it." : "Zoom in to see each plant. Click a plant or a weed to inspect it."}</p><CornLegend corn={twin.corn} showPlants={!!plants && showPlants} uncertain={layers.cornUncertain} overPhotos={photosUnder} view={rowEditing || photosUnder || reference ? null : cornView} sampled={cornLook.sampled} /></> : <p className="mt-0.5 text-neutral-400">{detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>}
         {local && <p className="mt-0.5 text-amber-300/90">Locally aligned test flight: positions relative to each other, scale estimated from the corn rows. Not on the map.</p>}
         {twin.stats.weedTier === "colour" && <p className="mt-0.5 text-amber-300/90">Weeds by colour rules, not a model: green against the soil around it, crowns left out, strips split at their plants. Yellowing plants and plants under 4 cm are missed; a green shoot at a crown's edge can be counted.</p>}
         {twin.stats.weedTier === "none" && !twin.corn && <p className="mt-0.5 text-neutral-500">No weed pass ran on this twin.</p>}

@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import FieldTwinView, { type ReferenceOption } from "@/components/app/fieldTwin/FieldTwinView";
 import TwinBuilder, { type BuiltTwin } from "@/components/app/fieldTwin/TwinBuilder";
 import { syntheticTwin } from "@/lib/fieldTwin/synthetic";
+import { syntheticCornTwin } from "@/lib/fieldTwin/syntheticCorn";
 import { type LatLngPair, type TwinBundle, parseTwin } from "@/lib/fieldTwin/types";
 import { type GroundManifest, parseGroundManifest } from "@/lib/fieldTwin/photoGround";
 import { photoGroundDevFlag } from "@/lib/fieldTwin/photoGroundFlag";
@@ -26,6 +27,11 @@ export default function FieldTwinDevPreview() {
   const build = params.get("build") === "1";
   // ?synthetic=100000: a generated field of that many observations, for the benchmark script (never a real field).
   const synthetic = Number(params.get("synthetic") ?? 0);
+  // ?syntheticCorn=300000: a generated corn field of that many plants, for the corn views' benchmark (never a real field).
+  const syntheticCorn = Number(params.get("syntheticCorn") ?? 0);
+  // ?view=realistic|simple|geometry: the corn view to open at, else the remembered one.
+  const viewParam = params.get("view");
+  const cornView = viewParam === "realistic" || viewParam === "simple" || viewParam === "geometry" ? viewParam : undefined;
   // ?detail=simple|standard|full: the dial's stop to open at (the screenshot script), else the remembered one.
   const detailParam = params.get("detail");
   // ?audience=participant shows the pilot participant's viewer (no Full stop, no diagnostics, the review bar).
@@ -37,6 +43,7 @@ export default function FieldTwinDevPreview() {
     if (build) return;
     (async () => {
       try {
+        if (syntheticCorn > 0) { setTwin(syntheticCornTwin({ plants: syntheticCorn })); return; }
         if (synthetic > 0) { setTwin(syntheticTwin({ weeds: synthetic })); return; }
         const list = (await (await fetch("/__field-twin/")).json()) as string[];
         const pick = id || list[0];
@@ -74,7 +81,7 @@ export default function FieldTwinDevPreview() {
         } catch { /* no plants for this twin */ }
       } catch (e) { setError((e as Error).message); }
     })();
-  }, [id, synthetic, build]);
+  }, [id, synthetic, syntheticCorn, build]);
   if (error) return <div className="p-6 text-sm text-red-400">{error}</div>;
   if (build && !twin) {
     return (
@@ -91,7 +98,7 @@ export default function FieldTwinDevPreview() {
     : async (i: number) => `/__field-twin/${twin.id}/${twin.atlases[i].file}`;
   return (
     <div className="h-screen w-screen bg-[#1a1c1a]">
-      <FieldTwinView twin={twin} atlasUrl={atlasUrl} referenceOptions={reference} initialReference={photos && !ground ? reference[0]?.id ?? null : null} plants={plants} ground={audience === "founder" ? ground : null} expose detail={detail} audience={audience} review={audience === "participant" ? { twinId: null, disabledReason: "Preview: reviews are saved only for a twin in an account." } : undefined} />
+      <FieldTwinView twin={twin} atlasUrl={atlasUrl} referenceOptions={reference} initialReference={photos && !ground ? reference[0]?.id ?? null : null} plants={plants} ground={audience === "founder" ? ground : null} expose detail={detail} cornView={cornView} audience={audience} review={audience === "participant" ? { twinId: null, disabledReason: "Preview: reviews are saved only for a twin in an account." } : undefined} />
     </div>
   );
 }

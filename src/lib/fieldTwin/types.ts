@@ -159,6 +159,8 @@ export type TwinCorn = {
   plants?: TwinCornPlants;
   /** Plants-first twins (2026-11-14 on): the field rows the stretches in `rows` belong to. */
   fieldRows?: TwinCornFieldRow[];
+  /** The field's soil and corn colours from its photographs (2026-11-19 on), for the Realistic view. */
+  look?: TwinCornLook | null;
   summary: {
     cornRows: number; unconfirmedRows: number; cornRowLengthM: number; offLatticeDropped: number;
     weeds: { confirmed: number; unconfirmed: number; contested: number };
@@ -166,6 +168,24 @@ export type TwinCorn = {
     perPhoto: { weedCandidates: number; standGaps: number; rows: number };
   };
   notes: string[];
+};
+
+/**
+ * What the field looks like, for the Realistic view (2026-11-19 on; absent in older twins): per photograph, the soil
+ * colour and the corn colour read from its pixels (cornColours.ts), placed where the photograph's centre sees the
+ * ground. Colours only: no part of a photograph is kept here. The viewer blends them over the ground.
+ */
+export type TwinRgb = [number, number, number];
+export type TwinCornLook = {
+  version: 1;
+  /** One entry per photograph that gave a colour (either may be null). */
+  samples: { lat: number; lng: number; soil: TwinRgb | null; corn: TwinRgb | null }[];
+  /** The field's own soil and corn colour: the median over its photographs (null when none gave one). */
+  soil: TwinRgb | null; corn: TwinRgb | null;
+  /** A typical plant's span on the ground, metres, from the green piece the photographs measured as typical (null when
+   * they measured none). Every drawn plant takes this size: single plants are not sized. */
+  plantSizeM: number | null;
+  note: string;
 };
 
 export type TwinCornPlants = {
@@ -244,6 +264,12 @@ function checkCorn(c: unknown, atlases: number): string | null {
   if (k.fieldRows != null) {
     if (!isArr(k.fieldRows)) return "field rows are not a list";
     for (const f of k.fieldRows) if (!isNum(f.id) || !isNum(f.plants) || !isNum(f.certain) || !isNum(f.perM) || (f.kind !== "certain" && f.kind !== "geometry")) return `field row ${f.id} is incomplete`;
+  }
+  if (k.look != null) {
+    const L = k.look as Partial<TwinCornLook>;
+    const rgb = (c: unknown) => c === null || (isArr(c) && c.length === 3 && c.every(v => isNum(v) && v >= 0 && v <= 255));
+    if (L.version !== 1 || !isArr(L.samples) || !rgb(L.soil) || !rgb(L.corn) || (L.plantSizeM != null && !(isNum(L.plantSizeM) && L.plantSizeM > 0))) return "the field's colours are not a version 1 record";
+    for (const q of L.samples) if (!q || !isNum(q.lat) || !isNum(q.lng) || !rgb(q.soil) || !rgb(q.corn)) return "a colour sample has no position or a broken colour";
   }
   for (const w of k.weeds) {
     if (!["confirmed", "unconfirmed", "contested"].includes(w.status as string)) return `weed ${w.id} has an unknown status`;

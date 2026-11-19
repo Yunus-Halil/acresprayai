@@ -12,6 +12,7 @@ import { type Detail, type Scene, zoomForSize } from "@/lib/fieldTwin/scene";
 import { TWIN_COLOURS, type TwinLayers } from "@/lib/fieldTwin/style";
 import type { LatLngPair } from "@/lib/fieldTwin/types";
 import { NO_ROW_EDITS, type RowEdits } from "@/lib/fieldTwin/rowEdits";
+import type { CornViewMode } from "@/lib/fieldTwin/cornRender";
 import type { UnitSystem } from "@/lib/units";
 import { type DrawStats, TwinCanvasLayer, type TwinPick } from "./TwinCanvasLayer";
 
@@ -96,6 +97,8 @@ type Props = {
   plants?: { points: LatLngPair[]; show: boolean; certainty?: number[] | null } | null;
   /** Photo ground under the twin (behind its flag), or null. */
   photoGround?: PhotoGroundLayer | null;
+  /** Corn twins: the view (Realistic, Simple, Geometry); null draws the corn as before the views. */
+  cornView?: CornViewMode | null;
 };
 
 const bar = "background:rgba(20,22,20,.86);border:1px solid #333;color:#d9ddd6;";
@@ -122,7 +125,7 @@ const LocateControl = L.Control.extend({
   },
 });
 
-export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null, operational = null, editing = null, onBoundaryEdit, rowEdits = null, plants = null, onRowEnd, photoGround = null }: Props) {
+export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null, operational = null, editing = null, onBoundaryEdit, rowEdits = null, plants = null, onRowEnd, photoGround = null, cornView = null }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const miniEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -234,6 +237,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
   useEffect(() => { layerRef.current?.setEditing(editing); }, [editing, scene]);
   useEffect(() => { layerRef.current?.setRowEdits(rowEdits?.edits ?? NO_ROW_EDITS, !!rowEdits?.active, !!rowEdits?.hideRows, rowEdits?.hover ?? null, rowEdits?.overrides ?? [], rowEdits?.handles ?? null); }, [rowEdits, scene]);
   useEffect(() => { layerRef.current?.setPlants(plants?.points ?? null, plants?.show ?? false, plants?.certainty ?? null); }, [plants, scene]);
+  useEffect(() => { layerRef.current?.setCornView(cornView); }, [cornView, scene]);
 
   // The scale bar follows the account's units.
   useEffect(() => {

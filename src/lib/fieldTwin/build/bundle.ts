@@ -8,7 +8,8 @@ import { COVER_EXGR } from "../../weedVision/fieldRows";
 import { type BoundaryResult, inferBoundaryFromMeasures, toTwinBoundary } from "../boundary";
 import { type EvidenceMeasures, downsampleEvidence, encodeEvidence } from "../boundaryEvidence";
 import { localFrame, pointInRing } from "../intelligence";
-import { FIELD_TWIN_FORMAT, type TwinBundle, type TwinCorn, type TwinCornGap, type TwinCornRow, type TwinCornWeed, type TwinEvidence, type TwinRow } from "../types";
+import { FIELD_TWIN_FORMAT, type TwinBundle, type TwinCorn, type TwinCornGap, type TwinCornLook, type TwinCornRow, type TwinCornWeed, type TwinEvidence, type TwinRow } from "../types";
+import { fieldColour } from "../cornColours";
 import type { CornStageResult } from "./corn";
 import { yieldToEvents } from "./cameras";
 import type { PhotoRead } from "./photos";
@@ -19,6 +20,9 @@ import type { WeedsResult } from "./weeds";
 
 const quant = (v: number[], q: number) => { const s = v.filter(Number.isFinite).sort((a, b) => a - b); return s.length ? s[Math.floor(q * (s.length - 1))] : NaN; };
 const r2 = (x: number) => Math.round(x * 100) / 100;
+/** A drawn plant's span over the square-root size of the green piece its photographs measured as typical: on the
+ * seedling flight the typical piece is 6.8 cm (11.6 px at 0.59 cm), and such a seedling's leaves span about 10 cm. */
+const PLANT_SPAN = 1.5;
 const r3 = (x: number) => Math.round(x * 1000) / 1000;
 const fix = (v: number | null | undefined, d = 3) => (v == null || !Number.isFinite(v) ? null : +v.toFixed(d));
 function thinTo<T>(pts: T[], n: number): T[] { return pts.length <= n ? pts : Array.from({ length: n }, (_, i) => pts[Math.floor((i * pts.length) / n)]); }
@@ -190,6 +194,23 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
       return { id: g.id, status, rowId: g.row, a: llOf(g.a[0], g.a[1]), b: llOf(g.b[0], g.b[1]), lengthM: g.lengthM, reportedBy: g.reportedBy, notReportedBy: g.notReportedBy, plantSeenBy: g.plantSeenBy, why: g.why, evidence };
     });
     const conf = weeds.filter(w => w.status === "confirmed").length, cont = weeds.filter(w => w.status === "contested").length, keptGaps = gaps.filter(g => g.status === "confirmed");
+    // The field's colours for the Realistic view: each photograph's soil and corn colour where its centre sees the
+    // ground, and a typical plant's span from the green piece the reads measured as typical (PLANT_SPAN x its
+    // square-root size: a seedling's leaves reach well past the square its green would fill).
+    const samples: TwinCornLook["samples"] = [];
+    for (const c of cornRes.colours ?? []) {
+      const f = frames.get(c.name), g = f && (c.colours.soil || c.colours.corn) ? pixelToGround(f, f.intrinsics.cx, f.intrinsics.cy) : null;
+      if (g) samples.push({ lat: +g.lat.toFixed(7), lng: +g.lng.toFixed(7), soil: c.colours.soil, corn: c.colours.corn });
+    }
+    const spans: number[] = [];
+    for (const r of cornRes.reads) { const f = frames.get(r.name), t = r.look?.typicalPx, g = f ? groundSampleAt(f, f.intrinsics.cx, f.intrinsics.cy) : null; if (t && g && r.plants.length) spans.push(t * g * PLANT_SPAN); }
+    spans.sort((a, b) => a - b);
+    const look: TwinCornLook | null = samples.length ? {
+      version: 1, samples,
+      soil: fieldColour(samples.map(q => q.soil)), corn: fieldColour(samples.map(q => q.corn)),
+      plantSizeM: spans.length ? fix(Math.min(0.6, Math.max(0.03, spans[spans.length >> 1])), 3) : null,
+      note: "Colours read from the photographs, two per photograph: the soil from a sparse grid of its pixels, the corn from the greenest pixel at up to 48 of the plants located in it. Blended over the ground between the photographs' centres. No part of a photograph is kept.",
+    } : null;
     twinCorn = {
       version: 1,
       engine: cornRes.variant
@@ -205,9 +226,10 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
       ...(P ? { fieldRows: P.rows.map(r => ({ ...r })) } : {}),
       ...(P ? { plants: {
         points: P.points, certainty: P.shown, photos: P.photos,
-        note: "One dot per plant two or more photographs located, placed where they saw it. Filled: a plant on a row, seen by most photographs over it. Ring: probable (on a row, at the field's plant spacing). Grey: seen, on no row. Grey cross: between two rows, not the crop. Located by the photographs, not identified as corn by its look; not a stand count.",
+        note: "One plant per plant two or more photographs located, placed where they saw it; every one is counted. On a row: seen by most photographs over it, or probable (on a row, at the field's plant spacing). Off the rows: seen on no row, or between two rows; drawn in their own colour. Located by the photographs, not identified as corn by its look.",
         summary: { plants: P.summary.plants, certain: P.summary.certain, probable: P.summary.probable, onNoRow: P.summary.onNoRow, betweenRows: P.summary.betweenRows, confirmedM: P.summary.confirmedM, notConfirmedM: P.summary.notConfirmedM, ...(P.summary.alongRowsTwo != null ? { alongRowsTwo: P.summary.alongRowsTwo, alongRowsOne: P.summary.alongRowsOne ?? 0 } : {}) },
       } } : {}),
+      ...(look ? { look } : {}),
       summary: {
         cornRows: fieldRows.filter(r => r.status === "corn").length, unconfirmedRows: fieldRows.filter(r => r.status !== "corn").length,
         cornRowLengthM: P ? P.summary.confirmedM : F.summary.cornRowLengthM, offLatticeDropped: F.summary.offLatticeDropped,
