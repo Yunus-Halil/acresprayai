@@ -11,8 +11,7 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth";
 import { usePilotRole } from "@/lib/pilot/access";
 import { usePhotoGround } from "@/lib/fieldTwin/photoGroundFlag";
-import { CornFinal3Switch } from "@/components/app/fieldTwin/CornFinal3Switch";
-import { useCornPreset } from "@/lib/fieldTwin/cornFinal3Flag";
+import { defaultCornPreset } from "@/lib/fieldTwin/cornFinal3Flag";
 import { stoppedBuildText, unfinishedTrace } from "@/lib/fieldTwin/buildTrace";
 import { type CheckCrop, type CheckFinding, type PhotoCheck, assessPhotographs, readForCheck } from "@/lib/fieldTwin/preflight";
 import { type BuildSessionState, cancelBuild, clearBuildSession, discardBuildSession, retrySave, sessionBusy, startBuildSession, useBuildSession } from "@/lib/fieldTwin/buildSession";
@@ -147,7 +146,6 @@ export default function TwinNew() {
   const { user } = useAuth();
   const founder = usePilotRole() === "founder";
   const photoGround = usePhotoGround();
-  const cornPreset = useCornPreset().preset;
   const analysisAllowed = useAnalysisAllowed();
   const units = useUnitSystem();
   const session = useBuildSession();
@@ -203,7 +201,7 @@ export default function TwinNew() {
     if (!check || !user || !crop) return;
     const keep = new Set(check.usable);
     const usable = files.filter(f => keep.has(f.name));
-    startBuildSession(usable, { name: name.trim() || "Field", crop, weeds: founder ? weeds : "colour", userId: user.id, analysis: analysisAllowed, ...(photoGround ? { photoGround: true } : {}), ...(founder ? { trace: true } : {}), ...(crop === "corn" && cornPreset === "final3" ? { cornPreset: "final3" as const } : {}) });
+    startBuildSession(usable, { name: name.trim() || "Field", crop, weeds: founder ? weeds : "colour", userId: user.id, analysis: analysisAllowed, ...(photoGround ? { photoGround: true } : {}), ...(founder ? { trace: true } : {}), ...(crop === "corn" ? { cornPreset: defaultCornPreset() } : {}) });
   };
 
   if (session.status !== "idle") {
@@ -236,7 +234,6 @@ export default function TwinNew() {
             <span className="font-medium">{label}</span>
           </label>
         ))}
-        {crop === "corn" && <CornFinal3Switch />}
         {founder && crop === "orchard" && (
           <label className="block text-sm">Weed pass (founder)
             <select className="ml-2 rounded border px-2 py-1 text-sm" value={weeds} onChange={e => setWeeds(e.target.value as typeof weeds)}>

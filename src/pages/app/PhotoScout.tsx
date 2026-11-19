@@ -20,8 +20,7 @@ import { type RowCropRead, type RowCropStage, readRowCrop, rowCropOverlay } from
 import { adaptiveAsRead, readCornAdaptive } from "@/lib/rowCrop/adaptive";
 import { type CornV1Read, cornV1AsRead, readCornV1 } from "@/lib/rowCrop/cornV1";
 import { cornPresetSettings } from "@/lib/fieldTwin/cornPreset";
-import { useCornPreset } from "@/lib/fieldTwin/cornFinal3Flag";
-import { CornFinal3Switch } from "@/components/app/fieldTwin/CornFinal3Switch";
+import { defaultCornPreset } from "@/lib/fieldTwin/cornFinal3Flag";
 import { readsContinuousRows, rowCropParamsFor } from "@/lib/rowCrop/params";
 
 type Status = "new" | "decoding" | "running" | "done" | "error";
@@ -77,8 +76,8 @@ function exposeCornRead(name: string, preset: string, v: CornV1Read): CornV1Read
 
 export default function PhotoScout() {
   const units = useUnitSystem();
-  /** The corn preset (lib/fieldTwin/cornPreset.ts): "today" for everyone; "final3" behind the founder's switch. */
-  const cornPreset = useCornPreset().preset;
+  /** The corn preset (lib/fieldTwin/cornPreset.ts): "final3" unless the kill switch is set (cornFinal3Flag.ts). */
+  const cornPreset = defaultCornPreset();
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rowSpacingCm, setRowSpacingCm] = useState(AUTO);
@@ -194,7 +193,6 @@ export default function PhotoScout() {
             <input type="file" accept=".jpg,.jpeg,image/jpeg" multiple className="hidden" onChange={e => { if (e.target.files) void add(e.target.files); e.target.value = ""; }} />
           </label>
 
-          {cropId === "corn" && <CornFinal3Switch className="text-xs text-neutral-300" />}
           <details className="rounded-sm border border-[#222] p-3 space-y-2" style={{ background: "#161616" }}>
             <summary className="text-xs font-semibold cursor-pointer select-none">More options <span className="font-normal text-neutral-500">(not needed: corn is read automatically)</span></summary>
             <Field label="Crop">

@@ -97,7 +97,7 @@ export const CORN_V1 = {
 /**
  * SPEED-1 (2026-11-18): with `coresWhenTouching`, the vivid cores run on a photograph only when its plants are big
  * enough to touch: the median size of the first pass's marks over the row spacing (greenPitchPx, the cores' own scale)
- * at or over `cut`. The cut is halfway between the two photographs the cores were measured on: Levi's flight (typical
+ * at or over `cut`. The cut is halfway between the two photographs the cores were measured on: the private seedling flight (typical
  * plant 9.5 px against 152 px, 0.0625: the plants rarely touch and the cores added little) and 53.JPG (49.6 px against
  * 212.1 px, 0.2339: the cores split touching plants, TOUCH-3). No row spacing, no ratio: the cores need one anyway.
  */

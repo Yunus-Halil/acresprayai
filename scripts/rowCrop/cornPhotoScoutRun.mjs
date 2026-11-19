@@ -26,6 +26,9 @@ for (const f of files) {
   await page.waitForFunction(n => !!window.__photoScout?.[n], name, { timeout: 900000, polling: 1000 });
   const got = await page.evaluate(n => window.__photoScout[n], name);
   writeFileSync(join(OUT, `${name.replace(/\.[^.]+$/, "")}.marks.json`), JSON.stringify(got));
+  // What Photo Scout draws for it (SHIP-1): the page once the read is in.
+  await page.waitForTimeout(3000);
+  await page.screenshot({ path: join(OUT, `${name.replace(/\.[^.]+$/, "")}.png`) });
   console.log(`${name}: preset ${got.preset}, ${got.marks.length} marks, ${got.rows} rows, count withheld ${got.withheld}, ${got.width} x ${got.height}, ${Date.now() - t0} ms`);
 }
 writeFileSync(join(OUT, "errors.json"), JSON.stringify(errors, null, 1));

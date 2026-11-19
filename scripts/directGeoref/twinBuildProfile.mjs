@@ -16,6 +16,7 @@
 // --outputs <dir>: the build's results, for an equivalence check between two builds (outputsDiff.mjs): twin.json,
 // the analysis record (the aligned cameras; the build is asked for one), every file's SHA-256 (plants, atlases, the
 // photo ground's overview when the flag is on). Written to <dir> on this computer only.
+// --shot <file.png>: a screenshot of the built twin in the viewer, and what it drew.
 import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execFile } from "node:child_process";
@@ -24,7 +25,7 @@ import { chromium } from "playwright-core";
 const argv = process.argv.slice(2);
 const arg = (k, d) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
 const DIR = resolve(arg("dir", "directtestimagery")), BASE = arg("base", "http://localhost:8081"), HELPERS = arg("helpers", "");
-const HEAPS = argv.includes("--heaps"), CROP = arg("crop", "corn"), TRACE = arg("trace", ""), OUTFILE = resolve(arg("out", "profile.json")), OUTPUTS = arg("outputs", ""), DEVICE = arg("device", "");
+const SHOT = arg("shot", ""), HEAPS = argv.includes("--heaps"), CROP = arg("crop", "corn"), TRACE = arg("trace", ""), OUTFILE = resolve(arg("out", "profile.json")), OUTPUTS = arg("outputs", ""), DEVICE = arg("device", "");
 const CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const files = readdirSync(DIR).filter(f => /\.jpe?g$/i.test(f)).sort().map(f => join(DIR, f));
 
@@ -116,6 +117,18 @@ if (OUTPUTS) {
     outputs = { dir, files: Object.keys(got.files).length, ground: Object.keys(got.ground).length };
   }
 }
+// --shot <file.png> (SHIP-1): the built twin opened in the viewer the dev preview shows after a build: wait for it to be
+// ready, screenshot it, and keep what it drew (window.__fieldTwin.stats()).
+let shot = null;
+if (SHOT) {
+  try {
+    await page.waitForFunction(() => window.__fieldTwin?.ready === true, null, { timeout: 180_000, polling: 500 });
+    await page.waitForTimeout(4000);
+    await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+    await page.screenshot({ path: resolve(SHOT) });
+    shot = { file: resolve(SHOT), ...(await page.evaluate(() => { const s = window.__fieldTwin.stats(); return { drawn: s.drawn, level: s.level, lastDrawMs: s.lastDrawMs }; })) };
+  } catch (e) { shot = { error: String(e) }; }
+}
 sampling = false; await sampler; heapSampling = false; await heapSampler;
 const peak = k => Math.max(0, ...timeline.map(s => s.ws[k] ?? 0));
 const out = {
@@ -123,7 +136,7 @@ const out = {
   twinReadyMs: twinMs, atlasesDoneMs: atlasesMs, groundReadyMs: groundAt ? groundAt - t0 : null, stagesStartMs: stages, timings: result.report?.timings ?? null,
   corn: result.report?.corn ? { msPerPhoto: result.report.corn.msPerPhoto, ms: result.report.corn.ms } : null,
   peakGB: { total: +(Math.max(...timeline.map(s => Object.values(s.ws).reduce((a, b) => a + b, 0))) / 1e9).toFixed(2), renderer: +(peak("renderer") / 1e9).toFixed(2), gpu: +(peak("gpu") / 1e9).toFixed(2), browser: +(peak("browser") / 1e9).toFixed(2), utility: +(peak("utility") / 1e9).toFixed(2) },
-  outputs, timeline, heaps, error: result.error ?? null, consoleErrors: errors,
+  outputs, shot, timeline, heaps, error: result.error ?? null, consoleErrors: errors,
 };
 writeFileSync(OUTFILE, JSON.stringify(out));
 console.log(JSON.stringify({ ...out, timeline: `${timeline.length} samples` }, null, 1));

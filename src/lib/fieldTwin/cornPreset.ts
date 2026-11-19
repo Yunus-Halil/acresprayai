@@ -3,8 +3,8 @@
 //   "today"   the corn results the app gives on origin/main (e96fabb, 2026-11-18): each photograph read without the
 //             candidates' extents and without the lower bar's candidates, no vivid cores, no emergence guard; the
 //             field's plants placed by the rules as they stood (SEQUENCE_V1, PLANTS_FIRST_V1) with the ground not
-//             asked. Everyone gets this, the founder too unless the founder's flag is on (cornFinal3Flag.ts).
-//   "final3"  the setup frozen for FINAL-3 (cornSetups.ts CORN_CANDIDATE_FINAL3, corn-benchmark FINAL-3.md): the code's
+//             asked. Since SHIP-1 (2026-11-19) only behind the kill switch VITE_CORN_FINAL3=0 (cornFinal3Flag.ts).
+//   "final3"  the app's corn behaviour for everyone since SHIP-1 (2026-11-19). The setup frozen for FINAL-3 (cornSetups.ts CORN_CANDIDATE_FINAL3, corn-benchmark FINAL-3.md): the code's
 //             defaults (extents, lower-bar candidates, the ground, the rules as they are now) with the vivid cores on
 //             (the gentler blurs, measured against the read's own marks), the spacing option for the stricter marks
 //             only (variant A), the emergence guard with the flight's misread rule above 1.5 times the median row

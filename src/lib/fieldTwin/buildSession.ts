@@ -67,7 +67,7 @@ function syncUnloadGuard() {
 
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`);
 
-export type StartOptions = { name: string; crop: BuildCrop; weeds: "model" | "colour" | "none"; helpers?: number; userId: string; /** This account's corn builds make and save their analysis record (analysisAccess.ts). Default: none. */ analysis?: boolean; /** Photo ground for this account (photoGroundFlag.ts): the overview after the twin, and the photographs kept in this tab. Default: none. */ photoGround?: boolean; /** Leave a marker of how far the build got on this device (buildTrace.ts; the founder's device testing). Default: none. */ trace?: boolean; /** A corn build's setup (cornPreset.ts): "final3" only behind the founder's flag (cornFinal3Flag.ts). Default "today". */ cornPreset?: CornPreset };
+export type StartOptions = { name: string; crop: BuildCrop; weeds: "model" | "colour" | "none"; helpers?: number; userId: string; /** This account's corn builds make and save their analysis record (analysisAccess.ts). Default: none. */ analysis?: boolean; /** Photo ground for this account (photoGroundFlag.ts): the overview after the twin, and the photographs kept in this tab. Default: none. */ photoGround?: boolean; /** Leave a marker of how far the build got on this device (buildTrace.ts; the founder's device testing). Default: none. */ trace?: boolean; /** A corn build's setup (cornPreset.ts); default: cornFinal3Flag.ts defaultCornPreset ("final3" unless killed). */ cornPreset?: CornPreset };
 
 /** Start a build of `files`. Only one at a time: a running build must finish, fail or be cancelled first. */
 export function startBuildSession(files: File[], o: StartOptions): void {
@@ -82,7 +82,7 @@ export function startBuildSession(files: File[], o: StartOptions): void {
   set({ status: "building", id, name: o.name, crop: o.crop, photographs: files.length, startedAt, progress: null, stagesDone: [], result: null, record: null, save: null, error: null, buildMs: null });
   track("twin_build_started", { twinId: id, counts: { photographs: files.length }, detail: { crop: o.crop } });
   try {
-    run = startTwinBuild(files, { name: o.name, id, weeds: o.crop === "corn" ? "none" : o.weeds, helpers: o.helpers, crop: o.crop, ...(analysisWanted(o.crop) ? { analysis: true } : {}), ...(o.photoGround ? { photoGround: true } : {}), ...(o.cornPreset === "final3" ? { cornPreset: "final3" as const } : {}) }, {
+    run = startTwinBuild(files, { name: o.name, id, weeds: o.crop === "corn" ? "none" : o.weeds, helpers: o.helpers, crop: o.crop, ...(analysisWanted(o.crop) ? { analysis: true } : {}), ...(o.photoGround ? { photoGround: true } : {}), ...(o.cornPreset ? { cornPreset: o.cornPreset } : {}) }, {
       onProgress: p => {
         if (state.status !== "building") return;
         if (tracing) traceProgress(p.stage);

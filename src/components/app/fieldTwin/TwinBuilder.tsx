@@ -9,8 +9,7 @@ import { type BuildCrop, type BuildProgress, type BuildStage, stagesFor } from "
 import type { TwinBundle, TwinCorn } from "@/lib/fieldTwin/types";
 import { cornFieldRows } from "@/lib/fieldTwin/cornView";
 import { usePhotoGround } from "@/lib/fieldTwin/photoGroundFlag";
-import { useCornPreset } from "@/lib/fieldTwin/cornFinal3Flag";
-import { CornFinal3Switch } from "./CornFinal3Switch";
+import { defaultCornPreset } from "@/lib/fieldTwin/cornFinal3Flag";
 import { fetchHealth } from "@/lib/weedVision/client";
 import { weedModelAvailable } from "@/lib/weedVision/flag";
 
@@ -48,7 +47,6 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false, audience
   const [result, setResult] = useState<BuiltTwin | null>(null);
   const started = useRef<number>(0);
   const photoGround = usePhotoGround();
-  const accountPreset = useCornPreset().preset;
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
 
@@ -80,11 +78,11 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false, audience
       // The benchmark script only (a development build, ?device=mobile|memory4|memory2): build as concurrency.ts would on
       // a tablet or a device with little memory, to measure that plan on this computer.
       const sim = expose ? params.get("device") : null;
-      // The corn preset (cornPreset.ts): the account's (the founder's switch; VITE_CORN_FINAL3=1 in a development build).
-      const cornPreset = accountPreset;
+      // The corn preset (cornPreset.ts): "final3" unless the kill switch is set (cornFinal3Flag.ts).
+      const cornPreset = defaultCornPreset();
       const cores = navigator.hardwareConcurrency ?? null;
       const device = sim === "mobile" ? { cores, memoryGB: null, mobile: true } : sim === "memory4" ? { cores, memoryGB: 4, mobile: false } : sim === "memory2" ? { cores, memoryGB: 2, mobile: false } : undefined;
-      r = startTwinBuild(files, { name: fieldName, weeds: crop === "corn" ? "none" : weeds, helpers, crop, ...(device ? { device } : {}), ...(analysis ? { analysis: true } : {}), ...(photoGround ? { photoGround: true } : {}), ...(crop === "corn" && cornPreset === "final3" ? { cornPreset: "final3" as const } : {}) }, {
+      r = startTwinBuild(files, { name: fieldName, weeds: crop === "corn" ? "none" : weeds, helpers, crop, ...(device ? { device } : {}), ...(analysis ? { analysis: true } : {}), ...(photoGround ? { photoGround: true } : {}), ...(crop === "corn" ? { cornPreset } : {}) }, {
         // The benchmark's timeline (a development build only): when each stage was first heard of.
         onProgress: p => { if (expose) { const w = window as unknown as { __twinStages?: Record<string, number> }; w.__twinStages ??= {}; w.__twinStages[p.stage] ??= Date.now(); } setProgress(prev => { if (prev && prev.stage !== p.stage) setDoneStages(d => (d.includes(prev.stage) ? d : [...d, prev.stage])); return p; }); },
         onLog: line => setLines(l => [...l.slice(-11), line]),

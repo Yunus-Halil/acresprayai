@@ -51,7 +51,7 @@ function currentEntryScripts(): string[] {
   return [...document.querySelectorAll<HTMLScriptElement>("script[type=module][src]")].map(s => new URL(s.src).pathname);
 }
 
-export function startTwinBuild(files: File[], options: { name: string; id?: string; weeds: "model" | "colour" | "none"; helpers?: number; crop?: "orchard" | "corn"; analysis?: boolean; photoGround?: boolean; /** A corn build's setup (../cornPreset.ts); default "today". */ cornPreset?: CornPreset; /** Default: this page's own (concurrency.ts). */ device?: DeviceHints }, hooks: { onProgress?: (p: BuildProgress) => void; onLog?: (line: string) => void } = {}): BuildRun {
+export function startTwinBuild(files: File[], options: { name: string; id?: string; weeds: "model" | "colour" | "none"; helpers?: number; crop?: "orchard" | "corn"; analysis?: boolean; photoGround?: boolean; /** A corn build's setup (../cornPreset.ts); default: the worker's own (../cornFinal3Flag.ts defaultCornPreset). */ cornPreset?: CornPreset; /** Default: this page's own (concurrency.ts). */ device?: DeviceHints }, hooks: { onProgress?: (p: BuildProgress) => void; onLog?: (line: string) => void } = {}): BuildRun {
   if (typeof Worker === "undefined") throw new Error("this browser cannot run the build off the main thread (no Worker)");
   const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
   let settled = false;
@@ -92,7 +92,7 @@ export function startTwinBuild(files: File[], options: { name: string; id?: stri
     worker.onerror = e => { void workerLoadFailure(e.message).then(m => fail(new Error(m))); };
   });
   // The page tells the worker what it knows of the device: a worker cannot see a touch screen, and iPadOS Safari calls itself a Mac.
-  const req: BuildWorkerRequest = { type: "build", files, name: options.name, id: options.id, weeds: options.weeds, helpers: options.helpers, device: options.device ?? deviceHints(), crop: options.crop, ...(options.analysis ? { analysis: true } : {}), ...(options.photoGround ? { photoGround: true } : {}), ...(options.cornPreset === "final3" ? { cornPreset: "final3" as const } : {}) };
+  const req: BuildWorkerRequest = { type: "build", files, name: options.name, id: options.id, weeds: options.weeds, helpers: options.helpers, device: options.device ?? deviceHints(), crop: options.crop, ...(options.analysis ? { analysis: true } : {}), ...(options.photoGround ? { photoGround: true } : {}), ...(options.cornPreset ? { cornPreset: options.cornPreset } : {}) };
   worker.postMessage(req);
   return { done, cancel: () => { if (!settled) { const c: BuildWorkerRequest = { type: "cancel" }; worker.postMessage(c); } } };
 }
