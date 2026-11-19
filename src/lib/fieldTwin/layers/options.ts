@@ -9,6 +9,9 @@
 //   tooCloseFromSpread  L6 (phase 3b): the too-close limit from L5's spacing spread, in place of half a plant spacing
 //   secondLook          L7 (phase 4): where L6 and L5 disagree, the spot read again in the photographs over it
 //   unsureList          L8 (phase 4): the dots the views disagree on, listed with their photographs (recorded only)
+//   learnedGreen        L1 (COLOUR-1, 2026-11-18): the green view learned per photograph (layers/l1Learned.ts): the
+//                       corn and soil colours of the strict pass's sure plants and the soil away from them; L2 reads its
+//                       mask in place of the fixed thresholds' (everything after L2 as before)
 export const LAYERS = {
   groundFromObvious: false,
   coresBySize: false,
@@ -28,5 +31,6 @@ export const LAYERS = {
    * that look at the spot, and at least this share of them, show green there that is not a neighbour's. */
   secondLookMinShow: 2, secondLookShowShare: 0.5,
   unsureList: false,
+  learnedGreen: false,
 };
 export type LayerOptions = typeof LAYERS;

@@ -17,7 +17,8 @@
 //
 // Options (the inspector's switches; without them every option is as the code has it):
 //   --read  { "cores": bool, "coresReference": "marks"|"strongest", "countGuard": bool, "rowSpans": bool,
-//             "coresBySize": "self" | <sizes.json: { photograph: typical plant px }> }   (layers phase 3a, L1)
+//             "coresBySize": "self" | <sizes.json: { photograph: typical plant px }>,   (layers phase 3a, L1)
+//             "learnedGreen": bool }   (L1, COLOUR-1: the green view learned per photograph, layers/l1Learned.ts)
 //   --field { "sequence": {...SEQUENCE}, "placing": {...PLANTS_FIRST}, "free": bool, "fieldSeed": bool, "groundAsked": bool,
 //             "layers": {...LAYERS} }   (layers/options.ts: groundFromObvious, tooCloseFromSpread, secondLook, unsureList)
 //   --photos <dir>  the flight's photographs, for the second look (L7 reads them again); field and score jobs
@@ -35,6 +36,7 @@ import { fieldProfile, readsProfile } from "../../src/lib/fieldTwin/layers/l5Pro
 import { LAYERS, type LayerOptions } from "../../src/lib/fieldTwin/layers/options";
 import { type Looker, secondLookOnField } from "../../src/lib/fieldTwin/layers/l7SecondLook";
 import { unsureList } from "../../src/lib/fieldTwin/layers/l8Report";
+import { learnedGreenView } from "../../src/lib/fieldTwin/layers/l1Learned";
 import { CORN_CORES, CORN_COUNT_GUARD, cornV1AsRead, cornV1CoresAsked, cornV1PlantCache, cornV1RowCover, greenPitchPx, readCornV1 } from "../../src/lib/rowCrop/cornV1";
 import { GREEN_POINTS, plantPointsFromGreen } from "../../src/lib/rowCrop/greenPoints";
 import { coresView, vividGreen } from "../../src/lib/rowCrop/greenCores";
@@ -48,13 +50,14 @@ const ROOT = resolve(__dirname, "../..");
 const argv = process.argv.slice(2), job = argv[0];
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? null : argv[i + 1]; };
 const arg = (k: string) => { const v = opt(k); if (v == null) throw new Error(`--${k} is required`); return v; };
-type ReadOptions = { cores?: boolean; coresReference?: "marks" | "strongest"; countGuard?: boolean; rowSpans?: boolean; coresBySize?: string };
+type ReadOptions = { cores?: boolean; coresReference?: "marks" | "strongest"; countGuard?: boolean; rowSpans?: boolean; coresBySize?: string; learnedGreen?: boolean };
 type FieldOptions = { sequence?: Partial<typeof SEQUENCE>; placing?: Partial<typeof PLANTS_FIRST>; free?: boolean; fieldSeed?: boolean; groundAsked?: boolean; layers?: Partial<LayerOptions> };
 const READ: ReadOptions = opt("read") ? JSON.parse(opt("read")!) : {}, FOPT: FieldOptions = opt("field") ? JSON.parse(opt("field")!) : {};
 // The read's options are set where the code keeps them, for this process only (as a flipped default would).
 if (READ.cores != null) CORN_CORES.on = READ.cores;
 if (READ.coresReference) CORN_CORES.reference = READ.coresReference;
 if (READ.countGuard != null) CORN_COUNT_GUARD.on = READ.countGuard;
+if (READ.learnedGreen != null) LAYERS.learnedGreen = READ.learnedGreen;
 const pixelsOf = (file: string) => { const img = decodeImage(new Uint8Array(readFileSync(file))); return { width: img.width, height: img.height, rgba: new Uint8ClampedArray(img.data.buffer, img.data.byteOffset, img.data.byteLength) }; };
 /** A photograph's file: its name in the folder, or (a record whose names join folder and file) the first "_" as a folder. */
 const fileOf = (dir: string, name: string) => [name, name.replace("_", "/")].flatMap(n => [".JPG", ".jpg", ".jpeg", ".JPEG"].map(e => join(dir, n + e))).find(existsSync);
@@ -66,7 +69,8 @@ const SIZES: Record<string, number> | null = READ.coresBySize && READ.coresBySiz
 const sizeFor = (name: string): number | "self" | null => (!READ.coresBySize ? null : SIZES ? SIZES[name] ?? null : "self");
 const flightRead = (name: string, px: ReturnType<typeof pixelsOf>, gsd: number | null): CornPhotoRead =>
   READ.rowSpans === false ? compactCornRead(name, readCornV1(px, rowCropParamsFor(cropProfileFor("corn")!, gsd), { enteredCrop: "corn", ...(READ.coresBySize ? { coresSizePx: sizeFor(name) } : {}) }), 1) : cornPhotoRead(name, px, gsd, false, sizeFor(name));
-/** L7's view of a photograph again: its pixels and the green view the plant read used (the read says which mask). */
+/** L7's view of a photograph again: its pixels and the green view the plant read used (the read says which mask; a
+ * read with the learned view is looked at again through the fixed mask: L7 has not been tried with the learned one). */
 const lookerFor = (dir: string | null, reads: CornPhotoRead[]): Looker | null => {
   if (!dir) return null;
   const readOf = new Map(reads.map(r => [r.name, r]));
@@ -188,17 +192,26 @@ if (job === "photo") {
   // The read: a flight's as a build makes it (rowSpans, unless switched off), a single photograph's as Photo Scout makes it.
   const v = readCornV1(px, rowCropParamsFor(cropProfileFor("corn")!, gsd), { enteredCrop: "corn", ...(frame && READ.rowSpans !== false ? { rowSpans: true } : {}), ...(READ.coresBySize ? { coresSizePx: sizeFor(NAME) } : {}) });
   const tRead = Date.now(), ad = v.green;
-  // The plant read's own marks, then the same with the cores asked (the cores option's own settings).
-  const first = plantPointsFromGreen(px, GREEN_POINTS, cornV1PlantCache(px, ad, seedlingCache(px, SEEDLING_GREEN)), null);
+  // The plant read's own marks, then the same with the cores asked (the cores option's own settings). With the learned
+  // green view (L1) the mask L2 read is the learned one, made again here from the fixed one exactly as the read made it.
+  const fixedCache = cornV1PlantCache(px, ad, seedlingCache(px, SEEDLING_GREEN)), LV = LAYERS.learnedGreen ? learnedGreenView(px, fixedCache) : null, usedCache = LV ? LV.cache : fixedCache;
+  const first = plantPointsFromGreen(px, GREEN_POINTS, usedCache, null);
   // Phase 3a: with the cores by size the read's own blurs (its record), else the row spacing's.
-  const cr = v.plants.coresRef, asked = READ.coresBySize && cr ? { finePx: cr.finePx, widePx: cr.widePx, share: CORN_CORES.share, reference: CORN_CORES.reference, factor: CORN_CORES.factor } : cornV1CoresAsked(ad), withCores = asked ? plantPointsFromGreen(px, GREEN_POINTS, cornV1PlantCache(px, ad, seedlingCache(px, SEEDLING_GREEN)), asked) : null;
+  const cr = v.plants.coresRef, asked = READ.coresBySize && cr ? { finePx: cr.finePx, widePx: cr.widePx, share: CORN_CORES.share, reference: CORN_CORES.reference, factor: CORN_CORES.factor } : cornV1CoresAsked(ad), withCores = asked ? plantPointsFromGreen(px, GREEN_POINTS, usedCache, asked) : null;
   // Self-check: the read's marks are the first pass (cores off) or the pass with the cores (cores on).
   const readMarks = v.plants.points, expect = CORN_CORES.on && withCores ? withCores.points : first.points;
   const marksEqual = v.count?.withheld ? null : readMarks.length === expect.length && readMarks.every((p, i) => p.x === expect[i].x && p.y === expect[i].y);
-  // The green view: the mask the plant read used, green where it is green, clear elsewhere.
-  const mask = sharedSeedlingMask(cornV1PlantCache(px, ad, seedlingCache(px, SEEDLING_GREEN)), px), gr = new Uint8Array(W * H * 4); let green = 0;
+  // The green view: the fixed thresholds' mask, green where it is green, clear elsewhere.
+  const mask = sharedSeedlingMask(fixedCache, px), gr = new Uint8Array(W * H * 4); let green = 0;
   for (let i = 0; i < W * H; i++) if (mask[i]) { gr[i * 4] = 40; gr[i * 4 + 1] = 255; gr[i * 4 + 2] = 80; gr[i * 4 + 3] = 255; green++; }
   writeFileSync(join(OUT, "green.png"), encodePng({ width: W, height: H, data: gr }));
+  // The learned green view (L1, when on): its mask, strong green bright, weak green it joined dimmer; and where the
+  // fixed mask is green but the learned one is not, red.
+  if (LV) {
+    const lm = sharedSeedlingMask(LV.cache, px), lg = new Uint8Array(W * H * 4);
+    for (let i = 0; i < W * H; i++) { const q = i * 4; if (lm[i]) { const st = LV.strong[i]; lg[q] = st ? 60 : 20; lg[q + 1] = st ? 255 : 170; lg[q + 2] = st ? 90 : 60; lg[q + 3] = 255; } else if (mask[i]) { lg[q] = 255; lg[q + 1] = 50; lg[q + 2] = 50; lg[q + 3] = 255; } }
+    writeFileSync(join(OUT, "learned.png"), encodePng({ width: W, height: H, data: lg }));
+  }
   // The cores view: its strength, white at three times the bar the option uses (none without a row spacing).
   let coresMeta: Record<string, unknown> | null = null;
   if (asked && withCores) {
@@ -217,7 +230,7 @@ if (job === "photo") {
     firstPass: first.points.map(p1), typicalPx: first.typicalPx, coresAdded: withCores ? withCores.points.slice(first.points.length).map(p1) : [],
     // L2: which views found each mark (the pass with the cores asked, else the first pass).
     foundPoints: (withCores ?? first).points.map(p1), foundBy: Array.from((withCores ?? first).foundBy ?? []),
-    cores: coresMeta, coresOn: CORN_CORES.on, readMarks: readMarks.length, readMarksAreTheExpectedPass: marksEqual, marks: readMarks.map(p1),
+    cores: coresMeta, coresOn: CORN_CORES.on, learnedOn: LAYERS.learnedGreen, learned: LV ? LV.record : null, readMarks: readMarks.length, readMarksAreTheExpectedPass: marksEqual, marks: readMarks.map(p1),
     candidates: v.plants.low ? v.plants.low.length : null, rows: v.rows.map(r => ({ points: r.points, identity: r.identity, evidence: r.evidence, plants: r.plants })),
     guard: { on: CORN_COUNT_GUARD.on, share: cover.share, cut: CORN_COUNT_GUARD.cut, withheld: v.count?.withheld ?? null },
     summary: v.summary, notes: v.notes,

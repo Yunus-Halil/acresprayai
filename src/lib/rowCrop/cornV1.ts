@@ -35,6 +35,8 @@
 // Decision support only: nothing here decides a treatment.
 import { CORN_CORES, coresAsked, photoViews } from "../fieldTwin/layers/l1Views";
 import { findMarks } from "../fieldTwin/layers/l2Find";
+import { type LearnedRecord, learnedGreenView } from "../fieldTwin/layers/l1Learned";
+import { LAYERS } from "../fieldTwin/layers/options";
 import type { PhotoPixels } from "../photoScout/pattern";
 import { adaptiveAsRead, readCornAdaptive, type AdaptiveRead, type AdaptiveRow } from "./adaptive";
 import { type CoresAsked, GREEN_POINTS, ROW_POINTS, plantPointsFromGreen, rowPlantPoints } from "./greenPoints";
@@ -185,7 +187,9 @@ export type CornV1Read = {
     /** Read only (2026-11-18, for the field profile): per point what it looks like (greenPoints.ts GreenPoints.look),
      * the photograph's typical plant piece (greenPoints.ts typicalPx, photo pixels), and the cores' reference as this
      * photograph measured it (null where the cores were not asked or the read holds no row spacing). */
-    look?: { sizePx: Float32Array; green: Float32Array; solidity: Float32Array }; typicalPx?: number; plantMask?: "seedlings" | "v1";
+    look?: { sizePx: Float32Array; green: Float32Array; solidity: Float32Array }; typicalPx?: number; plantMask?: "seedlings" | "v1" | "learned";
+    /** With the learned green view (LAYERS.learnedGreen, L1): what it learned of this photograph (layers/l1Learned.ts). */
+    learned?: LearnedRecord | null;
     coresRef?: { reference: "strongest" | "marks"; strongest: number; medianOnMarks: number | null; onMarks: number | null; threshold: number | null; finePx: number; widePx: number } | null;
     /** With `rowSpans`: per candidate, how far its green reaches along the photograph's rows either way of it (pixels,
      * back and forward), and the rows' direction in the photograph (unit vector). Absent when the photograph made no row. */
@@ -229,6 +233,8 @@ export type CornV1Options = RowCropOptions & {
   coresSizePx?: number | "self" | null;
   /** The emergence guard (CORN_COUNT_GUARD): true or false for this read, whatever CORN_COUNT_GUARD.on says. */
   countGuard?: boolean;
+  /** The learned green view (L1, LAYERS.learnedGreen when not given): L2 reads its mask in place of the fixed one. */
+  learnedGreen?: boolean;
 };
 
 const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[s.length >> 1] : null; };
@@ -475,7 +481,10 @@ export function readCornV1(px: PhotoPixels, params: RowCropParams, opts: CornV1O
   const ad = readCornAdaptive(px, params, { ...opts, seedlings });
   const t1 = Date.now();
   // L1 the photograph's views, L2 the marks found in them (fieldTwin/layers): unless a detector gives the points.
-  const plantCache = opts.detectorPoints ? null : cornV1PlantCache(px, ad, seedlings);
+  const fixedCache = opts.detectorPoints ? null : cornV1PlantCache(px, ad, seedlings);
+  // The learned green view (L1, off by default): learned from the strict pass over the fixed mask; L2 reads its mask.
+  const learned = fixedCache && !opts.baselineSeedlings && (opts.learnedGreen ?? LAYERS.learnedGreen) ? learnedGreenView(px, fixedCache) : null;
+  const plantCache = learned ? learned.cache : fixedCache;
   let sizePx = typeof opts.coresSizePx === "number" ? opts.coresSizePx : null;
   if (opts.coresSizePx === "self" && plantCache) { const s = Array.from(findMarks(px, photoViews(px, { seedlings, plant: plantCache, pitchPx: greenPitchPx(ad) }, false)).look?.sizePx ?? []).filter(Number.isFinite).sort((a, b) => a - b); sizePx = s.length ? s[s.length >> 1] : null; }
   const views = plantCache ? photoViews(px, { seedlings, plant: plantCache, pitchPx: greenPitchPx(ad), sizePx }, opts.baselineSeedlings ? false : opts.cores ?? CORN_CORES.on, opts.coresReference ?? CORN_CORES.reference) : null;
@@ -484,7 +493,7 @@ export function readCornV1(px: PhotoPixels, params: RowCropParams, opts: CornV1O
   const t2 = Date.now();
   const v = fuseCornV1(ad, points, params, { enteredCrop: opts.enteredCrop ?? params.crop?.id ?? null, source: opts.detectorPoints ? "detector" : "green", greenMs: t1 - t0, plantsMs: t2 - t1 });
   if (found?.foundBy) v.plants.foundBy = found.foundBy;
-  if (found) { v.plants.look = found.look; v.plants.typicalPx = found.typicalPx; v.plants.plantMask = views!.plant === seedlings ? "seedlings" : "v1"; v.plants.coresRef = found.coresInfo && views?.cores ? { reference: found.coresInfo.reference, strongest: found.coresInfo.strongest, medianOnMarks: found.coresInfo.medianOnMarks ?? null, onMarks: found.coresInfo.onMarks ?? null, threshold: found.coresInfo.threshold, finePx: views.cores.asked.finePx, widePx: views.cores.asked.widePx } : null; }
+  if (found) { v.plants.look = found.look; v.plants.typicalPx = found.typicalPx; v.plants.plantMask = learned ? "learned" : views!.plant === seedlings ? "seedlings" : "v1"; if (fixedCache && !opts.baselineSeedlings && (opts.learnedGreen ?? LAYERS.learnedGreen)) v.plants.learned = learned?.record ?? null; v.plants.coresRef = found.coresInfo && views?.cores ? { reference: found.coresInfo.reference, strongest: found.coresInfo.strongest, medianOnMarks: found.coresInfo.medianOnMarks ?? null, onMarks: found.coresInfo.onMarks ?? null, threshold: found.coresInfo.threshold, finePx: views.cores.asked.finePx, widePx: views.cores.asked.widePx } : null; }
   // The emergence guard: past the cut the plant count is withheld; the rows, gaps and weed candidates above stand.
   if (opts.baselineSeedlings ? false : opts.countGuard ?? CORN_COUNT_GUARD.on) {
     const c = cornV1RowCover(px, v, seedlings), withheld = c.share != null && c.share > CORN_COUNT_GUARD.cut;

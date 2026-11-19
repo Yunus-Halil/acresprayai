@@ -42,6 +42,7 @@ import { fromEnu, toEnu, type LatLngAlt } from "../sourceFrames/odm";
 import { frameFootprint, groundSampleAt, groundToPixel, pixelToGround, type GeorefFrame } from "../directGeoref/projection";
 import { reconcile, type Observation } from "../directGeoref/reconcile";
 import type { CornV1Read } from "../rowCrop/cornV1";
+import type { LearnedRecord } from "./layers/l1Learned";
 
 export const CORN_FIELD_VERSION = 3;
 
@@ -169,7 +170,10 @@ export type CornPhotoRead = {
    * photograph measured it (null where the cores were not asked). Absent in reads made before it. */
   look?: { typicalPx: number | null; size: (number | null)[]; green: (number | null)[]; solidity: (number | null)[];
     /** Per plant, which views found it (L2: 1 the green, 2 a core, 3 both), and which mask the plant read used. */
-    foundBy?: number[]; plantMask?: "seedlings" | "v1";
+    foundBy?: number[]; plantMask?: "seedlings" | "v1" | "learned";
+    /** With the learned green view (L1, LAYERS.learnedGreen): what it learned (layers/l1Learned.ts), without the soil
+     * samples' positions; null where the photograph gave too few samples (the fixed mask stood). Absent with it off. */
+    learned?: Omit<LearnedRecord, "soilPoints"> | null;
     cores: { reference: "strongest" | "marks"; strongest: number; medianOnMarks: number | null; onMarks: number | null; threshold: number | null; finePx: number; widePx: number } | null };
 };
 
@@ -214,6 +218,7 @@ function lookOf(v: CornV1Read): NonNullable<CornPhotoRead["look"]> {
     typicalPx: r3(v.plants.typicalPx ?? NaN, 10),
     size: ok ? Array.from(L!.sizePx, x => r3(x, 10)) : [], green: ok ? Array.from(L!.green, x => r3(x, 1000)) : [], solidity: ok ? Array.from(L!.solidity, x => r3(x, 100)) : [],
     foundBy: ok && v.plants.foundBy && v.plants.foundBy.length === n ? Array.from(v.plants.foundBy) : [], plantMask: v.plants.plantMask ?? "seedlings",
+    ...(v.plants.learned !== undefined ? { learned: v.plants.learned ? (({ soilPoints: _s, ...rest }) => rest)(v.plants.learned) : null } : {}),
     cores: cr ? { reference: cr.reference, strongest: r3(cr.strongest, 1e5) ?? 0, medianOnMarks: cr.medianOnMarks == null ? null : r3(cr.medianOnMarks, 1e5), onMarks: cr.onMarks, threshold: cr.threshold == null ? null : r3(cr.threshold, 1e5), finePx: r3(cr.finePx, 100) ?? 0, widePx: r3(cr.widePx, 100) ?? 0 } : null,
   };
 }
