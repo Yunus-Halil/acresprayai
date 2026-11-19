@@ -51,6 +51,8 @@ const FieldTwinDevPreview = import.meta.env.DEV ? lazy(() => import("./pages/app
 const AgreementDevPreview = import.meta.env.DEV ? lazy(() => import("./pages/app/AgreementDevPreview.tsx")) : null;
 // Development only: the corn inspector (each step of the corn algorithm drawn on a photograph; the dev server runs the code).
 const CornInspector = import.meta.env.DEV ? lazy(() => import("./pages/app/CornInspector.tsx")) : null;
+/** Photo Scout without signing in, for the benchmark scripts (a development build only; the app's /app/photo is the founder's). */
+const PhotoScoutDev = import.meta.env.DEV ? lazy(() => import("./pages/app/PhotoScout.tsx")) : null;
 
 const queryClient = new QueryClient();
 
@@ -84,6 +86,7 @@ const App = () => (
             {FieldTwinDevPreview && <Route path="/dev/field-twin" element={<Suspense fallback={null}><FieldTwinDevPreview /></Suspense>} />}
             {AgreementDevPreview && <Route path="/dev/agreement" element={<Suspense fallback={null}><AgreementDevPreview /></Suspense>} />}
             {CornInspector && <Route path="/dev/corn-inspector" element={<Suspense fallback={null}><CornInspector /></Suspense>} />}
+            {PhotoScoutDev && <Route path="/dev/photo-scout" element={<Suspense fallback={null}><PhotoScoutDev /></Suspense>} />}
             {/* The founder's pilot admin panel. Founder-only here and in pilot-admin. */}
             <Route path="/admin/pilot" element={<PilotRoute>{founder(<PilotAdmin />)}</PilotRoute>} />
             <Route path="/admin/pilot/people/:id" element={<PilotRoute>{founder(<PilotAdmin />)}</PilotRoute>} />

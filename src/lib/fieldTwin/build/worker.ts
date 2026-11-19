@@ -1,6 +1,7 @@
 // The twin build off the main thread: a Web Worker that takes the photographs (Files) and the options, runs the
 // pipeline over browserPhotos, calls the local weed model through the dev proxy when asked, and posts progress,
 // log lines and the result (twin.json and the atlases as Blobs). One worker per build; the page terminates it to stop.
+import type { CornPreset } from "../cornPreset";
 import { type DetectOptions, detectWeeds } from "../../weedVision/client";
 import { browserCodec, groupPhotoFiles } from "./browserPhotos";
 import { detectionKey, indexedDbStore, sha256Hex } from "./detectionCache";
@@ -9,7 +10,7 @@ import { workerPool } from "./pool";
 import { type BuildReport, buildFieldTwin } from "./pipeline";
 import { BuildCancelled, type BuildProgress } from "./types";
 
-export type BuildWorkerRequest = { type: "build"; files: File[]; name: string; id?: string; /** The crop the operator entered (default orchard). */ crop?: "orchard" | "corn"; /** The weed pass: the model through the local service, the colour rules, or none. */ weeds: "model" | "colour" | "none"; /** Model tier: nearest views per ground cell to run (0, the default: every tile; measured on the apricot flight, 1024 px tiles prune only 8 %). */ views?: number; /** Helper workers (default: by the device, concurrency.ts; 1 = none). */ helpers?: number; /** What the page knows of the device (a worker cannot see a touch screen); default: the worker's own navigator. */ device?: DeviceHints; detect?: DetectOptions; /** A corn build: also post the analysis record (../analysis.ts). */ analysis?: boolean; /** Photo ground (behind its flag): the overview after the atlases. */ photoGround?: boolean } | { type: "cancel" };
+export type BuildWorkerRequest = { type: "build"; files: File[]; name: string; id?: string; /** The crop the operator entered (default orchard). */ crop?: "orchard" | "corn"; /** The weed pass: the model through the local service, the colour rules, or none. */ weeds: "model" | "colour" | "none"; /** Model tier: nearest views per ground cell to run (0, the default: every tile; measured on the apricot flight, 1024 px tiles prune only 8 %). */ views?: number; /** Helper workers (default: by the device, concurrency.ts; 1 = none). */ helpers?: number; /** What the page knows of the device (a worker cannot see a touch screen); default: the worker's own navigator. */ device?: DeviceHints; detect?: DetectOptions; /** A corn build: also post the analysis record (../analysis.ts). */ analysis?: boolean; /** Photo ground (behind its flag): the overview after the atlases. */ photoGround?: boolean; /** A corn build's setup (../cornPreset.ts): "today" unless the founder's flag asks "final3". */ cornPreset?: CornPreset } | { type: "cancel" };
 export type BuildWorkerMessage =
   | { type: "progress"; progress: BuildProgress }
   | { type: "log"; line: string }
@@ -58,7 +59,7 @@ self.onmessage = async (e: MessageEvent<BuildWorkerRequest>) => {
     const helpers = plan.helpers;
     pool = helpers > 1 ? workerPool(helpers, () => new Worker(new URL("./helper.ts", import.meta.url), { type: "module" })) : null;
     post({ type: "log", line: `${helpers > 1 ? `${helpers} helper workers` : "no helper workers"}, ${plan.cornParallel} corn read${plan.cornParallel > 1 ? "s" : ""} at once (${plan.reason})` });
-    const out = await buildFieldTwin(photos, { name: m.name, id: m.id, crop: m.crop ?? "orchard", detector, weedTier: m.weeds, weedViews: m.views ?? 0, detectPlan: { tile: detect.tile ?? 1024, overlap: detect.overlap ?? 128, scale: detect.scale }, atlases: "later", pool: pool ?? undefined, cornParallel: plan.cornParallel, analysis: m.analysis === true, photoGround: m.photoGround === true }, browserCodec, {
+    const out = await buildFieldTwin(photos, { name: m.name, id: m.id, crop: m.crop ?? "orchard", detector, weedTier: m.weeds, weedViews: m.views ?? 0, detectPlan: { tile: detect.tile ?? 1024, overlap: detect.overlap ?? 128, scale: detect.scale }, atlases: "later", pool: pool ?? undefined, cornParallel: plan.cornParallel, analysis: m.analysis === true, photoGround: m.photoGround === true, cornPreset: m.cornPreset === "final3" ? "final3" : "today" }, browserCodec, {
       signal: abort.signal,
       onProgress: progress => post({ type: "progress", progress }),
       log: line => post({ type: "log", line }),

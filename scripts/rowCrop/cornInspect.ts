@@ -10,15 +10,17 @@
 //          one photograph's views and marks (the green view, the cores view, first-pass marks and the marks the cores
 //          add), and for a photograph with no flight Photo Scout's read: <readsDir>/photo/<name>/{info.json, green.png, cores.jpg}
 //   score  --labels <file> --image <name> --out <dir> [--hidden] and either
-//            --analysis <a.json> --reads <readsDir> [--field <json>]     (a flight: field.ts's dots in the photograph)
-//            --photo <file> [--read <json>]                              (one photograph: its read's own marks)
+//            --analysis <a.json> --reads <readsDir> [--field <json>] [--twin <twin.json>]   (a flight: field.ts's dots in the photograph;
+//                                                                                        --twin: only when they are that saved twin's plants)
+//            --photo <file> [--read <json>] [--marks <file>]             (one photograph: its read's own marks, or those given)
 //          the photograph's marks against the labels by cornLabelJudge.ts (the scorer of SCORE.md onwards):
 //          <dir>/score-<name>[-hidden].json. --hidden scores the held-back tiles in place of the dev tiles.
 //
 // Options (the inspector's switches; without them every option is as the code has it):
 //   --read  { "cores": bool, "coresReference": "marks"|"strongest", "countGuard": bool, "rowSpans": bool,
 //             "coresBySize": "self" | <sizes.json: { photograph: typical plant px }>,   (layers phase 3a, L1)
-//             "learnedGreen": bool }   (L1, COLOUR-1: the green view learned per photograph, layers/l1Learned.ts)
+//             "learnedGreen": bool,   (L1, COLOUR-1: the green view learned per photograph, layers/l1Learned.ts)
+//             "preset": "today" | "final3" }   (reads job: the app's named preset, fieldTwin/cornPreset.ts; the other read options are then not used)
 //   --field { "sequence": {...SEQUENCE}, "placing": {...PLANTS_FIRST}, "free": bool, "fieldSeed": bool, "groundAsked": bool,
 //             "layers": {...LAYERS} }   (layers/options.ts: groundFromObvious, tooCloseFromSpread, secondLook, unsureList)
 //   --photos <dir>  the flight's photographs, for the second look (L7 reads them again); field and score jobs
@@ -50,7 +52,7 @@ const ROOT = resolve(__dirname, "../..");
 const argv = process.argv.slice(2), job = argv[0];
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? null : argv[i + 1]; };
 const arg = (k: string) => { const v = opt(k); if (v == null) throw new Error(`--${k} is required`); return v; };
-type ReadOptions = { cores?: boolean; coresReference?: "marks" | "strongest"; countGuard?: boolean; rowSpans?: boolean; coresBySize?: string; learnedGreen?: boolean };
+type ReadOptions = { cores?: boolean; coresReference?: "marks" | "strongest"; countGuard?: boolean; rowSpans?: boolean; coresBySize?: string; learnedGreen?: boolean; /** A named app preset (fieldTwin/cornPreset.ts): the reads exactly as an app build makes them under it. */ preset?: "today" | "final3" };
 type FieldOptions = { sequence?: Partial<typeof SEQUENCE>; placing?: Partial<typeof PLANTS_FIRST>; free?: boolean; fieldSeed?: boolean; groundAsked?: boolean; layers?: Partial<LayerOptions> };
 const READ: ReadOptions = opt("read") ? JSON.parse(opt("read")!) : {}, FOPT: FieldOptions = opt("field") ? JSON.parse(opt("field")!) : {};
 // The read's options are set where the code keeps them, for this process only (as a flipped default would).
@@ -68,7 +70,7 @@ const r2 = (x: number) => Math.round(x * 100) / 100;
 const SIZES: Record<string, number> | null = READ.coresBySize && READ.coresBySize !== "self" ? (j => (j.profile?.perPhoto ? Object.fromEntries((j.profile.perPhoto as { name: string; sizePx?: number | null }[]).filter(x => x.sizePx != null).map(x => [x.name, x.sizePx!])) : j))(JSON.parse(readFileSync(READ.coresBySize, "utf8"))) : null;
 const sizeFor = (name: string): number | "self" | null => (!READ.coresBySize ? null : SIZES ? SIZES[name] ?? null : "self");
 const flightRead = (name: string, px: ReturnType<typeof pixelsOf>, gsd: number | null): CornPhotoRead =>
-  READ.rowSpans === false ? compactCornRead(name, readCornV1(px, rowCropParamsFor(cropProfileFor("corn")!, gsd), { enteredCrop: "corn", ...(READ.coresBySize ? { coresSizePx: sizeFor(name) } : {}) }), 1) : cornPhotoRead(name, px, gsd, false, sizeFor(name));
+  READ.preset ? cornPhotoRead(name, px, gsd, false, null, READ.preset) : READ.rowSpans === false ? compactCornRead(name, readCornV1(px, rowCropParamsFor(cropProfileFor("corn")!, gsd), { enteredCrop: "corn", ...(READ.coresBySize ? { coresSizePx: sizeFor(name) } : {}) }), 1) : cornPhotoRead(name, px, gsd, false, sizeFor(name));
 /** L7's view of a photograph again: its pixels and the green view the plant read used (the read says which mask; a
  * read with the learned view is looked at again through the fixed mask: L7 has not been tried with the learned one). */
 const lookerFor = (dir: string | null, reads: CornPhotoRead[]): Looker | null => {
@@ -263,14 +265,26 @@ if (job === "score") {
     if (pi < 0) throw new Error(`${NAME} is not among the photographs the dots were made from`);
     if (seedM == null) throw new Error("the plant spacing is not measured on this flight, so there is no matching distance");
     if (X.opts.free) throw new Error("the loosened placement is not scored (as cornLabelScore.ts)");
+    // --twin <twin.json>: the field scored is the one a build saved (APP-1). Its plants must be this field's plants exactly
+    // (positions, what each shows, photographs), or nothing is scored.
+    if (opt("twin")) {
+      const T = (JSON.parse(readFileSync(opt("twin")!, "utf8")) as { corn?: { plants?: { points: [number, number][]; certainty: number[]; photos: number[] } } }).corn?.plants, mine = X.plants;
+      const same = !!T && !!mine && T.points.length === mine.points.length && T.points.every((p, i) => p[0] === mine.points[i][0] && p[1] === mine.points[i][1]) && T.certainty.every((c, i) => c === mine.shown[i]) && T.photos.every((c, i) => c === mine.photos[i]);
+      if (!same) throw new Error(`the field made here is not the twin's: ${T ? T.points.length : "no"} plants in the twin, ${mine ? mine.points.length : "no"} here`);
+      console.log(`the twin's plants and the field made here are identical: ${T!.points.length} plants`);
+    }
     const M = fieldMarks(X.P, X.rec, X.F, f, pi); marks = M.marks; place = M.place; R = seedM / 2; Rfull = seedM; unit = "m";
     extra = { plantSpacingM: seedM, wholeFlightOnRows: M.whole, wholeFlightOnNoRow: M.onNoRow, landed: M.landed, foldedBack: M.fold, marksInPhoto: M.inPhoto };
   } else {
     // One photograph: its read's own marks, matched in pixels within half the median distance between the dev tiles' neighbouring labels.
     const PHOTO = arg("photo"), px = pixelsOf(PHOTO);
     const est = estimateGsd(parsePhotoHeader(new Uint8Array(readFileSync(PHOTO)).subarray(0, HEADER_BYTES)), { imageWidth: px.width });
-    const v = readCornV1(px, rowCropParamsFor(cropProfileFor("corn")!, est.gsdM), { enteredCrop: "corn", ...(READ.coresBySize ? { coresSizePx: sizeFor(NAME) } : {}) });
-    marks = v.plants.points.map(p => ({ u: p.x, v: p.y, e: p.x, n: p.y, tier: 0 })); place = (u, vv) => [u, vv];
+    // --marks <file>: the marks another run made of this photograph (APP-1: the app's own Photo Scout in Chrome,
+    // cornPhotoScoutRun.mjs: { marks: [[x, y], ...] }, photo pixels) in place of a read made here.
+    const given = opt("marks") ? (JSON.parse(readFileSync(opt("marks")!, "utf8")) as { marks: [number, number][]; width?: number; height?: number }) : null;
+    if (given && given.width != null && (given.width !== px.width || given.height !== px.height)) throw new Error(`the marks were made at ${given.width} x ${given.height}, the photograph is ${px.width} x ${px.height}`);
+    const pts = given ? given.marks.map(([x, y]) => ({ x, y })) : readCornV1(px, rowCropParamsFor(cropProfileFor("corn")!, est.gsdM), { enteredCrop: "corn", ...(READ.coresBySize ? { coresSizePx: sizeFor(NAME) } : {}) }).plants.points;
+    marks = pts.map(p => ({ u: p.x, v: p.y, e: p.x, n: p.y, tier: 0 })); place = (u, vv) => [u, vv];
     const L = labelSpacingPx(dev, labelsOf); R = L.medianPx / 2; Rfull = null; unit = "px";
     extra = { labelSpacing: { medianPx: L.medianPx, medianPerTile: L.medianPerTile, pairs: L.gapsPx.length }, marksInPhoto: [marks.length, 0, 0, 0, 0, 0] };
   }

@@ -193,7 +193,7 @@ export function cornFlightGuard(reads: CornPhotoRead[], o = CORN_COUNT_GUARD): {
 }
 
 /** The compact form of a Corn V1 read for the field. */
-export function compactCornRead(name: string, v: CornV1Read, scale = 1): CornPhotoRead {
+export function compactCornRead(name: string, v: CornV1Read, scale = 1, keepLook = true): CornPhotoRead {
   const verdictOf = new Map(v.weedVerdicts.map(w => [w.index, w.verdict]));
   return {
     name, scale,
@@ -204,7 +204,8 @@ export function compactCornRead(name: string, v: CornV1Read, scale = 1): CornPho
     ...(v.count?.withheld ? { countWithheld: true, countReason: CORN_COUNT_GUARD.message } : {}),
     ...(v.count ? { guard: { rowGreenShare: v.count.rowGreenShare, rowSpacingPx: v.count.rowSpacingPx ?? null, gsdM: Number.isFinite(v.green.gsdM) ? v.green.gsdM : null } } : {}),
     ...(v.plants.low ? { low: v.plants.low.map(p => [Math.round(p.x), Math.round(p.y)] as [number, number]) } : {}),
-    ...(v.plants.typicalPx != null ? { look: lookOf(v) } : {}),
+    // What the plants look like (2026-11-18): not kept by the "today" preset (cornPreset.ts), whose reads did not have it.
+    ...(keepLook && v.plants.typicalPx != null ? { look: lookOf(v) } : {}),
     ...(v.plants.low && v.plants.lowSpan && v.plants.lowAxis ? { lowSpan: v.plants.lowSpan.map(([a, b]) => [Math.round(a * 10) / 10, Math.round(b * 10) / 10] as [number, number]), lowAxis: v.plants.lowAxis } : {}),
   };
 }

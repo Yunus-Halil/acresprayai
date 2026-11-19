@@ -20,6 +20,8 @@
 //               so band and strips are all ground between the rows (the real rows' own dots, moved to mid-alley, are
 //               in neither).
 //   ground      plants on rows, row length, by what cornField's planted / scattered judgement says of the ground
+//   photoAgreement  the photographs' agreement with one another (cornAgreement.ts): marks another photograph repeats,
+//               and per plant on a row the share of the photographs over it that marked it
 //   halves      the flight read twice from alternate photographs (by name order): per tier, the plants on rows one
 //               half has where the other half looked (2+ of its photographs) and has none within ROW_RECALL.exclM
 import "../bench/nodeStorageShim";
@@ -34,6 +36,7 @@ import { PLANTS_FIRST, PLANTS_FIRST_V1, ROW_RECALL, SEQUENCE, SEQUENCE_V1, type 
 import { ROW_GUIDED, bandBeatsControls } from "../../src/lib/fieldTwin/rowGuided";
 import { CORN_CANDIDATE_FINAL3 } from "../../src/lib/fieldTwin/cornSetups";
 import { fromEnu, toEnu } from "../../src/lib/sourceFrames/odm";
+import { photoAgreement } from "./cornAgreementMeasure";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? null : argv[i + 1]; };
@@ -217,6 +220,8 @@ function measure(reads: CornPhotoRead[], v: Variant, withHalves: boolean) {
     geometry: { rowSpacingM: Math.round(S * 1000) / 1000, plantSpacingM: rec.geometry.seedM, directionDeg: Math.round(rec.geometry.directionDeg * 100) / 100, certainRows: rec.geometry.certainRows, tooCloseM: rec.tooCloseM, certainGaps: rec.certainGaps },
     planting: { judged: F.planting.judged, why: F.planting.why, plantedM2: F.planting.plantedM2, scatteredM2: F.planting.scatteredM2 },
     dots: { all: n, stricterMarks: P.strict, candidates: n - P.strict },
+    // APP-1 (2026-11-18): how far the photographs agree with one another (cornAgreement.ts), no label.
+    photoAgreement: photoAgreement(P, rec),
     // On a row only because the spacing was not asked (placeOffSpacing): counted inside the tiers above.
     byTheOption: (() => { const c = [0, 0, 0, 0, 0]; for (let i = 0; i < n; i++) if (rec.offSpacing[i] && rec.rowOf[i] >= 0) c[tierOf(rec, i)]++; return Object.fromEntries(TIERS.map((t, k) => [t, c[k]])); })(),
     certainOnRowsByGround: (() => { const c = [0, 0, 0]; for (let i = 0; i < n; i++) if (rec.rowOf[i] >= 0 && rec.certainty[i] === 0) c[groundAt(P.all[i].e, P.all[i].n)]++; return { notJudged: c[0], planted: c[1], scattered: c[2] }; })(),

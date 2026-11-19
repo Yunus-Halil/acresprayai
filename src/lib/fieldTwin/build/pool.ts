@@ -11,6 +11,7 @@ import { type GeorefFrame, type GreenOptions, type GreyRaster, type Observation,
 import type { CrownRef } from "./weeds";
 import { cornPhotoRead } from "./corn";
 import type { CornPhotoRead } from "../cornField";
+import type { CornPreset } from "../cornPreset";
 
 export type PoolTask =
   /** Keep a photograph's grey raster for later tie tasks. */
@@ -22,7 +23,7 @@ export type PoolTask =
   /** Crops of one photograph for the atlases. */
   | { kind: "crops"; name: string; file: Blob; reqs: { x0: number; y0: number; size: number; out: number }[] }
   /** Corn V1 on one photograph at its full size (`gsdM`: metres per original pixel at the frame's centre). */
-  | { kind: "corn"; name: string; file: Blob; gsdM: number | null; /** The shipped corn-v1.0 seedling mask (a comparison build). */ baseline?: boolean }
+  | { kind: "corn"; name: string; file: Blob; gsdM: number | null; /** The shipped corn-v1.0 seedling mask (a comparison build). */ baseline?: boolean; /** The corn preset (cornPreset.ts); null: the code's defaults. */ preset?: CornPreset | null }
   /** Drop every raster this helper holds (the cameras are aligned; nothing reads them after). */
   | { kind: "release" };
 
@@ -88,7 +89,7 @@ export async function handleTask(task: PoolTask, ctx: TaskContext): Promise<{ re
     case "corn": {
       const t = Date.now();
       const px = await ctx.photo(task.file, task.name).decode(1);
-      return { result: { kind: "corn", name: task.name, read: cornPhotoRead(task.name, px, task.gsdM, task.baseline ?? false), ms: Date.now() - t }, transfer: [] };
+      return { result: { kind: "corn", name: task.name, read: cornPhotoRead(task.name, px, task.gsdM, task.baseline ?? false, null, task.preset ?? null), ms: Date.now() - t }, transfer: [] };
     }
     case "crops": {
       const cells = await ctx.photo(task.file, task.name).crops(task.reqs);

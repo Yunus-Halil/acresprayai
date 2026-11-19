@@ -12,7 +12,10 @@ import { cropProfileFor } from "../../cropProfiles/registry";
 import { groundSampleAt, type GeorefFrame } from "../../directGeoref/projection";
 import type { PhotoPixels } from "../../photoScout/pattern";
 import { FIELD, FIELD_V2, compactCornRead, cornFieldAndGround, cornFlightGuard, type CornFieldResult, type CornPhotoRead } from "../cornField";
-import { type CornPlants, cornPlantsFirst } from "../cornPlants";
+import { type CornPlants, cornPlantsOf, placeDots, readRows } from "../cornPlants";
+import type { CornPlantsOptions, PlacedDots } from "../layers/l3Place";
+import type { Reconstruction } from "../plantsFirst";
+import { type CornPreset, cornPresetSettings } from "../cornPreset";
 import type { Pool } from "./pool";
 import { type BuildHooks, type CornVariant, type PhotoSource, checkCancelled } from "./types";
 
@@ -22,11 +25,19 @@ export const CORN_STAGE = {
   maxParallel: 3,
 };
 
-/** Corn V1 on one photograph, compacted for the field (also the pool task's body). */
-export function cornPhotoRead(name: string, px: PhotoPixels, gsdM: number | null, baselineSeedlings = false, coresSizePx: number | "self" | null = null): CornPhotoRead {
+/**
+ * Corn V1 on one photograph, compacted for the field (also the pool task's body). `preset` (cornPreset.ts): the app
+ * always names one ("today" unless the founder's flag is on); null, the scripts' way, reads with the code's defaults
+ * and the module-wide switches (CORN_CORES, CORN_COUNT_GUARD) as a process has set them.
+ */
+export function cornPhotoRead(name: string, px: PhotoPixels, gsdM: number | null, baselineSeedlings = false, coresSizePx: number | "self" | null = null, preset: CornPreset | null = null): CornPhotoRead {
+  const params = rowCropParamsFor(cropProfileFor("corn")!, gsdM);
+  // The comparison read (corn-v1.0's mask) is the same under every preset.
+  if (baselineSeedlings) return compactCornRead(name, readCornV1(px, params, { enteredCrop: "corn", baselineSeedlings }), 1);
+  if (preset) { const S = cornPresetSettings(preset); return compactCornRead(name, readCornV1(px, params, { enteredCrop: "corn", ...S.read }), 1, S.keepLook); }
   // rowSpans: a candidate for the rows carries its extent along them, and the field splits the long ones at the plant
   // spacing it measured (cornPlants.ts candidatePoints) instead of the one a single photograph assumes.
-  const v = readCornV1(px, rowCropParamsFor(cropProfileFor("corn")!, gsdM), { enteredCrop: "corn", baselineSeedlings, rowSpans: !baselineSeedlings, ...(coresSizePx != null ? { coresSizePx } : {}) });
+  const v = readCornV1(px, params, { enteredCrop: "corn", baselineSeedlings, rowSpans: !baselineSeedlings, ...(coresSizePx != null ? { coresSizePx } : {}) });
   return compactCornRead(name, v, 1);
 }
 
@@ -46,7 +57,7 @@ export type CornStageResult = {
 };
 
 /** Read every photograph with a camera, then combine them over the field. */
-export async function cornStage(photos: PhotoSource[], frames: Map<string, GeorefFrame>, hooks: BuildHooks = {}, pool: Pool | null = null, files?: Map<string, Blob>, variant?: CornVariant, maxParallel: number = CORN_STAGE.maxParallel): Promise<CornStageResult> {
+export async function cornStage(photos: PhotoSource[], frames: Map<string, GeorefFrame>, hooks: BuildHooks = {}, pool: Pool | null = null, files?: Map<string, Blob>, variant?: CornVariant, maxParallel: number = CORN_STAGE.maxParallel, preset: CornPreset | null = null): Promise<CornStageResult> {
   const t0 = Date.now(), baseline = variant === "corn-v1.0";
   const list = photos.filter(p => frames.has(p.name));
   const reads: CornPhotoRead[] = [], failed: { name: string; reason: string }[] = [];
@@ -58,13 +69,13 @@ export async function cornStage(photos: PhotoSource[], frames: Map<string, Geore
     try {
       const file = files?.get(p.name);
       if (pool && pool.size > 1 && file) {
-        const r = await pool.run({ kind: "corn", name: p.name, file, gsdM: gsdOf(p.name), baseline });
+        const r = await pool.run({ kind: "corn", name: p.name, file, gsdM: gsdOf(p.name), baseline, preset });
         if (r.kind !== "corn") throw new Error("the helper answered another task");
         reads.push(r.read); readMs += r.ms;
       } else {
         const t = Date.now();
         const px = await p.decode(1);
-        reads.push(cornPhotoRead(p.name, px, gsdOf(p.name), baseline)); readMs += Date.now() - t;
+        reads.push(cornPhotoRead(p.name, px, gsdOf(p.name), baseline, null, preset)); readMs += Date.now() - t;
       }
       const last = reads[reads.length - 1];
       hooks.log?.(`${p.name}: ${last.rows.filter(r => r.identity === "corn").length} corn rows, ${last.rows.length} rows, ${last.patches.filter(q => q.verdict === "weed candidate").length} weed candidates, ${last.gaps.filter(g => g.verdict === "stand gap").length} gaps${last.countWithheld ? "; plant count withheld (too late for a per-plant count)" : ""}`);
@@ -83,21 +94,39 @@ export async function cornStage(photos: PhotoSource[], frames: Map<string, Geore
   // Reads arrive in completion order; the field does not depend on it, the report and the twin should not either.
   reads.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   failed.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const C = cornCombine(reads, frames, preset, variant, hooks.log, () => hooks.onProgress?.({ stage: "corn", done: list.length, total: list.length, message: "placing the plants, then the rows through them", elapsedMs: Date.now() - t0 }));
+  if (C.reads !== reads) { reads.length = 0; reads.push(...C.reads); }
+  return { variant, field: C.field, plants: C.plants, reads, failed, withRows: reads.filter(r => r.rows.length).length, msPerPhoto: reads.length ? Math.round(readMs / reads.length) : 0, ms: Date.now() - t0 };
+}
+
+/**
+ * The photographs' reads combined over the field, as the corn stage combines them (also for the scripts, which must
+ * run exactly what a build runs): the guard over the flight (when the preset asks for it, or with no preset), the field
+ * and its ground, then the plants first with the preset's rules. `placed` and `rows` are the plants' dots and their
+ * reading (null where no dot was made, or on a comparison variant).
+ */
+export function cornCombine(readsIn: CornPhotoRead[], frames: Map<string, GeorefFrame>, preset: CornPreset | null, variant?: CornVariant, log?: (line: string) => void, beforePlants?: () => void) {
   // The emergence guard over the flight (cornField.ts cornFlightGuard): a photograph that misread its row spacing gives no plants.
-  const guarded = cornFlightGuard(reads);
-  for (const w of guarded.withheld) hooks.log?.(`${w.name}: plant count withheld (${w.reason})`);
-  if (guarded.reads !== reads) { reads.length = 0; reads.push(...guarded.reads); }
-  const { field, ground } = cornFieldAndGround(reads, frames, variant ? FIELD_V2 : FIELD);
-  hooks.log?.(`corn over the field: ${field.summary.cornRows} corn rows, ${field.summary.probableRows} unconfirmed, ${field.summary.weeds} confirmed weed candidates, ${field.summary.gaps} stand gaps; rows agree within ${field.rowAgreementM != null ? (field.rowAgreementM * 100).toFixed(1) : "?"} cm`);
-  for (const n of field.notes.slice(0, -1)) hooks.log?.(`  ${n}`);
-  let plants: CornPlants | null = null;
-  if (!variant) {
-    hooks.onProgress?.({ stage: "corn", done: list.length, total: list.length, message: "placing the plants, then the rows through them", elapsedMs: Date.now() - t0 });
-    const tp = Date.now();
-    try { plants = cornPlantsFirst(reads, frames, field, { ground }); }
-    catch (e) { hooks.log?.(`plants first failed (${(e as Error)?.message ?? e}): the field's rows are kept`); }
-    if (plants) hooks.log?.(`plants first: ${plants.summary.plants} plants (${plants.summary.certain} certain, ${plants.summary.probable} probable on a row), ${plants.summary.rows} rows, ${Math.round(plants.summary.confirmedM)} m with plants seen, ${Math.round(plants.summary.notConfirmedM)} m not confirmed (${((Date.now() - tp) / 1000).toFixed(1)} s)`);
-    else hooks.log?.("plants first: no certain row from the plants, the field's rows are kept");
+  // A named preset says whether it runs ("today": no; reads without the guard pass it unchanged anyway).
+  const S = preset ? cornPresetSettings(preset) : null;
+  let reads = readsIn;
+  if (!S || S.flightGuard) {
+    const guarded = cornFlightGuard(reads);
+    for (const w of guarded.withheld) log?.(`${w.name}: plant count withheld (${w.reason})`);
+    reads = guarded.reads;
   }
-  return { variant, field, plants, reads, failed, withRows: reads.filter(r => r.rows.length).length, msPerPhoto: reads.length ? Math.round(readMs / reads.length) : 0, ms: Date.now() - t0 };
+  const { field, ground } = cornFieldAndGround(reads, frames, variant ? FIELD_V2 : FIELD);
+  log?.(`corn over the field: ${field.summary.cornRows} corn rows, ${field.summary.probableRows} unconfirmed, ${field.summary.weeds} confirmed weed candidates, ${field.summary.gaps} stand gaps; rows agree within ${field.rowAgreementM != null ? (field.rowAgreementM * 100).toFixed(1) : "?"} cm`);
+  for (const n of field.notes.slice(0, -1)) log?.(`  ${n}`);
+  let plants: CornPlants | null = null, placed: PlacedDots | null = null, rows: Reconstruction | null = null;
+  if (!variant) {
+    beforePlants?.();
+    const tp = Date.now(), opts: CornPlantsOptions = S ? { ...S.plants, ground: S.ground ? ground : null } : { ground };
+    // cornPlantsFirst's three steps, kept apart so a script can measure the dots (cornPlants.ts cornPlantsFirst).
+    try { placed = placeDots(reads, frames, field, opts); rows = placed ? readRows(placed, field, opts) : null; plants = placed && rows ? cornPlantsOf(placed, rows, field, opts) : null; }
+    catch (e) { log?.(`plants first failed (${(e as Error)?.message ?? e}): the field's rows are kept`); plants = null; }
+    if (plants) log?.(`plants first: ${plants.summary.plants} plants (${plants.summary.certain} certain, ${plants.summary.probable} probable on a row), ${plants.summary.rows} rows, ${Math.round(plants.summary.confirmedM)} m with plants seen, ${Math.round(plants.summary.notConfirmedM)} m not confirmed (${((Date.now() - tp) / 1000).toFixed(1)} s)`);
+    else log?.("plants first: no certain row from the plants, the field's rows are kept");
+  }
+  return { reads, field, ground, plants, placed, rows };
 }

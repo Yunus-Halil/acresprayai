@@ -18,7 +18,10 @@ import { checkRowSpacing } from "@/lib/cropProfiles/checks";
 import { cropProfileById, listCropProfiles } from "@/lib/cropProfiles/registry";
 import { type RowCropRead, type RowCropStage, readRowCrop, rowCropOverlay } from "@/lib/rowCrop/readRowCrop";
 import { adaptiveAsRead, readCornAdaptive } from "@/lib/rowCrop/adaptive";
-import { cornV1AsRead, readCornV1 } from "@/lib/rowCrop/cornV1";
+import { type CornV1Read, cornV1AsRead, readCornV1 } from "@/lib/rowCrop/cornV1";
+import { cornPresetSettings } from "@/lib/fieldTwin/cornPreset";
+import { useCornPreset } from "@/lib/fieldTwin/cornFinal3Flag";
+import { CornFinal3Switch } from "@/components/app/fieldTwin/CornFinal3Switch";
 import { readsContinuousRows, rowCropParamsFor } from "@/lib/rowCrop/params";
 
 type Status = "new" | "decoding" | "running" | "done" | "error";
@@ -63,8 +66,19 @@ const btn = "inline-flex items-center gap-1.5 text-xs border border-[#333] text-
 
 let nextId = 0;
 
+/** A single photograph has no flight, so the preset's read options only (the flight's guard and plants first do not
+ * apply). The candidates for a field's rows are never drawn here, so they are not made. */
+const cornPresetRead = (p: "today" | "final3") => { const r = cornPresetSettings(p).read; return { cores: r.cores, coresReference: r.coresReference, countGuard: r.countGuard, learnedGreen: r.learnedGreen, rowCandidates: false }; };
+/** A development build only: the corn read's own marks, for the benchmark script (cornPhotoScoutScore.mjs). */
+function exposeCornRead(name: string, preset: string, v: CornV1Read): CornV1Read {
+  if (import.meta.env.DEV) { const w = window as unknown as { __photoScout?: Record<string, unknown> }; w.__photoScout = { ...(w.__photoScout ?? {}), [name]: { preset, marks: v.plants.points.map(q => [q.x, q.y]), withheld: !!v.count?.withheld, rows: v.rows.length, width: v.green.width, height: v.green.height } }; }
+  return v;
+}
+
 export default function PhotoScout() {
   const units = useUnitSystem();
+  /** The corn preset (lib/fieldTwin/cornPreset.ts): "today" for everyone; "final3" behind the founder's switch. */
+  const cornPreset = useCornPreset().preset;
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rowSpacingCm, setRowSpacingCm] = useState(AUTO);
@@ -134,7 +148,7 @@ export default function PhotoScout() {
         const onProgress = (done: number, total: number) => patch(p.id, { progress: { done, total } });
         const read = stage === "auto"
           ? cropId === "corn"
-            ? cornV1AsRead(readCornV1(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM), { onProgress, enteredCrop: cropId }))
+            ? cornV1AsRead(exposeCornRead(p.file.name, cornPreset, readCornV1(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM), { onProgress, enteredCrop: cropId, ...cornPresetRead(cornPreset) })))
             : adaptiveAsRead(readCornAdaptive(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM), { onProgress }))
           : readRowCrop(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM, stage), { onProgress: (done, total) => patch(p.id, { progress: { done, total } }) });
         patch(p.id, { rowCrop: read, pattern: null, status: "done", progress: null, used: { gsdM: read.gsdM, basis: read.scaleBasis === "given" ? g.basis : "assumed from the measured row pitch and the crop's default spacing" } });
@@ -180,6 +194,7 @@ export default function PhotoScout() {
             <input type="file" accept=".jpg,.jpeg,image/jpeg" multiple className="hidden" onChange={e => { if (e.target.files) void add(e.target.files); e.target.value = ""; }} />
           </label>
 
+          {cropId === "corn" && <CornFinal3Switch className="text-xs text-neutral-300" />}
           <details className="rounded-sm border border-[#222] p-3 space-y-2" style={{ background: "#161616" }}>
             <summary className="text-xs font-semibold cursor-pointer select-none">More options <span className="font-normal text-neutral-500">(not needed: corn is read automatically)</span></summary>
             <Field label="Crop">
