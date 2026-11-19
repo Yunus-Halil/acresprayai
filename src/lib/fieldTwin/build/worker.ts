@@ -1,14 +1,17 @@
 // The twin build off the main thread: a Web Worker that takes the photographs (Files) and the options, runs the
 // pipeline over browserPhotos, calls the local weed model through the dev proxy when asked, and posts progress,
 // log lines and the result (twin.json and the atlases as Blobs). One worker per build; the page terminates it to stop.
+import type { CornPreset } from "../cornPreset";
+import { defaultCornPreset } from "../cornFinal3Flag";
 import { type DetectOptions, detectWeeds } from "../../weedVision/client";
 import { browserCodec, groupPhotoFiles } from "./browserPhotos";
 import { detectionKey, indexedDbStore, sha256Hex } from "./detectionCache";
+import { type DeviceHints, buildConcurrency, deviceHints } from "./concurrency";
 import { workerPool } from "./pool";
 import { type BuildReport, buildFieldTwin } from "./pipeline";
 import { BuildCancelled, type BuildProgress } from "./types";
 
-export type BuildWorkerRequest = { type: "build"; files: File[]; name: string; id?: string; /** The crop the operator entered (default orchard). */ crop?: "orchard" | "corn"; /** The weed pass: the model through the local service, the colour rules, or none. */ weeds: "model" | "colour" | "none"; /** Model tier: nearest views per ground cell to run (0, the default: every tile; measured on the apricot flight, 1024 px tiles prune only 8 %). */ views?: number; /** Helper workers (default: cores - 1, at most 6; 1 = none). */ helpers?: number; detect?: DetectOptions; /** A corn build: also post the analysis record (../analysis.ts). */ analysis?: boolean } | { type: "cancel" };
+export type BuildWorkerRequest = { type: "build"; files: File[]; name: string; id?: string; /** The crop the operator entered (default orchard). */ crop?: "orchard" | "corn"; /** The weed pass: the model through the local service, the colour rules, or none. */ weeds: "model" | "colour" | "none"; /** Model tier: nearest views per ground cell to run (0, the default: every tile; measured on the apricot flight, 1024 px tiles prune only 8 %). */ views?: number; /** Helper workers (default: by the device, concurrency.ts; 1 = none). */ helpers?: number; /** What the page knows of the device (a worker cannot see a touch screen); default: the worker's own navigator. */ device?: DeviceHints; detect?: DetectOptions; /** A corn build: also post the analysis record (../analysis.ts). */ analysis?: boolean; /** Photo ground (behind its flag): the overview after the atlases. */ photoGround?: boolean; /** A corn build's setup (../cornPreset.ts); default: ../cornFinal3Flag.ts defaultCornPreset ("final3" unless the kill switch is set). */ cornPreset?: CornPreset } | { type: "cancel" };
 export type BuildWorkerMessage =
   | { type: "progress"; progress: BuildProgress }
   | { type: "log"; line: string }
@@ -16,6 +19,10 @@ export type BuildWorkerMessage =
   /** An atlas cut after the result: the page opens the twin while these arrive. */
   | { type: "atlas"; file: string; blob: Blob; index: number; total: number }
   | { type: "atlases-done" }
+  /** Photo ground, after the atlases: one file at a time, then done (with its time) or failed (the twin is unaffected). */
+  | { type: "ground"; file: string; blob: Blob }
+  | { type: "ground-done"; ms: number }
+  | { type: "ground-failed"; message: string }
   | { type: "cancelled" }
   | { type: "error"; message: string };
 
@@ -47,21 +54,32 @@ self.onmessage = async (e: MessageEvent<BuildWorkerRequest>) => {
         return r.value;
       }
       : null;
-    // Helper workers for the ties, the colour pass and the crops: one fewer than the cores, at most six.
-    const cores = typeof navigator !== "undefined" && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 2;
-    const helpers = m.helpers ?? Math.max(1, Math.min(6, cores - 1));
+    // Helper workers for the ties, the colour pass and the crops, and the corn reads among them: sized by the device's
+    // memory, then its cores (concurrency.ts). The twin does not depend on it.
+    const plan = buildConcurrency(m.device ?? deviceHints(), { helpers: m.helpers });
+    const helpers = plan.helpers;
     pool = helpers > 1 ? workerPool(helpers, () => new Worker(new URL("./helper.ts", import.meta.url), { type: "module" })) : null;
-    if (pool) post({ type: "log", line: `${helpers} helper workers (${cores} cores)` });
-    const out = await buildFieldTwin(photos, { name: m.name, id: m.id, crop: m.crop ?? "orchard", detector, weedTier: m.weeds, weedViews: m.views ?? 0, detectPlan: { tile: detect.tile ?? 1024, overlap: detect.overlap ?? 128, scale: detect.scale }, atlases: "later", pool: pool ?? undefined, analysis: m.analysis === true }, browserCodec, {
+    post({ type: "log", line: `${helpers > 1 ? `${helpers} helper workers` : "no helper workers"}, ${plan.cornParallel} corn read${plan.cornParallel > 1 ? "s" : ""} at once (${plan.reason})` });
+    const out = await buildFieldTwin(photos, { name: m.name, id: m.id, crop: m.crop ?? "orchard", detector, weedTier: m.weeds, weedViews: m.views ?? 0, detectPlan: { tile: detect.tile ?? 1024, overlap: detect.overlap ?? 128, scale: detect.scale }, atlases: "later", pool: pool ?? undefined, cornParallel: plan.cornParallel, analysis: m.analysis === true, photoGround: m.photoGround === true, cornPreset: m.cornPreset === "today" || m.cornPreset === "final3" ? m.cornPreset : defaultCornPreset() }, browserCodec, {
       signal: abort.signal,
       onProgress: progress => post({ type: "progress", progress }),
       log: line => post({ type: "log", line }),
     });
     const files: [string, Blob][] = [];
     for (const [k, v] of out.files) files.push([k, v instanceof Blob ? v : new Blob([v])]);
-    post({ type: "result", twinJson: JSON.stringify(out.twin), files, report: out.report, analysis: out.analysis ? new Blob([out.analysis as BlobPart], { type: "application/json" }) : null });
+    post({ type: "result", twinJson: JSON.stringify(out.twin), files, report: { ...out.report, concurrency: plan }, analysis: out.analysis ? new Blob([out.analysis as BlobPart], { type: "application/json" }) : null });
     if (out.cutAtlases) for await (const a of out.cutAtlases()) post({ type: "atlas", file: a.file, blob: a.bytes instanceof Blob ? a.bytes : new Blob([a.bytes]), index: a.index, total: a.total });
     post({ type: "atlases-done" });
+    if (out.cutGround) {
+      const g0 = Date.now();
+      try {
+        for await (const g of out.cutGround()) post({ type: "ground", file: g.file, blob: g.bytes instanceof Blob ? g.bytes : new Blob([g.bytes as BlobPart], { type: g.file.endsWith(".json") ? "application/json" : "image/jpeg" }) });
+        post({ type: "ground-done", ms: Date.now() - g0 });
+      } catch (e) {
+        if (abort.signal.aborted) throw e;
+        post({ type: "ground-failed", message: (e as Error)?.message ?? String(e) });
+      }
+    }
   } catch (err) {
     if (err instanceof BuildCancelled || abort.signal.aborted) post({ type: "cancelled" });
     else post({ type: "error", message: (err as Error)?.message ?? String(err) });

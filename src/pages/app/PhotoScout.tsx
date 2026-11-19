@@ -18,7 +18,9 @@ import { checkRowSpacing } from "@/lib/cropProfiles/checks";
 import { cropProfileById, listCropProfiles } from "@/lib/cropProfiles/registry";
 import { type RowCropRead, type RowCropStage, readRowCrop, rowCropOverlay } from "@/lib/rowCrop/readRowCrop";
 import { adaptiveAsRead, readCornAdaptive } from "@/lib/rowCrop/adaptive";
-import { cornV1AsRead, readCornV1 } from "@/lib/rowCrop/cornV1";
+import { type CornV1Read, cornV1AsRead, readCornV1 } from "@/lib/rowCrop/cornV1";
+import { cornPresetSettings } from "@/lib/fieldTwin/cornPreset";
+import { defaultCornPreset } from "@/lib/fieldTwin/cornFinal3Flag";
 import { readsContinuousRows, rowCropParamsFor } from "@/lib/rowCrop/params";
 
 type Status = "new" | "decoding" | "running" | "done" | "error";
@@ -63,8 +65,19 @@ const btn = "inline-flex items-center gap-1.5 text-xs border border-[#333] text-
 
 let nextId = 0;
 
+/** A single photograph has no flight, so the preset's read options only (the flight's guard and plants first do not
+ * apply). The candidates for a field's rows are never drawn here, so they are not made. */
+const cornPresetRead = (p: "today" | "final3") => { const r = cornPresetSettings(p).read; return { cores: r.cores, coresReference: r.coresReference, countGuard: r.countGuard, learnedGreen: r.learnedGreen, coresWhenTouching: r.coresWhenTouching, rowCandidates: false }; };
+/** A development build only: the corn read's own marks, for the benchmark script (cornPhotoScoutScore.mjs). */
+function exposeCornRead(name: string, preset: string, v: CornV1Read): CornV1Read {
+  if (import.meta.env.DEV) { const w = window as unknown as { __photoScout?: Record<string, unknown> }; w.__photoScout = { ...(w.__photoScout ?? {}), [name]: { preset, marks: v.plants.points.map(q => [q.x, q.y]), withheld: !!v.count?.withheld, rows: v.rows.length, width: v.green.width, height: v.green.height } }; }
+  return v;
+}
+
 export default function PhotoScout() {
   const units = useUnitSystem();
+  /** The corn preset (lib/fieldTwin/cornPreset.ts): "final3" unless the kill switch is set (cornFinal3Flag.ts). */
+  const cornPreset = defaultCornPreset();
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rowSpacingCm, setRowSpacingCm] = useState(AUTO);
@@ -134,7 +147,7 @@ export default function PhotoScout() {
         const onProgress = (done: number, total: number) => patch(p.id, { progress: { done, total } });
         const read = stage === "auto"
           ? cropId === "corn"
-            ? cornV1AsRead(readCornV1(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM), { onProgress, enteredCrop: cropId }))
+            ? cornV1AsRead(exposeCornRead(p.file.name, cornPreset, readCornV1(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM), { onProgress, enteredCrop: cropId, ...cornPresetRead(cornPreset) })))
             : adaptiveAsRead(readCornAdaptive(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM), { onProgress }))
           : readRowCrop(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM, stage), { onProgress: (done, total) => patch(p.id, { progress: { done, total } }) });
         patch(p.id, { rowCrop: read, pattern: null, status: "done", progress: null, used: { gsdM: read.gsdM, basis: read.scaleBasis === "given" ? g.basis : "assumed from the measured row pitch and the crop's default spacing" } });
@@ -446,7 +459,7 @@ function RowCropSummary({ read, units }: { read: RowCropRead; units: "metric" | 
   const rows: [string, string][] = [
     ...(v ? [
       ["Corn V1", `${v.cornRows} corn row${v.cornRows === 1 ? "" : "s"} (cyan), ${v.probableRows} planted row${v.probableRows === 1 ? "" : "s"} with the crop not confirmed (amber dashes)${v.entered !== "corn" ? "; the field is not entered as corn, so no row is called corn" : ""}${v.spacingImpossible ? "; the measured spacing is one corn is never planted at" : v.spacingFits === false ? "; the measured spacing is not one of corn's usual ones (check the flight height)" : ""}`],
-      ["Behind the rows", `${v.agreedRows} where the plants and the green agree, ${v.plantOnlyRows} from the plants alone, ${v.greenOnlyRows} from the green alone; ${v.greenRowsDropped} green row${v.greenRowsDropped === 1 ? "" : "s"} dropped where the plants stand beside it; ${v.plants.toLocaleString()} plants located (${v.plantSource === "green" ? "on the soil, no model" : "by a detector"})`],
+      ["Behind the rows", `${v.agreedRows} where the plants and the green agree, ${v.plantOnlyRows} from the plants alone, ${v.greenOnlyRows} from the green alone; ${v.greenRowsDropped} green row${v.greenRowsDropped === 1 ? "" : "s"} dropped where the plants stand beside it; ${v.plants == null ? `plant count withheld: ${v.countWithheld ?? "not counted"}` : `${v.plants.toLocaleString()} plants located (${v.plantSource === "green" ? "on the soil, no model" : "by a detector"})`}`],
       ["Withheld", `${v.cropOnRow} green patch${v.cropOnRow === 1 ? "" : "es"} on a planted row (the crop, not weeds); ${v.unknownVegetation} unknown vegetation (no corn row beside it); ${v.gapsWithheld} gap${v.gapsWithheld === 1 ? "" : "s"} not reported (the row not confirmed by both reads, a plant inside it, or the photo cannot tell); all drawn grey`],
     ] as [string, string][] : []),
     ["Crop profile", read.crop ? `${read.crop.id} ${read.crop.version}, ${read.stage === "late" ? "late variant: rows read from the canopy's green, nothing between them judged" : read.stage === "mid" ? "mid-stage variant: rows between the alley troughs, the whole canopy is the crop" : read.stage === "emergence" ? "emergence variant: seedlings as points, rows the lines they stand on" : "early-stage variant: rows traced on the green, the whole row is the crop"}` : "none"],
@@ -463,7 +476,7 @@ function RowCropSummary({ read, units }: { read: RowCropRead; units: "metric" | 
     ["Gaps along the rows", s.gaps ? `${s.gaps}, ${s.gapLengthM.toFixed(1)} m in all${read.emergence ? ` (before the second look: ${read.emergence.gapsBefore}, ${read.emergence.gapLengthBeforeM.toFixed(1)} m)` : ""}` : "none over the minimum length"],
     ...(read.emergence ? [["Second look along the rows", `${read.emergence.searched.toLocaleString()} expected positions: ${read.emergence.strictFound.toLocaleString()} plants the first pass had not counted, ${read.emergence.possible.toLocaleString()} possible seedlings (blue), ${read.emergence.missing.toLocaleString()} missing plants the photo supports (orange), ${read.emergence.uncertain.toLocaleString()} uncertain (grey)${read.emergence.laterPlanting ? `; a later planting set apart (${read.emergence.laterPlanting.greenPatches} green patches there, not weeds)` : ""}`] as [string, string]] : []),
     ...(read.fieldEdge ? [["Field edge", read.fieldEdge.ends.length ? `${read.fieldEdge.ends.length} row end${read.fieldEdge.ends.length === 1 ? "" : "s"} inside the photo: ${read.fieldEdge.ends.filter(e => e.beyond === "grass or cover").length} against grass or cover, ${read.fieldEdge.ends.filter(e => e.beyond === "bare ground").length} against bare ground (dashed white line); nothing beyond is judged` : "the rows run on to the photo's edges"] as [string, string]] : []),
-    ["Plants (estimate)", s.plants == null ? "not estimated at this pixel size" : `${s.plants.toLocaleString()} green peaks along the rows; unverified`],
+    ["Plants (estimate)", v?.countWithheld ? `withheld: ${v.countWithheld}` : s.plants == null ? "not estimated at this pixel size" : `${s.plants.toLocaleString()} green peaks along the rows; unverified`],
     ["Not judged", `${s.noRowsPatches} patches where no rows were read; ${read.excluded.length} borders or cover`],
     ["Vegetation", `${(s.vegetationFraction * 100).toFixed(1)}% of pixels; ${s.specks.toLocaleString()} specks dropped`],
     ["Time", `${s.ms} ms`],

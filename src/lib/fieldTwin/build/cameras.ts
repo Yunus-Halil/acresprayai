@@ -36,6 +36,8 @@ export type CameraResult = {
     globals: AdjustModel["globals"];
     model: string;
     note: string | null;
+    /** With helper workers: each helper's tie time over both rounds, milliseconds (how evenly the work was spread). */
+    tieMsPerHelper?: number[];
   };
 };
 
@@ -60,8 +62,29 @@ export function candidatePairs(frames: GeorefFrame[], maxM = 45): [GeorefFrame, 
   return out;
 }
 
-/** Which helper holds which rasters: sent once, before the first tie task that needs them. */
-type RasterPlacement = { helperOf: Map<string, number>; sent: Set<string>[] };
+/** Which helper holds which rasters (sent once, before the first tie task that needs them), and each helper's tie time. */
+type RasterPlacement = { sent: Set<string>[]; ms: number[] };
+
+/**
+ * Groups (in flight order) dealt to `parts` helpers in contiguous runs of about equal work: a group goes to the run its
+ * midpoint falls in. Contiguous, so a helper's partners mostly repeat (few rasters per helper); by work, not by count,
+ * because early photographs have more partners (pairs are counted once, from the first photograph). Deterministic.
+ */
+export function partitionByWork(weights: number[], parts: number): number[] {
+  const total = weights.reduce((s, w) => s + w, 0);
+  if (parts <= 1 || total <= 0) return weights.map(() => 0);
+  const target = total / parts;
+  let cum = 0;
+  return weights.map(w => { const h = Math.min(parts - 1, Math.floor((cum + w / 2) / target)); cum += w; return h; });
+}
+
+/** The rejection counts in name order: the helpers answer in any order, the report should not depend on it. */
+const byKey = (r: Record<string, number>): Record<string, number> => Object.fromEntries(Object.entries(r).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+
+/** Every helper drops its tie rasters (the cameras are aligned; nothing after reads them). */
+async function releaseRasters(pool: Pool, placement: RasterPlacement): Promise<void> {
+  await Promise.all(placement.sent.map((set, h) => { set.clear(); return pool.runOn(h, { kind: "release" }); }));
+}
 
 async function findAllTies(frames: GeorefFrame[], reads: Map<string, PhotoRead>, hooks: BuildHooks, label: string, t0: number, opts: SoilTieOptions, pool: Pool | null = null, placement: RasterPlacement | null = null): Promise<{ ties: SoilTie[]; pairs: number; pairsWithTies: number; rejected: Record<string, number> }> {
   const ties: SoilTie[] = [];
@@ -69,25 +92,25 @@ async function findAllTies(frames: GeorefFrame[], reads: Map<string, PhotoRead>,
   const rejected: Record<string, number> = {};
   let withTies = 0;
   if (pool && pool.size > 1 && placement) {
-    // Pairs grouped by their first photograph; each group runs on the helper that holds the first photograph's
-    // raster, with the partners' rasters sent there once. Groups are dealt to helpers in contiguous runs (the
-    // photographs are in flight order, so a helper's partners mostly repeat).
+    // Pairs grouped by their first photograph; each group runs whole on one helper (its windows are sampled once),
+    // with the rasters it needs sent there once. Groups are dealt to helpers in contiguous runs of equal pair count
+    // (the photographs are in flight order, so a helper's partners mostly repeat). The split is made again each round;
+    // a raster a helper already holds is not sent again.
     const groups = new Map<string, string[]>();
     for (const [a, b] of pairs) (groups.get(a.name) ?? groups.set(a.name, []).get(a.name)!).push(b.name);
     const names = [...groups.keys()];
     const frameOf = new Map(frames.map(f => [f.name, f]));
-    const per = Math.ceil(names.length / pool.size);
+    const helperOf = partitionByWork(names.map(a => groups.get(a)!.length), pool.size);
     const jobs: Promise<void>[] = [];
     let done = 0;
     names.forEach((a, i) => {
-      const h = placement.helperOf.get(a) ?? Math.min(pool.size - 1, Math.floor(i / per));
-      placement.helperOf.set(a, h);
+      const h = helperOf[i];
       const partners = groups.get(a)!;
       const need = [a, ...partners].filter(n => !placement.sent[h].has(n));
       const sendRasters = need.map(n => { placement.sent[h].add(n); const r = reads.get(n)!.grey; const grey = r.grey instanceof Uint8Array ? r.grey : Uint8Array.from(r.grey, v => Math.round(v)); return pool.runOn(h, { kind: "raster", name: n, width: r.width, height: r.height, grey: new Uint8Array(grey), green: new Uint8Array(r.green), toOriginal: r.toOriginal }); });
       const task = Promise.all(sendRasters).then(() => pool.runOn(h, { kind: "ties", a, frames: [a, ...partners].map(n => [n, frameOf.get(n)!] as [string, GeorefFrame]), partners, opts })).then(r => {
         if (r.kind !== "ties") return;
-        ties.push(...r.ties); withTies += r.pairsWithTies;
+        ties.push(...r.ties); withTies += r.pairsWithTies; placement.ms[h] += r.ms;
         for (const [k, v] of Object.entries(r.rejected)) rejected[k] = (rejected[k] ?? 0) + v;
         done++;
         hooks.onProgress?.({ stage: "cameras", done, total: names.length, message: `${label}: ${ties.length} ties in ${withTies} pairs`, elapsedMs: Date.now() - t0 });
@@ -99,7 +122,7 @@ async function findAllTies(frames: GeorefFrame[], reads: Map<string, PhotoRead>,
     // The order of ties affects nothing downstream but the fit's arithmetic; keep it deterministic by pair order.
     const order = new Map(pairs.map(([a, b], i) => [`${a.name}|${b.name}`, i]));
     ties.sort((x, y) => (order.get(`${x.a}|${x.b}`) ?? 0) - (order.get(`${y.a}|${y.b}`) ?? 0));
-    return { ties, pairs: pairs.length, pairsWithTies: withTies, rejected };
+    return { ties, pairs: pairs.length, pairsWithTies: withTies, rejected: byKey(rejected) };
   }
   // Pairs come grouped by their first photograph: its windows are sampled once and kept until it changes.
   let memo: WindowCache | null = null;
@@ -115,7 +138,7 @@ async function findAllTies(frames: GeorefFrame[], reads: Map<string, PhotoRead>,
     if (r.ties.length) withTies++;
     if (k % 25 === 0) { hooks.onProgress?.({ stage: "cameras", done: k, total: pairs.length, message: `${label}: ${ties.length} ties in ${withTies} pairs`, elapsedMs: Date.now() - t0 }); await yieldToEvents(); }
   }
-  return { ties, pairs: pairs.length, pairsWithTies: withTies, rejected };
+  return { ties, pairs: pairs.length, pairsWithTies: withTies, rejected: byKey(rejected) };
 }
 
 /** A deterministic share of photo PAIRS held out of every fit (all ties of a pair go the same way). */
@@ -146,7 +169,7 @@ export async function alignCameras(reads: PhotoRead[], hooks: BuildHooks = {}, m
   const fineRes = Math.max(0.04, rasterPixelM);
   const tieOpts: SoilTieOptions = { fineRes, maxBackM: 0.5 * fineRes };
   const heldOut = (t: SoilTie) => isHeldOutPair(t.a, t.b, holdOutShare);
-  const placement: RasterPlacement | null = pool && pool.size > 1 ? { helperOf: new Map(), sent: Array.from({ length: pool.size }, () => new Set<string>()) } : null;
+  const placement: RasterPlacement | null = pool && pool.size > 1 ? { sent: Array.from({ length: pool.size }, () => new Set<string>()), ms: Array.from({ length: pool.size }, () => 0) } : null;
   const result = (model: AdjustModel, ties: SoilTie[], headerTies: number, pairs: number, pairsWithTies: number, rejected: Record<string, number>, note: string | null): CameraResult => {
     const train = ties.filter(t => !heldOut(t)), test = ties.filter(heldOut);
     return {
@@ -156,21 +179,30 @@ export async function alignCameras(reads: PhotoRead[], hooks: BuildHooks = {}, m
         headerResidualM: train.length ? evaluateTies(baseBy, headerOnly, train).median : NaN, residualM: train.length ? evaluateTies(baseBy, model, train).median : NaN,
         heldOutResidualM: test.length ? evaluateTies(baseBy, model, test).median : null, heldOutTies: test.length,
         fineResM: fineRes, rasterPixelM, rejected, globals: model.globals, model: model.spec.name, note,
+        ...(placement ? { tieMsPerHelper: placement.ms.map(Math.round) } : {}),
       },
     };
   };
   if (bases.length < 2) return result(headerOnly, [], 0, 0, 0, {}, "fewer than two photographs with a camera: header-only placement");
   hooks.log?.(`soil ties under the header-only cameras (${(fineRes * 100).toFixed(1)} cm samples)`);
-  const first = await findAllTies(bases.map(b => b.frame), byName, hooks, "ties, header cameras", t0, tieOpts, pool, placement);
+  // The helpers' rasters are dropped as soon as the last tie round is over (or the build stops), not at the end of the
+  // build: they are 0.6-0.7 GB on a 123-photograph flight, and the corn reads come next.
+  const release = async () => { if (pool && placement) await releaseRasters(pool, placement); };
+  let first: Awaited<ReturnType<typeof findAllTies>>;
+  try { first = await findAllTies(bases.map(b => b.frame), byName, hooks, "ties, header cameras", t0, tieOpts, pool, placement); }
+  catch (e) { void release().catch(() => undefined); throw e; } // not awaited: a helper that failed may never answer
   hooks.log?.(`${first.ties.length} ties in ${first.pairsWithTies} of ${first.pairs} pairs`);
   const trainOf = (ties: SoilTie[]) => ties.filter(t => !heldOut(t));
-  if (trainOf(first.ties).length < minTies) return result(headerOnly, first.ties, first.ties.length, first.pairs, first.pairsWithTies, first.rejected, `only ${first.ties.length} soil ties (${minTies} needed): header-only placement, photographs may disagree by a metre or more`);
+  if (trainOf(first.ties).length < minTies) { await release(); return result(headerOnly, first.ties, first.ties.length, first.pairs, first.pairsWithTies, first.rejected, `only ${first.ties.length} soil ties (${minTies} needed): header-only placement, photographs may disagree by a metre or more`); }
   checkCancelled(hooks.signal);
   hooks.onProgress?.({ stage: "cameras", done: 0, total: null, message: "fitting the four flight-wide numbers", elapsedMs: Date.now() - t0 });
   await yieldToEvents();
   const g4 = adjust(bases, trainOf(first.ties), GLOBAL_SPEC, { iterations: 15 });
   hooks.log?.(`first fit: tilt across ${g4.model.globals.tiltAcrossDeg.toFixed(2)}, along ${g4.model.globals.tiltAlongDeg.toFixed(2)}, spin ${g4.model.globals.spinDeg.toFixed(2)} deg, ground ${g4.model.globals.groundOffsetM.toFixed(2)} m; ties agree to ${g4.train.median.toFixed(2)} m`);
-  const second = await findAllTies(bases.map(b => frameUnder(b, g4.model)), byName, hooks, "ties, first fit", t0, tieOpts, pool, placement);
+  let second: Awaited<ReturnType<typeof findAllTies>>;
+  try { second = await findAllTies(bases.map(b => frameUnder(b, g4.model)), byName, hooks, "ties, first fit", t0, tieOpts, pool, placement); }
+  catch (e) { void release().catch(() => undefined); throw e; }
+  await release();
   hooks.log?.(`${second.ties.length} ties in ${second.pairsWithTies} of ${second.pairs} pairs under the first fit`);
   checkCancelled(hooks.signal);
   hooks.onProgress?.({ stage: "cameras", done: 0, total: null, message: "fitting the per-photo attitude", elapsedMs: Date.now() - t0 });

@@ -59,14 +59,23 @@ await page.fill('input[placeholder="Apricot orchard, north block"]', NAME);
 await page.check(`input[name="twin-crop"][value="${CROP}"]`);
 if (CROP !== "corn") await page.check(`input[name="weed-tier"][value="${WEEDS}"]`);
 const t0 = Date.now();
+await page.evaluate(t => { window.__benchT0 = t; }, t0);
+const t0Page = t0;
 await page.click("text=Build the twin");
 await page.waitForFunction(() => !!window.__twinBuild, null, { timeout: 1_800_000, polling: 1000 });
 const twinMs = Date.now() - t0;
 await page.waitForFunction(() => !!window.__twinBuild && (window.__twinBuild.atlasesDone || !!window.__twinBuild.error), null, { timeout: 1_800_000, polling: 1000 });
 const totalMs = Date.now() - t0;
+// Photo ground (--ground: the dev server runs with VITE_FIELD_TWIN_PHOTO_GROUND=1): wait for the overview after the atlases.
+let ground = null;
+if (argv.includes("--ground")) {
+  await page.waitForFunction(() => window.__twinGround !== undefined, null, { timeout: 1_800_000, polling: 500 });
+  ground = await page.evaluate(() => window.__twinGround);
+  if (ground) ground.readyMs = ground.at - t0Page;
+}
 const result = await page.evaluate(() => window.__twinBuild);
 sampling = false; await sampler;
-const out = { decoder: "Chrome createImageBitmap + OffscreenCanvas getImageData (the app's own decode)", environment: `Chrome ${browser.version()} headless (Playwright), ${process.platform}-${process.arch}`, base: BASE, crop: CROP, photographs: files.length, weeds: CROP === "corn" ? "corn v1" : WEEDS, peakMemoryGB: +(mem.peakBytes / 1e9).toFixed(2), peakOneProcessGB: +(mem.peakRendererBytes / 1e9).toFixed(2), memorySamples: mem.samples, corn: result.report?.corn ? { ...result.report.corn, summary: result.report.corn.summary } : null, helpers: HELPERS || "default", twinReadyMs: twinMs, atlasesDoneMs: totalMs, timings: result.report?.timings ?? null, notes: result.report?.notes ?? null, cameras: result.report?.cameras ? { ties: result.report.cameras.ties, residualM: result.report.cameras.residualM, fineResM: result.report.cameras.fineResM } : null, twin: result.twin, error: result.error ?? null, consoleErrors: errors };
+const out = { decoder: "Chrome createImageBitmap + OffscreenCanvas getImageData (the app's own decode)", environment: `Chrome ${browser.version()} headless (Playwright), ${process.platform}-${process.arch}`, base: BASE, crop: CROP, photographs: files.length, weeds: CROP === "corn" ? "corn v1" : WEEDS, peakMemoryGB: +(mem.peakBytes / 1e9).toFixed(2), peakOneProcessGB: +(mem.peakRendererBytes / 1e9).toFixed(2), memorySamples: mem.samples, corn: result.report?.corn ? { ...result.report.corn, summary: result.report.corn.summary } : null, helpers: HELPERS || "default", twinReadyMs: twinMs, atlasesDoneMs: totalMs, ground, timings: result.report?.timings ?? null, notes: result.report?.notes ?? null, cameras: result.report?.cameras ? { ties: result.report.cameras.ties, residualM: result.report.cameras.residualM, fineResM: result.report.cameras.fineResM } : null, twin: result.twin, error: result.error ?? null, consoleErrors: errors };
 writeFileSync(OUTFILE ? resolve(OUTFILE) : join(OUT, "build.json"), JSON.stringify(out, null, 1));
 console.log(JSON.stringify(out, null, 1));
 await browser.close();

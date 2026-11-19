@@ -1,5 +1,7 @@
 // The page's side of the build: start the worker, relay its progress, hand back the twin and its files.
+import type { CornPreset } from "../cornPreset";
 import { type TwinBundle, parseTwin } from "../types";
+import { type DeviceHints, deviceHints } from "./concurrency";
 import type { BuildReport } from "./pipeline";
 import type { BuildProgress } from "./types";
 import type { BuildWorkerMessage, BuildWorkerRequest } from "./worker";
@@ -16,6 +18,9 @@ export type BuildResult = {
   onAtlas: (cb: (done: number, total: number) => void) => void;
   /** The analysis record (JSON; ../analysis.ts) of a corn build that was asked for one, else null. Not one of the twin's files. */
   analysis: Blob | null;
+  /** Photo ground (asked for with `photoGround`): its files (ground/...) once the overview is made, after the atlases;
+   * null when not asked for or when it could not be made (the twin is the same either way). Never one of `files`. */
+  ground: Promise<{ files: Map<string, Blob>; ms: number } | null>;
 };
 
 export type BuildRun = {
@@ -46,7 +51,7 @@ function currentEntryScripts(): string[] {
   return [...document.querySelectorAll<HTMLScriptElement>("script[type=module][src]")].map(s => new URL(s.src).pathname);
 }
 
-export function startTwinBuild(files: File[], options: { name: string; id?: string; weeds: "model" | "colour" | "none"; helpers?: number; crop?: "orchard" | "corn"; analysis?: boolean }, hooks: { onProgress?: (p: BuildProgress) => void; onLog?: (line: string) => void } = {}): BuildRun {
+export function startTwinBuild(files: File[], options: { name: string; id?: string; weeds: "model" | "colour" | "none"; helpers?: number; crop?: "orchard" | "corn"; analysis?: boolean; photoGround?: boolean; /** A corn build's setup (../cornPreset.ts); default: the worker's own (../cornFinal3Flag.ts defaultCornPreset). */ cornPreset?: CornPreset; /** Default: this page's own (concurrency.ts). */ device?: DeviceHints }, hooks: { onProgress?: (p: BuildProgress) => void; onLog?: (line: string) => void } = {}): BuildRun {
   if (typeof Worker === "undefined") throw new Error("this browser cannot run the build off the main thread (no Worker)");
   const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
   let settled = false;
@@ -56,9 +61,13 @@ export function startTwinBuild(files: File[], options: { name: string; id?: stri
   let atlasesResolve: (m: Map<string, Blob>) => void = () => undefined, atlasesReject: (e: Error) => void = () => undefined;
   const atlases = new Promise<Map<string, Blob>>((res, rej) => { atlasesResolve = res; atlasesReject = rej; });
   atlases.catch(() => undefined);
+  const groundFiles = new Map<string, Blob>();
+  let groundResolve: (g: { files: Map<string, Blob>; ms: number } | null) => void = () => undefined;
+  const ground = new Promise<{ files: Map<string, Blob>; ms: number } | null>(res => { groundResolve = res; });
+  if (!options.photoGround) groundResolve(null);
   const done = new Promise<BuildResult>((resolve, reject) => {
     const finish = () => { settled = true; worker.terminate(); };
-    const fail = (e: Error) => { finish(); reject(e); atlasesReject(e); };
+    const fail = (e: Error) => { finish(); reject(e); atlasesReject(e); groundResolve(null); };
     worker.onmessage = (e: MessageEvent<BuildWorkerMessage>) => {
       const m = e.data;
       if (m.type === "progress") hooks.onProgress?.(m.progress);
@@ -68,18 +77,22 @@ export function startTwinBuild(files: File[], options: { name: string; id?: stri
         if ("reason" in parsed) { fail(new Error(parsed.reason)); return; }
         for (const [k, v] of m.files) bundleFiles.set(k, v);
         progress.total = parsed.twin.atlases.length;
-        resolve({ twin: parsed.twin, files: bundleFiles, report: m.report, atlases, progress, onAtlas: cb => { listeners.push(cb); }, analysis: m.analysis ?? null });
-        if (!progress.total) { finish(); atlasesResolve(bundleFiles); }
+        resolve({ twin: parsed.twin, files: bundleFiles, report: m.report, atlases, progress, onAtlas: cb => { listeners.push(cb); }, analysis: m.analysis ?? null, ground });
+        if (!progress.total) { if (!options.photoGround) finish(); atlasesResolve(bundleFiles); }
       } else if (m.type === "atlas") {
         bundleFiles.set(m.file, m.blob); progress.done = m.index + 1; progress.total = m.total;
         for (const cb of listeners) cb(progress.done, progress.total);
-      } else if (m.type === "atlases-done") { finish(); atlasesResolve(bundleFiles); }
+      } else if (m.type === "atlases-done") { if (!options.photoGround) finish(); atlasesResolve(bundleFiles); }
+      else if (m.type === "ground") groundFiles.set(m.file, m.blob);
+      else if (m.type === "ground-done") { finish(); groundResolve({ files: groundFiles, ms: m.ms }); }
+      else if (m.type === "ground-failed") { finish(); hooks.onLog?.(`photo ground not made: ${m.message}`); groundResolve(null); }
       else if (m.type === "cancelled") fail(new BuildAborted());
       else if (m.type === "error") fail(new Error(m.message));
     };
     worker.onerror = e => { void workerLoadFailure(e.message).then(m => fail(new Error(m))); };
   });
-  const req: BuildWorkerRequest = { type: "build", files, name: options.name, id: options.id, weeds: options.weeds, helpers: options.helpers, crop: options.crop, ...(options.analysis ? { analysis: true } : {}) };
+  // The page tells the worker what it knows of the device: a worker cannot see a touch screen, and iPadOS Safari calls itself a Mac.
+  const req: BuildWorkerRequest = { type: "build", files, name: options.name, id: options.id, weeds: options.weeds, helpers: options.helpers, device: options.device ?? deviceHints(), crop: options.crop, ...(options.analysis ? { analysis: true } : {}), ...(options.photoGround ? { photoGround: true } : {}), ...(options.cornPreset ? { cornPreset: options.cornPreset } : {}) };
   worker.postMessage(req);
   return { done, cancel: () => { if (!settled) { const c: BuildWorkerRequest = { type: "cancel" }; worker.postMessage(c); } } };
 }

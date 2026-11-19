@@ -68,6 +68,8 @@ export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, units,
           <dt className="text-neutral-400"><span className="mr-1 inline-block h-0.5 w-3 align-middle" style={{ background: TWIN_COLOURS.cornRow }} />{plantsFirst ? "Plants seen along" : "Corn rows"}</dt><dd className="text-right tabular-nums text-neutral-100">{fmtDistance(R.confirmedM, units).text}</dd>
           <dt className="text-neutral-400"><span className="mr-1 inline-block h-px w-3 align-middle" style={{ background: TWIN_COLOURS.cornRowCourse }} />{plantsFirst ? "No plant confirmed" : "Crop not confirmed"}</dt><dd className="text-right tabular-nums text-neutral-100">{fmtDistance(R.notConfirmedM, units).text}</dd>
           {P && <><dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full border border-black/60" style={{ background: TWIN_COLOURS.plantLocated }} />Plants located on rows</dt><dd className="text-right tabular-nums text-neutral-100">{(P.certain + P.probable).toLocaleString()}</dd></>}
+          {P?.alongRowsTwo != null && <><dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ border: `1.5px solid ${TWIN_COLOURS.plantAlongRowTwo}` }} />Second look along rows</dt><dd className="text-right tabular-nums text-neutral-100">{P.alongRowsTwo.toLocaleString()}</dd>
+            <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ border: `1.5px solid ${TWIN_COLOURS.plantAlongRowOne}` }} />Second look, one sharp view</dt><dd className="text-right tabular-nums text-neutral-100">{(P.alongRowsOne ?? 0).toLocaleString()}</dd></>}
           <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornWeed }} />Weeds, confirmed</dt><dd className="text-right tabular-nums text-neutral-100">{s.weeds.confirmed}</dd>
           <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornWeedUnconfirmed }} />Not confirmed / contested</dt><dd className="text-right tabular-nums text-neutral-100">{s.weeds.unconfirmed} / {s.weeds.contested}</dd>
           <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornGap }} />Stand gaps</dt><dd className="text-right tabular-nums text-neutral-100">{s.gaps.confirmed} ({cm(s.gaps.confirmedLengthM, units)})</dd>
@@ -114,7 +116,7 @@ function rowListDetail(v: CornFieldRowView, units: UnitSystem): string {
 }
 
 /** What each mark on a corn twin means, for everyone (the key): only what is drawn now. */
-export function CornLegend({ corn, showPlants, uncertain }: { corn: TwinCorn; showPlants: boolean; uncertain: boolean }) {
+export function CornLegend({ corn, showPlants, uncertain, overPhotos = false }: { corn: TwinCorn; showPlants: boolean; uncertain: boolean; overPhotos?: boolean }) {
   const plantsFirst = useMemo(() => cornFieldRows(corn).some(r => r.plantsFirst), [corn]);
   const item = (key: string, swatch: React.ReactNode, text: string) => <span key={key} className="flex items-center gap-1.5">{swatch}{text}</span>;
   const line = (colour: string, h: number, dash = false) => <span className="inline-block w-4 shrink-0" style={{ height: h, background: dash ? `repeating-linear-gradient(90deg, ${colour} 0 3px, transparent 3px 6px)` : colour }} />;
@@ -122,8 +124,11 @@ export function CornLegend({ corn, showPlants, uncertain }: { corn: TwinCorn; sh
   const items = [
     item("row", line(TWIN_COLOURS.cornRow, 3), plantsFirst ? "Row, plants seen along it" : "Corn row"),
     item("course", line(TWIN_COLOURS.cornRowCourse, 1), plantsFirst ? "Row continues, no plant confirmed" : "Row, crop not confirmed"),
-    showPlants && item("p0", dot(TWIN_COLOURS.plantLocated, "#141614"), "Plant, seen by most photographs over it"),
-    showPlants && item("p1", dot(null, TWIN_COLOURS.plantLocated), "Plant, probable (on a row, at the spacing)"),
+    // Over the photographs, up close, plants are rings so the seedling under each shows: a bold ring and a faint dashed one.
+    showPlants && item("p0", overPhotos ? <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ border: `2px solid ${TWIN_COLOURS.plantLocated}` }} /> : dot(TWIN_COLOURS.plantLocated, "#141614"), overPhotos ? "Plant, seen by most photographs over it (bold ring up close)" : "Plant, seen by most photographs over it"),
+    showPlants && item("p1", overPhotos ? <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full opacity-60" style={{ border: `1px dashed ${TWIN_COLOURS.plantLocated}` }} /> : dot(null, TWIN_COLOURS.plantLocated), overPhotos ? "Plant, probable (faint dashed ring up close)" : "Plant, probable (on a row, at the spacing)"),
+    showPlants && corn.plants?.summary.alongRowsTwo != null && item("p4", dot(null, TWIN_COLOURS.plantAlongRowTwo), "Plant found on a second look along a row (two or more photographs), probable"),
+    showPlants && corn.plants?.summary.alongRowsTwo != null && item("p5", dot(null, TWIN_COLOURS.plantAlongRowOne), "Plant found on a second look along a row (one photograph's sharp view), probable"),
     showPlants && uncertain && item("p2", dot("#8c929a", "#8c929a"), "Plant seen on no row"),
     showPlants && uncertain && item("p3", <span className="inline-block w-2 shrink-0 text-center leading-none text-[#8c929a]">×</span>, "Green between two rows, not the crop"),
     item("w1", dot("rgba(239,83,80,0.35)", TWIN_COLOURS.cornWeed), "Weed candidate, confirmed"),
@@ -131,7 +136,10 @@ export function CornLegend({ corn, showPlants, uncertain }: { corn: TwinCorn; sh
     uncertain && item("w3", dot(null, TWIN_COLOURS.cornWeedContested), "Contested: crop or weed"),
     item("g1", line(TWIN_COLOURS.cornGap, 4), "Stand gap, confirmed"),
     uncertain && item("g2", line(TWIN_COLOURS.cornGapWithheld, 2, true), "Gap withheld"),
-    item("unseen", <span className="inline-block h-2.5 w-3.5 shrink-0 rounded-sm border border-[#3a3f3a]" style={{ background: `repeating-linear-gradient(135deg, ${TWIN_COLOURS.hatch} 0 1px, ${TWIN_COLOURS.imagery} 1px 4px)` }} />, "Not photographed"),
+    overPhotos
+      ? item("unseen", <span className="inline-block h-2.5 w-3.5 shrink-0 rounded-sm border border-[#3a3f3a]" style={{ background: "#1a1c1a" }} />, "Dark: not photographed")
+      : item("unseen", <span className="inline-block h-2.5 w-3.5 shrink-0 rounded-sm border border-[#3a3f3a]" style={{ background: `repeating-linear-gradient(135deg, ${TWIN_COLOURS.hatch} 0 1px, ${TWIN_COLOURS.imagery} 1px 4px)` }} />, "Not photographed"),
+    overPhotos && item("photos", <span className="inline-block h-2.5 w-3.5 shrink-0 rounded-sm" style={{ background: "linear-gradient(135deg,#6b5a45,#7a8a5a)" }} />, "Under the marks: the flight's photographs, as they show the ground"),
   ];
   return <div className="mt-1.5 grid grid-cols-1 gap-y-0.5 text-[10px] text-neutral-400 sm:grid-cols-2 sm:gap-x-3" aria-label="Corn legend">{items.filter(Boolean)}</div>;
 }
@@ -185,11 +193,37 @@ function nearestCornRowM(twin: TwinBundle, corn: TwinCorn, lat: number, lng: num
   return best;
 }
 
+/** The plants as drawn: positions, what each is drawn as, how many photographs located it (when known). */
+export type CornPlantsShown = { points: [number, number][]; certainty?: number[] | null; photos?: number[] | null };
+
+const PLANT_CLASS: Record<number, { title: string; text: string }> = {
+  0: { title: "Plant on a row", text: "A plant two or more photographs located, on a row, seen by most of the photographs over it." },
+  1: { title: "Plant on a row, probable", text: "A plant two or more photographs located, on a row at the field's plant spacing, but seen by fewer than most of the photographs over it." },
+  2: { title: "Plant seen on no row", text: "Green two or more photographs located that sits on no row: a plant out of line, a weed, or something else; the twin does not say which." },
+  3: { title: "Green between two rows", text: "Green two or more photographs located between two rows: not the crop by where it is." },
+  4: { title: "Plant on a row, second look", text: "Two or more photographs marked it on a second look along a row the plants found first made; at the field's plant spacing. Probable." },
+  5: { title: "Plant on a row, second look, one sharp view", text: "One photograph marked it on a second look along a row, near the middle of its frame where it sees sharply; at the field's plant spacing. Probable." },
+};
+
 /** The inspector for a corn selection, or null when the selection is not corn. */
-export function CornInspector({ twin, selection, atlasUrl, onClose }: { twin: TwinBundle; selection: TwinPick; atlasUrl: (i: number) => Promise<string>; onClose: () => void }) {
+export function CornInspector({ twin, selection, atlasUrl, onClose, plants = null }: { twin: TwinBundle; selection: TwinPick; atlasUrl: (i: number) => Promise<string>; onClose: () => void; plants?: CornPlantsShown | null }) {
   const units = useUnitSystem();
   const corn = twin.corn;
   if (!corn || !selection) return null;
+  if (selection.kind === "plant") {
+    const c = plants?.certainty?.[selection.index] ?? 0, n = plants?.photos?.[selection.index] ?? null, cls = PLANT_CLASS[c] ?? PLANT_CLASS[0];
+    return (
+      <div>
+        <Header kind="Corn field" title={cls.title} colour={TWIN_COLOURS.plantLocated} onClose={onClose} />
+        <p className="mt-2 text-xs text-neutral-300">{cls.text}</p>
+        <Section title="What the photographs said"><Rows lines={[
+          ...(n != null ? [{ label: "Located in", value: `${n} photograph${n === 1 ? "" : "s"}` }] : []),
+          { label: "Position", value: isLocalTwin(twin) ? "local (test flight)" : `${selection.lat.toFixed(7)}, ${selection.lng.toFixed(7)}` },
+        ]} /><p className="mt-1.5 text-[10px] text-neutral-500">Located by the photographs, not identified as corn by its look; one plant of the stand, not a stand count.</p></Section>
+        <ReviewOnly />
+      </div>
+    );
+  }
   if (selection.kind === "cornWeed") {
     const w = corn.weeds.find(x => x.id === selection.id);
     if (!w) return <p className="text-xs text-neutral-500">That observation is not in this twin.</p>;

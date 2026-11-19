@@ -8,6 +8,7 @@
 // builder only keeps points that line up in parallel, evenly spaced rows, and scattered green makes no rows.
 import type { PhotoPixels } from "../photoScout/pattern";
 import type { PlantPoint } from "./plantRows";
+import { corePeaks, coresView, vividGreen } from "./greenCores";
 import { convexHull } from "./readRowCrop";
 import { type SeedlingCache, sharedSeedlingMask } from "./seedlingGreen";
 
@@ -39,6 +40,31 @@ export const GREEN_POINTS = {
   shapeMinPx: 60,
   /** Points stop here (a frame of cover gives no plant positions anyway). */
   maxPoints: 15000,
+  /** With the vivid cores asked for: a core belongs to the piece under it, or to the nearest one within this many work pixels. */
+  coreReachPx: 2,
+};
+
+/**
+ * The vivid cores asked of a photograph (greenCores.ts): the two blurs in its own pixels, and the bar a core must reach.
+ * `reference`:
+ *   "strongest"  at or over `share` of the photograph's strongest core (the first way; one grass verge in the frame
+ *                sets that core so high that no crop core passes);
+ *   "marks"      at or over `factor` times the median strength of the cores that sit on the read's own marks in this
+ *                photograph: per piece of green that holds marks, as many of its strongest cores as it has marks.
+ *                With no core on any mark the photograph gets no cores.
+ */
+export type CoresAsked = { finePx: number; widePx: number; share: number; reference?: "strongest" | "marks"; factor?: number;
+  /** CORES-2 (fieldTwin/layers/options.ts LAYERS.coresStartOnNoGreen, off: null): with the "marks" reference, a core on
+   * no piece of green (none within GREEN_POINTS.coreReachPx) at or over this many times the median core on the read's
+   * own marks starts a mark of its own. Off, such a core is never a mark. */
+  startOnNoGreen?: number | null };
+/** What the cores pass found (for the record and for measuring): strengths are as measured, not shares. */
+export type CoresInfo = {
+  reference: "strongest" | "marks"; strongest: number;
+  /** "marks": the cores on the read's marks, their median strength, and every local peak's strength (ascending). */
+  onMarks?: number; medianOnMarks?: number | null; peakStrengths?: Float32Array;
+  /** The bar, and the cores at or over it with where each stands: in a piece read as cover (never a mark), in another piece, or on none. */
+  threshold: number | null; kept: { x: number; y: number; v: number; where: "cover" | "piece" | "none" }[];
 };
 
 /** A lone plant's outline at the photo's own pixel: how a grass (corn's narrow, spread leaves) differs from a broadleaf
@@ -59,10 +85,25 @@ export type GreenPoints = {
   /** Share of the frame that is green. */
   greenShare: number;
   workFactor: number;
+  /** With the vivid cores asked for: the points added from them (they follow the read's own points in `points`). */
+  coresAdded?: number; coresInfo?: CoresInfo;
+  /** Read only, per point: which views found it (bit 1 the green, bit 2 a vivid core). Cores are paired with points
+   * only in a piece that holds more cores than points; elsewhere a point says green alone. */
+  foundBy?: Uint8Array;
+  /** Read only (2026-11-18, for the field profile, fieldTwin/layers/l5Profile.ts), per point: what it looks like.
+   * `sizePx` the square root of its green's area, photo pixels (the piece's, or the square's of a long piece; NaN for a
+   * point a core added); `green` the mean (2g - r - b) / (r + g + b) of its piece's green, sampled once per work pixel;
+   * `solidity` its outline's (PlantShape, a lone plant; NaN where none was measured). */
+  look?: { sizePx: Float32Array; green: Float32Array; solidity: Float32Array };
 };
 
-/** Plant positions over a whole photograph, photo pixels. */
-export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedlings?: SeedlingCache): GreenPoints {
+/**
+ * Plant positions over a whole photograph, photo pixels.
+ * `cores` (off unless given): the plants of a piece counted by its vivid cores as well. Every point above is kept; in a
+ * piece that holds more cores than points, each point takes its nearest core (one to one, nearest pairs first) and the
+ * cores left over are added as points, so the piece carries as many points as it has cores. Cover gets none.
+ */
+export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedlings?: SeedlingCache, cores: CoresAsked | null = null, view: { strength: Float32Array; top: number } | null = null): GreenPoints {
   const W = px.width, H = px.height, f = Math.max(1, Math.round(Math.max(W, H) / o.workLongSide));
   // The mask the emergence reader also reads: from the photograph's shared cache when there is one.
   const full = sharedSeedlingMask(seedlings, px);
@@ -107,8 +148,16 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
   let typical = o.minPiecePx;
   for (let acc = 0, i = 0; i < sizing.length; i++) { acc += area[sizing[i]]; if (acc >= total / 2) { typical = area[sizing[i]]; break; } }
   const d = Math.sqrt(typical), minPiece = Math.max(o.minPiecePx, typical * o.speckShare);
+  // Read only: each piece's mean greenness, one photo pixel per work pixel (its centre) where the mask is green there.
+  const gSum = new Float64Array(area.length), gN = new Int32Array(area.length);
+  { const rgba = px.rgba, c = Math.min(f - 1, f >> 1);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const id = label[y * w + x]; if (id < 0) continue; const P = (y * f + c) * W + x * f + c; if (!full[P]) continue; const q = P * 4, r = rgba[q], g = rgba[q + 1], b = rgba[q + 2], t = r + g + b; if (!t) continue; gSum[id] += (2 * g - r - b) / t; gN[id]++; } }
+  const lkSize: number[] = [], lkGreen: number[] = [], lkSol: number[] = [];
+  const pieceGreen = (id: number) => (gN[id] ? gSum[id] / gN[id] : NaN);
   const toPhoto = (x: number, y: number): PlantPoint => ({ x: (x + 0.5) * f, y: (y + 0.5) * f });
   const points: GreenPoint[] = [];
+  /** The piece each point came from, and the pieces read as cover (only kept for the vivid cores). */
+  const pieceOf: number[] = [], cover = new Set<number>();
   /** The piece's own pixels at the photo's pixel: its outline, hull and leaf width. */
   const shapeOf = (id: number): PlantShape | undefined => {
     const X0 = bx0[id] * f, Y0 = by0[id] * f, X1 = Math.min(W, (bx1[id] + 1) * f), Y1 = Math.min(H, (by1[id] + 1) * f);
@@ -128,12 +177,12 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
   };
   for (const id of kept) {
     const a = area[id]; if (a < minPiece) continue;
-    if (a <= o.wholeUpTo * typical) { points.push({ ...toPhoto(sx[id] / a, sy[id] / a), shape: shapeOf(id) }); continue; }
+    if (a <= o.wholeUpTo * typical) { const sh = shapeOf(id); points.push({ ...toPhoto(sx[id] / a, sy[id] / a), shape: sh }); pieceOf.push(id); lkSize.push(Math.sqrt(a) * f); lkGreen.push(pieceGreen(id)); lkSol.push(sh ? sh.solidity : NaN); continue; }
     // A large piece: cover (it fills its box, wide both ways) gives no points: squares cut from a lawn or a canopy line
     // up in a perfect lattice the row builder would take for rows. A long piece (plants touching along a row) gives
     // points along its long axis, one per typical plant.
     const bw = bx1[id] - bx0[id] + 1, bh = by1[id] - by0[id] + 1, fill = a / (bw * bh);
-    if (fill > o.coverFill && Math.min(bw, bh) > o.coverPlants * d) continue;
+    if (fill > o.coverFill && Math.min(bw, bh) > o.coverPlants * d) { cover.add(id); continue; }
     const mx = sx[id] / a, my = sy[id] / a;
     let cxx = 0, cyy = 0, cxy = 0;
     for (let y = by0[id]; y <= by1[id]; y++) for (let x = bx0[id]; x <= bx1[id]; x++) if (label[y * w + x] === id) { cxx += (x - mx) ** 2; cyy += (y - my) ** 2; cxy += (x - mx) * (y - my); }
@@ -142,8 +191,161 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
     for (let y = by0[id]; y <= by1[id]; y++) for (let x = bx0[id]; x <= bx1[id]; x++) if (label[y * w + x] === id) {
       const k = Math.floor(((x - mx) * ux + (y - my) * uy) / step), b = bins.get(k) ?? [0, 0, 0]; b[0]++; b[1] += x; b[2] += y; bins.set(k, b);
     }
-    for (const [n, bxs, bys] of bins.values()) if (n >= minPiece) points.push(toPhoto(bxs / n, bys / n));
+    for (const [n, bxs, bys] of bins.values()) if (n >= minPiece) { points.push(toPhoto(bxs / n, bys / n)); pieceOf.push(id); lkSize.push(Math.sqrt(n) * f); lkGreen.push(pieceGreen(id)); lkSol.push(NaN); }
     if (points.length > o.maxPoints) break;
   }
-  return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f };
+  // Which views found each point (read only): 1 the green; 2 a vivid core (a point the cores add, or one that took a core).
+  const foundBy = new Uint8Array(points.length).fill(1);
+  const lookOf = () => { const n = points.length, L = { sizePx: new Float32Array(n).fill(NaN), green: new Float32Array(n).fill(NaN), solidity: new Float32Array(n).fill(NaN) }; L.sizePx.set(lkSize.slice(0, n)); L.green.set(lkGreen.slice(0, n)); L.solidity.set(lkSol.slice(0, n)); return L; };
+  if (!cores || points.length > o.maxPoints) return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f, foundBy, look: lookOf() };
+  // The vivid cores (greenCores.ts), each in the piece under it or the nearest within reach.
+  const pointsIn = new Map<number, number[]>(); pieceOf.forEach((id, k) => (pointsIn.get(id) ?? pointsIn.set(id, []).get(id)!).push(k));
+  // The cores view: as given (L1, computed once for the photograph), else made here.
+  const byMarks = cores.reference === "marks", reach = o.coreReachPx;
+  view ??= coresView(vividGreen(px), W, H, cores.finePx, cores.widePx);
+  // By the strongest core: the peaks at or over the share. By the marks: every peak first, the bar from those on the marks.
+  const peaks = corePeaks(view.strength, W, H, view.top, byMarks ? 0 : cores.share);
+  const pieceAtCore = (c: { x: number; y: number }) => {
+    const cx = Math.round(c.x / f - 0.5), cy = Math.round(c.y / f - 0.5); let best = -1, bd = Infinity;
+    for (let dy = -reach; dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) { const xx = cx + dx, yy = cy + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const id = label[yy * w + xx]; if (id < 0) continue; const q = dx * dx + dy * dy; if (q < bd) { bd = q; best = id; } }
+    return best >= 0 && bd <= reach * reach ? best : -1;
+  };
+  const info: CoresInfo = { reference: byMarks ? "marks" : "strongest", strongest: view.top, threshold: byMarks ? null : cores.share * view.top, kept: [] };
+  let found = peaks;
+  if (byMarks) {
+    const pieceOfPeak = peaks.map(pieceAtCore), inPiece = new Map<number, number[]>(), on: number[] = [];
+    peaks.forEach((c, k) => { const id = pieceOfPeak[k]; if (id >= 0 && pointsIn.has(id)) (inPiece.get(id) ?? inPiece.set(id, []).get(id)!).push(c.v); });
+    for (const [id, vs] of inPiece) { vs.sort((p, q) => q - p); for (const v of vs.slice(0, pointsIn.get(id)!.length)) on.push(v); }
+    on.sort((p, q) => p - q);
+    info.onMarks = on.length; info.medianOnMarks = on.length ? on[on.length >> 1] : null; info.peakStrengths = Float32Array.from(peaks.map(c => c.v)).sort();
+    info.threshold = info.medianOnMarks != null ? (cores.factor ?? 1) * info.medianOnMarks : null;
+    found = info.threshold == null ? [] : peaks.filter(c => c.v >= info.threshold!);
+  }
+  const coresIn = new Map<number, number[]>();
+  // CORES-2: the cores on no green strong enough to start a mark (off unless asked, and only against the read's marks).
+  const startAt = byMarks && cores.startOnNoGreen != null && info.medianOnMarks != null ? cores.startOnNoGreen * info.medianOnMarks : null, onNoGreen: number[] = [];
+  found.forEach((c, k) => {
+    const cx = Math.round(c.x / f - 0.5), cy = Math.round(c.y / f - 0.5); let best = -1, bd = Infinity;
+    for (let dy = -reach; dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) { const xx = cx + dx, yy = cy + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const id = label[yy * w + xx]; if (id < 0) continue; const q = dx * dx + dy * dy; if (q < bd) { bd = q; best = id; } }
+    const inPiece = best >= 0 && bd <= reach * reach;
+    info.kept.push({ x: c.x, y: c.y, v: c.v, where: !inPiece ? "none" : cover.has(best) ? "cover" : "piece" });
+    if (inPiece && !cover.has(best)) (coresIn.get(best) ?? coresIn.set(best, []).get(best)!).push(k);
+    else if (!inPiece && startAt != null && c.v >= startAt) onNoGreen.push(k);
+  });
+  let coresAdded = 0;
+  for (const [id, cs] of coresIn) {
+    const ms = pointsIn.get(id) ?? []; if (cs.length <= ms.length) continue;
+    const pairs: [number, number, number][] = []; for (const m of ms) for (const c of cs) pairs.push([Math.hypot(points[m].x - found[c].x, points[m].y - found[c].y), m, c]);
+    pairs.sort((p, q) => p[0] - q[0]); const usedM = new Set<number>(), usedC = new Set<number>();
+    for (const [, m, c] of pairs) { if (usedM.has(m) || usedC.has(c)) continue; usedM.add(m); usedC.add(c); foundBy[m] |= 2; }
+    for (const c of cs) if (!usedC.has(c)) { points.push({ x: found[c].x, y: found[c].y }); coresAdded++; lkSize.push(NaN); lkGreen.push(pieceGreen(id)); lkSol.push(NaN); }
+    if (points.length > o.maxPoints) break;
+  }
+  // CORES-2: each such core a mark (a core alone found it: foundBy 2).
+  for (const k of onNoGreen) { if (points.length > o.maxPoints) break; points.push({ x: found[k].x, y: found[k].y }); coresAdded++; lkSize.push(NaN); lkGreen.push(NaN); lkSol.push(NaN); }
+  const tagged = new Uint8Array(points.length); tagged.set(foundBy); tagged.fill(2, foundBy.length);
+  return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f, coresAdded, coresInfo: info, foundBy: tagged, look: lookOf() };
+}
+
+export const ROW_POINTS = {
+  /** Pieces smaller than this (photo pixels) are specks ... */
+  minPiecePx: 30,
+  /** ... and so are pieces under this share of the typical plant. */
+  speckShare: 0.15,
+  /** A piece over this share of the frame does not size the typical plant. */
+  maxPlantShare: 0.002,
+  /** Without a row direction, a piece up to this many typical plants is one point (as plantPointsFromGreen). */
+  wholeUpTo: 4,
+  coverFill: 0.35, coverPlants: 6,
+  /** With a row direction: a piece longer ALONG THE ROW than this many plant spacings holds more than one plant, and
+   * gets one point per spacing along the row. Its width across the row never splits it (a seedling's leaves spread
+   * across the furrow). */
+  splitFrom: 1.5,
+  /** The plant spacing assumed in one photograph, metres (the field's own is only known once the photographs are
+   * combined; corn is sown at 0.12 to 0.2). */
+  seedM: 0.15,
+  maxSplit: 8,
+  maxPoints: 20000,
+};
+
+/**
+ * Plant positions for the rows (2026-11-16), from a mask at the photo's own pixel (the lower bar, SEEDLING_ROW): the
+ * pieces are found at full size, not on the mask shrunk three times, so two seedlings a couple of pixels apart stay two
+ * (measured: 7 % more plants on the rows). One point per piece at its centre; a piece long along the row direction
+ * (`rowAngle`, radians in the photo, null when the photograph made no row) is plants touching and gets a point per
+ * plant spacing along the row. These are candidates for the field's rows only (plantsFirst.ts): never weeds, never rows
+ * of their own in a photograph.
+ * `defer` (off by default): with a row direction no piece is split here. Every piece is one point at its centre, and
+ * `defer.span` receives, per point, how far the piece reaches along the row either way of that centre (pixels, back
+ * and forward): the field splits the long ones at the plant spacing it measured (cornPlants.ts), not at `seedM`.
+ */
+export function rowPlantPoints(mask: Uint8Array, W: number, H: number, rowAngle: number | null, gsdM: number | null, o = ROW_POINTS, defer: { span: [number, number][] } | null = null): PlantPoint[] {
+  const N = W * H, seen = new Uint8Array(N);
+  type Piece = { a: number; cx: number; cy: number; x0: number; y0: number; x1: number; y1: number; start: number; tLo: number; tHi: number };
+  const ux = rowAngle != null ? Math.cos(rowAngle) : 0, uy = rowAngle != null ? Math.sin(rowAngle) : 0, spans = !!defer && rowAngle != null;
+  const pieces: Piece[] = [], stack: number[] = [];
+  for (let i = 0; i < N; i++) {
+    if (!mask[i] || seen[i]) continue;
+    let a = 0, sx = 0, sy = 0, x0 = W, y0 = H, x1 = 0, y1 = 0, tLo = Infinity, tHi = -Infinity;
+    seen[i] = 1; stack.push(i);
+    while (stack.length) {
+      const j = stack.pop()!, x = j % W, y = (j - x) / W;
+      a++; sx += x; sy += y; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      if (spans) { const t = x * ux + y * uy; if (t < tLo) tLo = t; if (t > tHi) tHi = t; }
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        const k = yy * W + xx; if (mask[k] && !seen[k]) { seen[k] = 1; stack.push(k); }
+      }
+    }
+    if (a >= o.minPiecePx) pieces.push({ a, cx: sx / a, cy: sy / a, x0, y0, x1, y1, start: i, tLo, tHi });
+  }
+  // The typical plant: the area-weighted median piece (as plantPointsFromGreen; these frames are seedlings on soil).
+  const sizing = pieces.filter(p => p.a <= o.maxPlantShare * N).sort((p, q) => p.a - q.a), total = sizing.reduce((t, p) => t + p.a, 0);
+  let typical = o.minPiecePx;
+  for (let acc = 0, i = 0; i < sizing.length; i++) { acc += sizing[i].a; if (acc >= total / 2) { typical = sizing[i].a; break; } }
+  const d = Math.sqrt(typical), minPiece = Math.max(o.minPiecePx, typical * o.speckShare);
+  const seedPx = gsdM && gsdM > 0 ? o.seedM / gsdM : 2 * d;
+  const points: PlantPoint[] = [];
+  /** A piece's own pixels again (its bounding box holds other pieces too: only those connected to its first pixel). */
+  const pixelsOf = (p: Piece, fn: (x: number, y: number) => void) => {
+    const bw = p.x1 - p.x0 + 1, bh = p.y1 - p.y0 + 1, vis = new Uint8Array(bw * bh), st: number[] = [p.start];
+    vis[((p.start - (p.start % W)) / W - p.y0) * bw + ((p.start % W) - p.x0)] = 1;
+    while (st.length) {
+      const j = st.pop()!, x = j % W, y = (j - x) / W; fn(x, y);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, yy = y + dy; if (xx < p.x0 || yy < p.y0 || xx > p.x1 || yy > p.y1) continue;
+        const k = yy * W + xx, v = (yy - p.y0) * bw + (xx - p.x0); if (mask[k] && !vis[v]) { vis[v] = 1; st.push(k); }
+      }
+    }
+  };
+  for (const p of pieces) {
+    if (p.a < minPiece) continue;
+    const bw = p.x1 - p.x0 + 1, bh = p.y1 - p.y0 + 1;
+    // Cover (a lawn, a canopy): no points, as in plantPointsFromGreen.
+    if (p.a > o.wholeUpTo * typical && p.a / (bw * bh) > o.coverFill && Math.min(bw, bh) > o.coverPlants * d) continue;
+    if (spans) { const tc = p.cx * ux + p.cy * uy; points.push({ x: p.cx + 0.5, y: p.cy + 0.5 }); defer!.span.push([p.tLo - tc - 0.5, p.tHi - tc + 0.5]); continue; }
+    const px: number[] = [], py: number[] = [];
+    let ax = ux, ay = uy;
+    if (rowAngle == null) {
+      // No row in this photograph: a piece up to a few plants is one point; a larger one is cut along its own length
+      // (as plantPointsFromGreen does).
+      if (p.a <= o.wholeUpTo * typical) { points.push({ x: p.cx + 0.5, y: p.cy + 0.5 }); continue; }
+      let cxx = 0, cyy = 0, cxy = 0;
+      pixelsOf(p, (x, y) => { cxx += (x - p.cx) ** 2; cyy += (y - p.cy) ** 2; cxy += (x - p.cx) * (y - p.cy); px.push(x); py.push(y); });
+      const th = 0.5 * Math.atan2(2 * cxy, cxx - cyy); ax = Math.cos(th); ay = Math.sin(th);
+    } else {
+      // Its length along the row: bounded by the box first (cheap), measured only when that could reach the split.
+      if (Math.abs(bw * ux) + Math.abs(bh * uy) <= o.splitFrom * seedPx) { points.push({ x: p.cx + 0.5, y: p.cy + 0.5 }); continue; }
+      pixelsOf(p, (x, y) => { px.push(x); py.push(y); });
+    }
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < px.length; i++) { const t = px[i] * ax + py[i] * ay; if (t < lo) lo = t; if (t > hi) hi = t; }
+    const along = hi - lo + 1;
+    if (along <= o.splitFrom * seedPx) { points.push({ x: p.cx + 0.5, y: p.cy + 0.5 }); continue; }
+    const k = Math.min(o.maxSplit, Math.max(2, Math.round(along / seedPx))), n = new Float64Array(k), bx = new Float64Array(k), by = new Float64Array(k);
+    for (let i = 0; i < px.length; i++) { const b = Math.min(k - 1, Math.floor(((px[i] * ax + py[i] * ay - lo) / along) * k)); n[b]++; bx[b] += px[i]; by[b] += py[i]; }
+    for (let b = 0; b < k; b++) if (n[b] >= minPiece / 2) points.push({ x: bx[b] / n[b] + 0.5, y: by[b] / n[b] + 0.5 });
+    if (points.length > o.maxPoints) break;
+  }
+  return points;
 }

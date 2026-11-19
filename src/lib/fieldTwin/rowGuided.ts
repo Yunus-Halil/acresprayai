@@ -464,6 +464,16 @@ export type MergeResult = {
   p: number; q: number;
 };
 
+/** The chance that `k` or more of `n` marks fall in a row's band when a mark is as likely there as in each of its two
+ * control strips (a binomial tail at one third). */
+export function bandTail(k: number, n: number): number { let s = 0, term = Math.pow(2 / 3, n); for (let i = 0; i <= n; i++) { if (i >= k) s += term; term = (term * (n - i)) / (i + 1) / 2; } return s; }
+
+/** A stretch of row `lengthM` long is verified when its band holds at least `minBand` marks (per `stretchM`) and clearly
+ * more than its two control strips together would by chance (`control`: their count, scaled to the band's width). */
+export function bandBeatsControls(band: number, control: number, lengthM: number, o: Pick<RowGuidedOptions, "minBand" | "stretchM" | "alpha"> = ROW_GUIDED): boolean {
+  return band >= o.minBand * (lengthM / o.stretchM) && bandTail(band, band + control) < o.alpha;
+}
+
 /**
  * The photographs' candidates joined along each row (see the header). `gateM`: candidates of different photographs
  * within this distance along the row are one plant; two of the same photograph never are. `use` picks photographs
@@ -502,14 +512,13 @@ export function mergeAlongRows(searches: PhotoSearch[], rows: RowLine[], gateM: 
   const accepted = sized.map(toMark).filter(m => m.views >= Math.min(o.minViews, m.covered) && m.logOdds > 0);
   const marks = accepted.filter(m => m.strip === 0), controlMarks = accepted.filter(m => m.strip !== 0);
   // Stretches of row: verified where the band holds clearly more than its two control strips together would by chance.
-  const tail = (k: number, n: number) => { let s = 0, term = Math.pow(2 / 3, n); for (let i = 0; i <= n; i++) { if (i >= k) s += term; term = (term * (n - i)) / (i + 1) / 2; } return s; };
   const stretches: RowStretch[] = [], cScale = list.length ? list.reduce((t, s) => t + (s.controlScale ?? 1), 0) / list.length : 1;
   for (const row of rows) {
     const a0 = row.a0, a1 = row.a0 + (row.en.length - 1) * row.stepM, mine = marks.filter(m => m.row === row.id), ctl = controlMarks.filter(m => m.row === row.id);
     for (let s = a0; s < a1 - 1e-6; s += o.stretchM) {
       const e = Math.min(a1, s + o.stretchM), band = mine.filter(m => m.a >= s && m.a < e).length, control = Math.round(ctl.filter(m => m.a >= s && m.a < e).length * cScale);
       const seen = coveredAt(row.id, (s + e) / 2);
-      stretches.push({ row: row.id, a0: s, a1: e, band, control, state: seen < Math.min(o.minViews, list.length) ? "not covered" : band >= o.minBand * ((e - s) / o.stretchM) && tail(band, band + control) < o.alpha ? "verified" : "not verified" });
+      stretches.push({ row: row.id, a0: s, a1: e, band, control, state: seen < Math.min(o.minViews, list.length) ? "not covered" : bandBeatsControls(band, control, e - s, o) ? "verified" : "not verified" });
     }
   }
   return { marks, controlMarks, stretches, p: Math.round(p * 1000) / 1000, q: Math.round(q * 10000) / 10000 };
@@ -533,6 +542,8 @@ export type SeedSpacing = {
   /** Plants a hectare that spacing and the row spacing imply. */
   impliedPerHa: number | null;
   pairs: number;
+  /** Whether the score has one peak (see seedSpacing): false where several separate spacings score as well as the best. */
+  peak: boolean;
 };
 
 /**
@@ -541,20 +552,42 @@ export type SeedSpacing = {
  * in turns of the spacing). Misses do not matter (a pair two seeds apart still votes for the spacing); half the
  * spacing scores as well, so the search is bounded below by what corn is sown at, and the longest spacing within a
  * hair of the best is taken.
+ *
+ * One peak or none (2026-11-16). The hair (0.02) is this function's own word for "as good as the best". The spacings
+ * within it are gathered into runs of neighbouring scan steps. The pick's run is the peak; a run at a whole fraction
+ * of it (a half, a third: they score as well by construction) is the same peak. Any other run is a second spacing the
+ * score cannot tell from the pick, and then there is no peak: on four of the five flights measured the curve was flat
+ * (best 0.017 to 0.055, with three or four separate runs within the hair) and the pick was only the longest of them;
+ * on the fifth (best 0.129) one run, 0.132 to 0.140 m.
+ * One run is not enough on its own: a flat curve wobbles, and a wobble can leave a single run within the hair (seen on
+ * one of the four once its photographs were registered a little differently: best 0.047, one run at 0.109 to 0.113 m).
+ * So the best must also stand above the curve's own level (the median of the scores tried) by 3 of the curve's own
+ * spreads (1.4826 times the median distance from that level: a standard deviation, read so that the peak itself does
+ * not widen it), as registerPhotos asks of a repeat (3 times the square root of its background). Measured: 5.3 median
+ * distances on the flight with a spacing, 1.5 to 2.8 on the others; the bar is 4.4.
+ * With `needsAPeak` the spacing is null (not measured) where there is no such peak.
  */
-export function seedSpacing(marks: { row: number; a: number }[], rowSpacingM: number, reachM = 0.8): SeedSpacing {
+export function seedSpacing(marks: { row: number; a: number }[], rowSpacingM: number, reachM = 0.8, needsAPeak = false): SeedSpacing {
   const allowedM: [number, number] = [1 / (CORN_POPULATION_PER_HA[1] / 10_000) / rowSpacingM, 1 / (CORN_POPULATION_PER_HA[0] / 10_000) / rowSpacingM];
   const byRow = new Map<number, number[]>();
   for (const m of marks) (byRow.get(m.row) ?? byRow.set(m.row, []).get(m.row)!).push(m.a);
   const d: number[] = [];
   for (const as of byRow.values()) { as.sort((x, y) => x - y); for (let i = 0; i < as.length; i++) for (let j = i + 1; j < as.length && as[j] - as[i] <= reachM; j++) d.push(as[j] - as[i]); }
-  if (d.length < 50) return { spacingM: null, allowedM, regularity: 0, impliedPerHa: null, pairs: d.length };
+  if (d.length < 50) return { spacingM: null, allowedM, regularity: 0, impliedPerHa: null, pairs: d.length, peak: false };
   const score = (s: number) => { let c = 0; for (const x of d) c += Math.cos((2 * Math.PI * x) / s); return c / d.length; };
   const scan: [number, number][] = [];
   for (let s = allowedM[0]; s <= allowedM[1] + 1e-9; s += 0.002) scan.push([s, score(s)]);
   const best = Math.max(...scan.map(x => x[1]));
   const pick = [...scan].reverse().find(x => x[1] >= best - 0.02)!;
-  return { spacingM: Math.round(pick[0] * 1000) / 1000, allowedM: [Math.round(allowedM[0] * 1000) / 1000, Math.round(allowedM[1] * 1000) / 1000], regularity: Math.round(Math.max(0, pick[1]) * 1000) / 1000, impliedPerHa: Math.round(10_000 / (pick[0] * rowSpacingM)), pairs: d.length };
+  // The runs of spacings within the hair, and whether all of them are the pick's run or a whole fraction of it.
+  const step = 0.002, runs: [number, number][] = [];
+  for (const [s, v] of scan) { if (v < best - 0.02) continue; const last = runs[runs.length - 1]; if (last && s - last[1] <= 1.5 * step) last[1] = s; else runs.push([s, s]); }
+  const top = runs[runs.length - 1];
+  const peak = runs.every(r => { if (r === top) return true; for (let k = 2; top[1] / k >= allowedM[0] - step; k++) if (r[0] >= top[0] / k - step && r[1] <= top[1] / k + step) return true; return false; });
+  const level = [...scan].map(x => x[1]).sort((x, y) => x - y)[scan.length >> 1], spread = 1.4826 * [...scan].map(x => Math.abs(x[1] - level)).sort((x, y) => x - y)[scan.length >> 1];
+  const stands = best - level >= 3 * spread;
+  const measured = (peak && stands) || !needsAPeak;
+  return { spacingM: measured ? Math.round(pick[0] * 1000) / 1000 : null, allowedM: [Math.round(allowedM[0] * 1000) / 1000, Math.round(allowedM[1] * 1000) / 1000], regularity: Math.round(Math.max(0, pick[1]) * 1000) / 1000, impliedPerHa: measured ? Math.round(10_000 / (pick[0] * rowSpacingM)) : null, pairs: d.length, peak: peak && stands };
 }
 
 /**

@@ -5,6 +5,7 @@
 // 20-megapixel photographs never sit decoded in memory together.
 import { mpfPreview } from "../../directGeoref/mpf";
 import type { PhotoPixels } from "../../photoScout/pattern";
+import { freeCanvas } from "./freeCanvas";
 import { bandSetPhoto, djiBandOf, refusedPhoto, tiffPhoto } from "./tiffPhotos";
 import type { Codec, PhotoSource } from "./types";
 
@@ -15,13 +16,18 @@ function canvasOf(w: number, h: number): OffscreenCanvas {
   return new OffscreenCanvas(w, h);
 }
 
+/** The bitmap drawn at w x h, as pixels. The bitmap is closed once drawn and the canvas freed once read. */
 async function toPixels(bitmap: ImageBitmap, w: number, h: number): Promise<PhotoPixels> {
-  const c = canvasOf(w, h), g = c.getContext("2d", { willReadFrequently: true });
-  if (!g) throw new Error("no 2d context");
-  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
-  g.drawImage(bitmap, 0, 0, w, h);
-  const d = g.getImageData(0, 0, w, h);
-  return { width: w, height: h, rgba: d.data };
+  const c = canvasOf(w, h);
+  try {
+    const g = c.getContext("2d", { willReadFrequently: true });
+    if (!g) throw new Error("no 2d context");
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+    g.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+    const d = g.getImageData(0, 0, w, h);
+    return { width: w, height: h, rgba: d.data };
+  } finally { freeCanvas(c); }
 }
 
 /** A PhotoSource over a File (or Blob with a name). */
@@ -46,15 +52,17 @@ export function browserPhoto(file: Blob, name: string): PhotoSource {
       const cached = small.get(down);
       if (cached) { const b = await createImageBitmap(cached); try { return await toPixels(b, b.width, b.height); } finally { b.close(); } }
       const b = await full();
+      const w = Math.floor(b.width / down), h = Math.floor(b.height / down);
+      const c = canvasOf(w, h);
       try {
-        const w = Math.floor(b.width / down), h = Math.floor(b.height / down);
-        const c = canvasOf(w, h), g = c.getContext("2d", { willReadFrequently: true })!;
+        const g = c.getContext("2d", { willReadFrequently: true })!;
         g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
         g.drawImage(b, 0, 0, w, h);
+        b.close();
         const d = g.getImageData(0, 0, w, h);
         small.set(down, await c.convertToBlob({ type: "image/jpeg", quality: 0.9 }));
         return { width: w, height: h, rgba: d.data };
-      } finally { b.close(); }
+      } finally { b.close(); freeCanvas(c); }
     },
     async crops(reqs) {
       if (!reqs.length) return [];
@@ -66,6 +74,7 @@ export function browserPhoto(file: Blob, name: string): PhotoSource {
           g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
           g.drawImage(b, r.x0, r.y0, r.size, r.size, 0, 0, r.out, r.out);
           out.push(g.getImageData(0, 0, r.out, r.out).data);
+          freeCanvas(c);
         }
         return out;
       } finally { b.close(); }
@@ -78,7 +87,7 @@ export const browserCodec: Codec = {
     const c = canvasOf(width, height), g = c.getContext("2d")!;
     const data = rgba instanceof Uint8ClampedArray ? rgba : new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.byteLength);
     g.putImageData(new ImageData(data, width, height), 0, 0);
-    return c.convertToBlob({ type: "image/jpeg", quality });
+    try { return await c.convertToBlob({ type: "image/jpeg", quality }); } finally { freeCanvas(c); }
   },
 };
 

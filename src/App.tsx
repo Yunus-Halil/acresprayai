@@ -41,6 +41,7 @@ const ConsentPage = lazy(() => import("./components/pilot/ConsentScreen.tsx"));
 // The Field Twin page as it was before the pilot: the founder's workbench (twins built on this computer, twins from
 // files, the reference orthomosaic). Participants use the Field Twins pages instead.
 const FieldTwin = lazy(() => import("./pages/app/FieldTwin.tsx"));
+const DeviceCheck = lazy(() => import("./pages/app/DeviceCheck.tsx"));
 // WEED-VISION-PREVIEW (temporary research integration; remove with the branch). Development builds with the flag
 // only; the import is inside the condition so a production build emits no chunk for it.
 const WeedVisionPreview = isWeedVisionPreviewEnabled() ? lazy(() => import("./pages/app/WeedVisionPreview.tsx")) : null;
@@ -48,6 +49,10 @@ const WeedVisionPreview = isWeedVisionPreviewEnabled() ? lazy(() => import("./pa
 const FieldTwinDevPreview = import.meta.env.DEV ? lazy(() => import("./pages/app/FieldTwinDevPreview.tsx")) : null;
 // Development only: the pilot agreement screen as a new or a returning participant sees it; nothing is recorded.
 const AgreementDevPreview = import.meta.env.DEV ? lazy(() => import("./pages/app/AgreementDevPreview.tsx")) : null;
+// Development only: the corn inspector (each step of the corn algorithm drawn on a photograph; the dev server runs the code).
+const CornInspector = import.meta.env.DEV ? lazy(() => import("./pages/app/CornInspector.tsx")) : null;
+/** Photo Scout without signing in, for the benchmark scripts (a development build only; the app's /app/photo is the founder's). */
+const PhotoScoutDev = import.meta.env.DEV ? lazy(() => import("./pages/app/PhotoScout.tsx")) : null;
 
 const queryClient = new QueryClient();
 
@@ -80,6 +85,8 @@ const App = () => (
             <Route path="/pilot-terms" element={<PilotTerms />} />
             {FieldTwinDevPreview && <Route path="/dev/field-twin" element={<Suspense fallback={null}><FieldTwinDevPreview /></Suspense>} />}
             {AgreementDevPreview && <Route path="/dev/agreement" element={<Suspense fallback={null}><AgreementDevPreview /></Suspense>} />}
+            {CornInspector && <Route path="/dev/corn-inspector" element={<Suspense fallback={null}><CornInspector /></Suspense>} />}
+            {PhotoScoutDev && <Route path="/dev/photo-scout" element={<Suspense fallback={null}><PhotoScoutDev /></Suspense>} />}
             {/* The founder's pilot admin panel. Founder-only here and in pilot-admin. */}
             <Route path="/admin/pilot" element={<PilotRoute>{founder(<PilotAdmin />)}</PilotRoute>} />
             <Route path="/admin/pilot/people/:id" element={<PilotRoute>{founder(<PilotAdmin />)}</PilotRoute>} />
@@ -103,6 +110,7 @@ const App = () => (
               <Route path="weeds" element={founder(<WeedLibrary />)} />
               <Route path="photo" element={founder(<PhotoScout />)} />
               <Route path="field-twin" element={founder(<FieldTwin />)} />
+              <Route path="device-check" element={founder(<DeviceCheck />)} />
               {WeedVisionPreview && <Route path="weed-vision" element={founder(<WeedVisionPreview />)} />}
             </Route>
             <Route path="/app/orthomosaic/:taskId" element={<PilotRoute>{founder(<OrthomosaicViewer />)}</PilotRoute>} />

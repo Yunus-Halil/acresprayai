@@ -33,10 +33,14 @@
 //   - a stand gap is reported only where both reads see nothing: a gap in a green row the plant read agrees with (or a
 //     corn row the green holds alone), with no plant position on the row's line inside it; every other gap is withheld.
 // Decision support only: nothing here decides a treatment.
+import { CORN_CORES, coresAsked, photoViews } from "../fieldTwin/layers/l1Views";
+import { findMarks } from "../fieldTwin/layers/l2Find";
+import { type LearnedRecord, learnedGreenView } from "../fieldTwin/layers/l1Learned";
+import { LAYERS } from "../fieldTwin/layers/options";
 import type { PhotoPixels } from "../photoScout/pattern";
 import { adaptiveAsRead, readCornAdaptive, type AdaptiveRead, type AdaptiveRow } from "./adaptive";
-import { GREEN_POINTS, plantPointsFromGreen } from "./greenPoints";
-import { SEEDLING_GREEN, SEEDLING_V1, type SeedlingCache, seedlingCache } from "./seedlingGreen";
+import { type CoresAsked, GREEN_POINTS, ROW_POINTS, plantPointsFromGreen, rowPlantPoints } from "./greenPoints";
+import { SEEDLING_GREEN, SEEDLING_ROW, SEEDLING_V1, type SeedlingCache, seedlingCache, seedlingMask, sharedSeedlingMask, sharedSoilLevels } from "./seedlingGreen";
 import { distToLine, rowsFromPoints, type PlantPoint, type PlantRowsResult } from "./plantRows";
 import type { RowCropGap, RowCropOptions, RowCropParams, RowCropRead, RowCropRow, RowCropStage, RowCropWeed } from "./readRowCrop";
 
@@ -90,6 +94,73 @@ export const CORN_V1 = {
   bandedShare: 0.2,
 };
 
+/**
+ * SPEED-1 (2026-11-18): with `coresWhenTouching`, the vivid cores run on a photograph only when its plants are big
+ * enough to touch: the median size of the first pass's marks over the row spacing (greenPitchPx, the cores' own scale)
+ * at or over `cut`. The cut is halfway between the two photographs the cores were measured on: the private seedling flight (typical
+ * plant 9.5 px against 152 px, 0.0625: the plants rarely touch and the cores added little) and 53.JPG (49.6 px against
+ * 212.1 px, 0.2339: the cores split touching plants, TOUCH-3). No row spacing, no ratio: the cores need one anyway.
+ */
+export const CORES_WHEN_TOUCHING = { cut: 0.148 };
+export type CoresGate = { sizePx: number | null; pitchPx: number | null; ratio: number | null; cut: number; ran: boolean };
+
+// The vivid cores (CORN_CORES): an L1 option, defined in fieldTwin/layers/l1Views.ts (2026-11-18), re-exported here.
+export { CORN_CORES } from "../fieldTwin/layers/l1Views";
+
+/**
+ * The emergence guard (2026-11-18): OFF. A per-plant count is for emergence, where a plant is a piece of green of its
+ * own. How far along a photograph is, is read from its rows: the share of their length that has green on it
+ * (`rowGreenCover`: green within `bandShare` of the row spacing either side of the row's line, the seedling mask).
+ * Past `cut` the read withholds the plant count and says so (`message`); its rows, gaps and weed candidates are
+ * reported as before. With no row, or no row spacing, nothing is withheld.
+ * The cut is halfway between the highest share measured on emergence photographs and the lowest on later ones
+ * (corn-benchmark FINAL-1.md).
+ */
+export const CORN_COUNT_GUARD = {
+  on: false,
+  bandShare: 0.1,
+  cut: 0.642,
+  message: "too late for a per-plant count",
+  /** Over a flight (fieldTwin/cornField.ts cornFlightGuard, 2026-11-18): a photograph whose row spacing is more than
+   * this many times the flight's median, or less than its inverse, is a misread, not a late photograph. Its marks are
+   * dropped as above and it says `misreadMessage`. null: the guard as it stood (the cut alone). Measured on the private
+   * flight: one photograph read its rows at 949 px apart where the flight's others read about 152 px, and the cut took
+   * it for a late photograph. A photograph alone (Photo Scout) has no flight: the cut alone. */
+  misreadRatio: 1.5 as number | null,
+  /** Also a misread under 1 / misreadRatio of the median (the rule as first written, FINAL-3.md): off, because on
+   * the private flight 14 of 123 emergence photographs read their rows at about half the spacing (0.40 to 0.65 of the
+   * median) with their marks on the plants; withholding them cost the dev tiles 4 plants and added 15 wrong marks. */
+  misreadBelow: false,
+  misreadMessage: "row spacing misread",
+};
+
+/** The share of each row's length that has green on it: along every row's line, pixel by pixel, whether the mask is
+ * green anywhere within `halfBandPx` across it. `share` is over all rows together (by length); null with no row. */
+export function rowGreenCover(mask: Uint8Array, W: number, H: number, rows: { points: [number, number][] }[], halfBandPx: number): { share: number | null; perRow: number[]; lengthPx: number } {
+  const hb = Math.max(0, Math.round(halfBandPx)), perRow: number[] = []; let all = 0, on = 0;
+  for (const r of rows) {
+    let n = 0, c = 0;
+    for (let k = 1; k < r.points.length; k++) {
+      const [ax, ay] = r.points[k - 1], [bx, by] = r.points[k], L = Math.hypot(bx - ax, by - ay); if (L < 1e-6) continue;
+      const ux = (bx - ax) / L, uy = (by - ay) / L;
+      for (let t = 0; t < L; t++) {
+        const x = ax + ux * t, y = ay + uy * t; if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        let green = false;
+        for (let s = -hb; s <= hb && !green; s++) { const xx = Math.round(x - uy * s), yy = Math.round(y + ux * s); if (xx >= 0 && yy >= 0 && xx < W && yy < H && mask[yy * W + xx]) green = true; }
+        n++; if (green) c++;
+      }
+    }
+    if (n) { perRow.push(c / n); all += n; on += c; }
+  }
+  return { share: all ? on / all : null, perRow, lengthPx: all };
+}
+/** `rowGreenCover` for a read: the photograph's shared seedling mask, the band from the read's row spacing. */
+export function cornV1RowCover(px: PhotoPixels, v: CornV1Read, seedlings?: SeedlingCache | null): { share: number | null; perRow: number[]; lengthPx: number; pitchPx: number | null } {
+  const pitch = v.identity.mainPitchPx ?? greenPitchPx(v.green) ?? v.plants.rows.pitchPx ?? null;
+  if (!pitch || !v.rows.length) return { share: null, perRow: [], lengthPx: 0, pitchPx: pitch };
+  return { ...rowGreenCover(sharedSeedlingMask(seedlings, px), px.width, px.height, v.rows, CORN_COUNT_GUARD.bandShare * pitch), pitchPx: pitch };
+}
+
 export type CornIdentity = "corn" | "probable crop";
 export type CornRowEvidence = "both reads agree" | "plant read only" | "green read only";
 export type CornV1Row = {
@@ -101,8 +172,8 @@ export type CornV1Row = {
   why: string;
   /** The green read's row behind it (an index into green.rows), when there is one. */
   greenRow: number | null;
-  /** Plants the plant read placed on it. */
-  plants: number;
+  /** Plants the plant read placed on it; null where the plant count is withheld (CORN_COUNT_GUARD). */
+  plants: number | null;
   stage: RowCropStage | null;
   /** In the photo's main planting (not a second planting beside it). */
   mainPlanting: boolean;
@@ -117,11 +188,31 @@ export type CornV1Gap = RowCropGap & { greenRow: number; verdict: "stand gap" | 
 export type CornV1Read = {
   version: number;
   green: AdaptiveRead;
-  plants: { source: "green" | "detector"; points: PlantPoint[]; rows: PlantRowsResult; ms: number };
+  plants: { source: "green" | "detector"; points: PlantPoint[]; rows: PlantRowsResult; ms: number;
+    /** Candidates for the field's rows at the lower bar (greenPoints.ts rowPlantPoints): only on a photograph of
+     * seedlings on soil, where the dark-leaf rule applies; never weeds, never used alone. */
+    low?: PlantPoint[]; lowMs?: number;
+    /** Read only (L2): per point, which views found it (bit 1 the green, bit 2 a vivid core). */
+    foundBy?: Uint8Array;
+    /** Read only (2026-11-18, for the field profile): per point what it looks like (greenPoints.ts GreenPoints.look),
+     * the photograph's typical plant piece (greenPoints.ts typicalPx, photo pixels), and the cores' reference as this
+     * photograph measured it (null where the cores were not asked or the read holds no row spacing). */
+    look?: { sizePx: Float32Array; green: Float32Array; solidity: Float32Array }; typicalPx?: number; plantMask?: "seedlings" | "v1" | "learned";
+    /** With the learned green view (LAYERS.learnedGreen, L1): what it learned of this photograph (layers/l1Learned.ts). */
+    learned?: LearnedRecord | null;
+    /** With `coresWhenTouching` (SPEED-1): whether the cores ran on this photograph, and on what. */
+    coresGate?: CoresGate;
+    coresRef?: { reference: "strongest" | "marks"; strongest: number; medianOnMarks: number | null; onMarks: number | null; threshold: number | null; finePx: number; widePx: number } | null;
+    /** With `rowSpans`: per candidate, how far its green reaches along the photograph's rows either way of it (pixels,
+     * back and forward), and the rows' direction in the photograph (unit vector). Absent when the photograph made no row. */
+    lowSpan?: [number, number][]; lowAxis?: [number, number] };
   rows: CornV1Row[];
   /** Every green-read weed candidate with what V1 makes of it (index matches green.weeds). */
   weedVerdicts: { index: number; verdict: CornV1WeedVerdict; why: string }[];
   gaps: CornV1Gap[];
+  /** The emergence guard, when it ran (CORN_COUNT_GUARD): the share of the rows' length with green on it, the cut,
+   * and whether the plant count is withheld (then `plants.points` is empty, no candidates are made, and a note says so). */
+  count?: { rowGreenShare: number | null; cut: number; withheld: boolean; /** The row spacing the measure was read with, photo pixels (cornV1RowCover). */ rowSpacingPx?: number | null };
   /** Whether "corn" could be said at all, and why not. */
   identity: { entered: string | null; spacingChecked: boolean; spacingFits: boolean | null; spacingImpossible: boolean; spacingM: number | null; mainPitchPx: number | null };
   summary: {
@@ -140,6 +231,25 @@ export type CornV1Options = RowCropOptions & {
   detectorPoints?: PlantPoint[] | null;
   /** The shipped corn-v1.0 seedling mask (no rule for leaves darker than their soil): only to compare against it. */
   baselineSeedlings?: boolean;
+  /** false: no candidates for the field's rows at the lower bar (`plants.low`); the read is then exactly as before 2026-11-16. */
+  rowCandidates?: boolean;
+  /** true: a candidate is never split at the plant spacing assumed in one photograph (greenPoints.ts ROW_POINTS.seedM);
+   * it carries its extent along the rows (`plants.lowSpan`) and the field splits it at the spacing it measured. */
+  rowSpans?: boolean;
+  /** The vivid cores (CORN_CORES): true or false for this read, whatever CORN_CORES.on says. */
+  cores?: boolean;
+  /** What a core is measured against for this read (CORN_CORES.reference when not given). */
+  coresReference?: "strongest" | "marks";
+  /** Phase 3a (LAYERS.coresBySize; development, off unless given): the cores' blurs from the typical plant's size in
+   * photo pixels, in place of the row spacing; "self": the median size of this photograph's own first-pass marks. */
+  coresSizePx?: number | "self" | null;
+  /** The emergence guard (CORN_COUNT_GUARD): true or false for this read, whatever CORN_COUNT_GUARD.on says. */
+  countGuard?: boolean;
+  /** The learned green view (L1, LAYERS.learnedGreen when not given): L2 reads its mask in place of the fixed one. */
+  learnedGreen?: boolean;
+  /** SPEED-1 (the FINAL-3 preset): with the cores asked, run them only where the photograph's plants are big enough to
+   * touch (CORES_WHEN_TOUCHING). Off unless given. */
+  coresWhenTouching?: boolean;
 };
 
 const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[s.length >> 1] : null; };
@@ -363,12 +473,19 @@ export function fuseCornV1(ad: AdaptiveRead, points: PlantPoint[], params: Pick<
  * read took for bare soil, which is where dark seedlings go unseen (15 of the 123 photographs of the first flight
  * judged held no plan at all).
  */
-export function cornV1PlantPoints(px: PhotoPixels, ad: AdaptiveRead, seedlings: SeedlingCache): PlantPoint[] {
+export function cornV1PlantPoints(px: PhotoPixels, ad: AdaptiveRead, seedlings: SeedlingCache, cores: boolean = CORN_CORES.on, reference: "strongest" | "marks" = CORN_CORES.reference): PlantPoint[] {
+  return findMarks(px, photoViews(px, { seedlings, plant: cornV1PlantCache(px, ad, seedlings), pitchPx: greenPitchPx(ad) }, cores, reference)).points;
+}
+/** The vivid cores as asked of a photograph whose green read is made: the blurs from its row spacing; null with none. */
+export function cornV1CoresAsked(ad: AdaptiveRead, reference: "strongest" | "marks" = CORN_CORES.reference): CoresAsked | null {
+  return coresAsked(greenPitchPx(ad), reference);
+}
+/** The mask the plant read uses on this photograph (see cornV1PlantPoints above). */
+export function cornV1PlantCache(px: PhotoPixels, ad: AdaptiveRead, seedlings: SeedlingCache): SeedlingCache {
   const seedlingStand = ad.plans.some(p => p.stage === "emergence");
   const banded = ad.plans.reduce((s, p) => s + (p.stage === "establishment" || p.stage === "mid" || p.stage === "late" ? p.ownedShare : 0), 0) >= CORN_V1.bandedShare;
   const dark = (seedlings.options ?? SEEDLING_GREEN).dark != null;
-  const cache = dark && banded && !seedlingStand ? { ...seedlingCache(px, SEEDLING_V1), levels: seedlings.levels } : seedlings;
-  return plantPointsFromGreen(px, GREEN_POINTS, cache).points;
+  return dark && banded && !seedlingStand ? { ...seedlingCache(px, SEEDLING_V1), levels: seedlings.levels } : seedlings;
 }
 
 /** Corn V1 over one photograph. */
@@ -378,9 +495,83 @@ export function readCornV1(px: PhotoPixels, params: RowCropParams, opts: CornV1O
   const seedlings = seedlingCache(px, opts.baselineSeedlings ? SEEDLING_V1 : SEEDLING_GREEN);
   const ad = readCornAdaptive(px, params, { ...opts, seedlings });
   const t1 = Date.now();
-  const points = opts.detectorPoints ?? cornV1PlantPoints(px, ad, seedlings);
+  // L1 the photograph's views, L2 the marks found in them (fieldTwin/layers): unless a detector gives the points.
+  const fixedCache = opts.detectorPoints ? null : cornV1PlantCache(px, ad, seedlings);
+  // The learned green view (L1, off by default): learned from the strict pass over the fixed mask; L2 reads its mask.
+  const learned = fixedCache && !opts.baselineSeedlings && (opts.learnedGreen ?? LAYERS.learnedGreen) ? learnedGreenView(px, fixedCache) : null;
+  const plantCache = learned ? learned.cache : fixedCache;
+  let sizePx = typeof opts.coresSizePx === "number" ? opts.coresSizePx : null;
+  if (opts.coresSizePx === "self" && plantCache) { const s = Array.from(findMarks(px, photoViews(px, { seedlings, plant: plantCache, pitchPx: greenPitchPx(ad) }, false)).look?.sizePx ?? []).filter(Number.isFinite).sort((a, b) => a - b); sizePx = s.length ? s[s.length >> 1] : null; }
+  // SPEED-1 (`coresWhenTouching`): the cores only on a photograph whose plants are big enough to touch, decided before
+  // they run from the first pass's marks (their median size) against the row spacing the cores' blurs are scaled by.
+  let coresOn = opts.baselineSeedlings ? false : opts.cores ?? CORN_CORES.on, first: ReturnType<typeof findMarks> | null = null, gate: CoresGate | null = null;
+  if (coresOn && opts.coresWhenTouching && plantCache) {
+    const pitchPx = greenPitchPx(ad);
+    first = findMarks(px, photoViews(px, { seedlings, plant: plantCache, pitchPx, sizePx }, false));
+    const s = Array.from(first.look?.sizePx ?? []).filter(Number.isFinite).sort((a, b) => a - b), size = s.length ? s[s.length >> 1] : null;
+    const ratio = size != null && pitchPx ? size / pitchPx : null;
+    gate = { sizePx: size, pitchPx, ratio, cut: CORES_WHEN_TOUCHING.cut, ran: ratio != null && ratio >= CORES_WHEN_TOUCHING.cut };
+    coresOn = gate.ran;
+  }
+  const views = plantCache ? photoViews(px, { seedlings, plant: plantCache, pitchPx: greenPitchPx(ad), sizePx }, coresOn, opts.coresReference ?? CORN_CORES.reference) : null;
+  // Cores not run: the first pass made above is the marks (the same function on the same views without the cores).
+  const found = views ? (first && !coresOn ? first : findMarks(px, views)) : null;
+  const points = opts.detectorPoints ?? found!.points;
   const t2 = Date.now();
-  return fuseCornV1(ad, points, params, { enteredCrop: opts.enteredCrop ?? params.crop?.id ?? null, source: opts.detectorPoints ? "detector" : "green", greenMs: t1 - t0, plantsMs: t2 - t1 });
+  const v = fuseCornV1(ad, points, params, { enteredCrop: opts.enteredCrop ?? params.crop?.id ?? null, source: opts.detectorPoints ? "detector" : "green", greenMs: t1 - t0, plantsMs: t2 - t1 });
+  if (found?.foundBy) v.plants.foundBy = found.foundBy;
+  if (gate) v.plants.coresGate = gate;
+  if (found) { v.plants.look = found.look; v.plants.typicalPx = found.typicalPx; v.plants.plantMask = learned ? "learned" : views!.plant === seedlings ? "seedlings" : "v1"; if (fixedCache && !opts.baselineSeedlings && (opts.learnedGreen ?? LAYERS.learnedGreen)) v.plants.learned = learned?.record ?? null; v.plants.coresRef = found.coresInfo && views?.cores ? { reference: found.coresInfo.reference, strongest: found.coresInfo.strongest, medianOnMarks: found.coresInfo.medianOnMarks ?? null, onMarks: found.coresInfo.onMarks ?? null, threshold: found.coresInfo.threshold, finePx: views.cores.asked.finePx, widePx: views.cores.asked.widePx } : null; }
+  // The emergence guard: past the cut the plant count is withheld; the rows, gaps and weed candidates above stand.
+  if (opts.baselineSeedlings ? false : opts.countGuard ?? CORN_COUNT_GUARD.on) {
+    const c = cornV1RowCover(px, v, seedlings), withheld = c.share != null && c.share > CORN_COUNT_GUARD.cut;
+    v.count = { rowGreenShare: c.share, cut: CORN_COUNT_GUARD.cut, withheld, rowSpacingPx: c.pitchPx };
+    if (withheld) {
+      v.plants.points = []; for (const r of v.rows) r.plants = null;
+      v.notes.unshift(`Plant count withheld: ${CORN_COUNT_GUARD.message}. Green stands on ${Math.round(c.share! * 100)} % of the rows' length; plants are counted one by one up to ${Math.round(CORN_COUNT_GUARD.cut * 100)} %. Rows, gaps and weed candidates are reported as before.`);
+      return v;
+    }
+  }
+  if (!opts.detectorPoints && !opts.baselineSeedlings && opts.rowCandidates !== false && darkRuleApplies(ad, seedlings)) {
+    const t3 = Date.now();
+    const defer = opts.rowSpans ? { span: [] as [number, number][], axis: null as [number, number] | null } : null;
+    v.plants.low = cornV1RowCandidates(px, seedlings, v.rows, params.gsdM ?? null, defer);
+    if (defer?.axis) { v.plants.lowSpan = defer.span; v.plants.lowAxis = defer.axis; }
+    v.plants.lowMs = Date.now() - t3;
+  }
+  return v;
+}
+
+/** Whether the plant read used the dark-leaf rule on this photograph (see cornV1PlantPoints): seedlings on soil. */
+export function darkRuleApplies(ad: AdaptiveRead, seedlings: SeedlingCache): boolean {
+  const seedlingStand = ad.plans.some(p => p.stage === "emergence");
+  const banded = ad.plans.reduce((s, p) => s + (p.stage === "establishment" || p.stage === "mid" || p.stage === "late" ? p.ownedShare : 0), 0) >= CORN_V1.bandedShare;
+  return (seedlings.options ?? SEEDLING_GREEN).dark != null && !(banded && !seedlingStand);
+}
+
+/** The direction the photograph's rows run in (radians in the photo; null with no row): the median over its rows. */
+export function rowAngleOf(rows: { points: [number, number][] }[]): number | null {
+  const a: number[] = [];
+  for (const r of rows) {
+    const p = r.points; if (p.length < 2) continue;
+    const dx = p[p.length - 1][0] - p[0][0], dy = p[p.length - 1][1] - p[0][1]; if (Math.hypot(dx, dy) < 50) continue;
+    let t = Math.atan2(dy, dx); if (t < 0) t += Math.PI; if (t >= Math.PI) t -= Math.PI; a.push(t);
+  }
+  if (!a.length) return null;
+  // Directions are modulo a half turn: the median about the first one.
+  const ref = a[0], rel = a.map(t => { let d = t - ref; while (d > Math.PI / 2) d -= Math.PI; while (d < -Math.PI / 2) d += Math.PI; return d; }).sort((x, y) => x - y);
+  return ref + rel[rel.length >> 1];
+}
+
+/**
+ * Candidates for the field's rows (2026-11-16): the plants the lower bar shows (SEEDLING_ROW), at the photo's own
+ * pixel, split along the photograph's rows. The soil levels are the photograph's shared ones; nothing else is read again.
+ */
+export function cornV1RowCandidates(px: PhotoPixels, seedlings: SeedlingCache, rows: { points: [number, number][] }[], gsdM: number | null, defer: { span: [number, number][]; axis: [number, number] | null } | null = null): PlantPoint[] {
+  const mask = seedlingMask(px, SEEDLING_ROW, sharedSoilLevels(seedlings, px)), angle = rowAngleOf(rows);
+  // `defer`: the candidates' extents along the rows instead of a split at the assumed spacing (only with a row direction).
+  if (defer && angle != null) defer.axis = [Math.cos(angle), Math.sin(angle)];
+  return rowPlantPoints(mask, px.width, px.height, angle, gsdM, ROW_POINTS, defer && angle != null ? defer : null);
 }
 
 /**
@@ -404,14 +595,16 @@ export function cornV1AsRead(v: CornV1Read): RowCropRead {
   const gapsByRow = new Map<number, RowCropGap[]>();
   for (const g of v.gaps) if (g.verdict === "stand gap") { const { greenRow, verdict: _v, why: _w, ...gap } = g; gapsByRow.set(greenRow, [...(gapsByRow.get(greenRow) ?? []), gap]); }
   const withheldGaps = v.gaps.filter(g => g.verdict === "withheld");
+  // The plant count withheld (CORN_COUNT_GUARD): no count and no plant position is carried, on any row.
+  const hold = !!v.count?.withheld;
   const toRow = (r: CornV1Row, id: number): RowCropRow => {
     const g = r.greenRow != null ? v.green.rows[r.greenRow] : null;
     const lengthM = gsd ? Math.round(lengthOf(r.points) * gsd * 1000) / 1000 : 0;
     return {
       id, k: g?.k ?? id, points: r.points, lengthM, supportShare: g?.supportShare ?? 1, bandHalfWidthM: g?.bandHalfWidthM ?? 0, greenShare: g?.greenShare ?? 0,
       gaps: r.greenRow != null && r.identity === "corn" ? gapsByRow.get(r.greenRow) ?? [] : [],
-      plants: g?.plants ?? null, plantPoints: g?.plantPoints ?? null,
-      ...(g?.possiblePoints ? { possiblePoints: g.possiblePoints } : {}), ...(g?.uncertainPoints ? { uncertainPoints: g.uncertainPoints } : {}), ...(g?.missingPoints && r.identity === "corn" ? { missingPoints: g.missingPoints } : {}),
+      plants: hold ? null : g?.plants ?? null, plantPoints: hold ? null : g?.plantPoints ?? null,
+      ...(g?.possiblePoints && !hold ? { possiblePoints: g.possiblePoints } : {}), ...(g?.uncertainPoints && !hold ? { uncertainPoints: g.uncertainPoints } : {}), ...(g?.missingPoints && r.identity === "corn" && !hold ? { missingPoints: g.missingPoints } : {}),
       identity: r.identity, evidence: r.evidence,
     };
   };
@@ -425,7 +618,7 @@ export function cornV1AsRead(v: CornV1Read): RowCropRead {
     weeds,
     excluded: [...base.excluded, ...withheld],
     cornV1: {
-      version: v.version, plantSource: v.plants.source, plants: v.plants.points.length,
+      version: v.version, plantSource: v.plants.source, plants: hold ? null : v.plants.points.length, ...(hold ? { countWithheld: CORN_COUNT_GUARD.message } : {}),
       cornRows: v.summary.cornRows, probableRows: v.summary.probableRows, agreedRows: v.summary.agreedRows, plantOnlyRows: v.summary.plantOnlyRows, greenOnlyRows: v.summary.greenOnlyRows, greenRowsDropped: v.summary.greenRowsDropped,
       cropOnRow: v.summary.cropOnRow, unknownVegetation: v.summary.unknownVegetation, gapsWithheld: withheldGaps.length,
       withheldGaps: withheldGaps.map(({ greenRow: _g, verdict: _v, ...g }) => g),
@@ -437,6 +630,7 @@ export function cornV1AsRead(v: CornV1Read): RowCropRead {
       weeds: reported.length, weedAreaM2: Math.round(reported.reduce((s, w) => s + w.areaM2, 0) * 1000) / 1000,
       ...(base.summary.escapes != null ? { escapes: reported.filter(w => w.sizeClass === "escape").length } : {}),
       gaps: v.summary.gaps, gapLengthM: v.summary.gapLengthM,
+      ...(hold ? { plants: null } : {}),
       ms: base.summary.ms + v.summary.ms.plants + v.summary.ms.fusion,
     },
     notes: [...v.notes, ...base.notes],

@@ -36,6 +36,8 @@ export type TwinPick =
   | { kind: "group"; lat: number; lng: number; count: number }
   /** Corn twins: a field corn row, a weed observation, a stand gap. */
   | { kind: "cornRow"; id: number } | { kind: "cornWeed"; id: number } | { kind: "cornGap"; id: number }
+  /** Corn twins: a plant the photographs located (its index in the twin's plants), where it is. */
+  | { kind: "plant"; index: number; lat: number; lng: number }
   /** Editing rows: a row the operator added (by its uid), or a tap on ground with no row near (where to add one). */
   | { kind: "addedRow"; uid: string } | { kind: "ground"; lat: number; lng: number }
   | null;
@@ -106,7 +108,7 @@ export class TwinCanvasLayer extends L.Canvas {
   /** A click that ends a handle drag is not a tap on the ground. */
   private swallowClick = false;
   /** Plants located by the photographs (zoom-0 units), drawn at the plant level as small neutral dots; null for none. */
-  private plants: { n: number; x: Float64Array; y: Float64Array; index: GridIndex; certainty: Uint8Array | null } | null = null;
+  private plants: { n: number; x: Float64Array; y: Float64Array; index: GridIndex; certainty: Uint8Array | null; points: LatLngPair[] } | null = null;
   private showPlants = true;
 
   constructor(layers: TwinLayers, options: L.RendererOptions = {}) {
@@ -290,7 +292,7 @@ export class TwinCanvasLayer extends L.Canvas {
     if (points) {
       const n = points.length, x = new Float64Array(n), y = new Float64Array(n);
       points.forEach(([lat, lng], i) => { const [wx, wy] = toWorld(lat, lng); x[i] = wx; y[i] = wy; });
-      this.plants = { n, x, y, index: new GridIndex(x, y, this.scene ? 2 / this.scene.mpu : 1e-7), certainty: certainty && certainty.length === n ? Uint8Array.from(certainty) : null };
+      this.plants = { n, x, y, index: new GridIndex(x, y, this.scene ? 2 / this.scene.mpu : 1e-7), certainty: certainty && certainty.length === n ? Uint8Array.from(certainty) : null, points };
     } else this.plants = null;
     this.showPlants = show;
     this.requestRedraw();
@@ -504,10 +506,14 @@ export class TwinCanvasLayer extends L.Canvas {
           ctx.strokeStyle = colour[s]; ctx.setLineDash(dash[s]); ctx.lineWidth = s === 0 ? 1.4 : 1.6; ctx.globalAlpha = 0.9; ctx.stroke();
         }
         ctx.setLineDash([]); ctx.globalAlpha = 1;
-      } else {
+        drawn.boundary = 1;
+      } else if (scene.intel.blockSource !== "rows" || L_.ground || L_.rowsEdgeOverPhotos) {
+        // The edge estimated from the rows (dashed) is left out over the photographs unless asked for in Diagnostics:
+        // there it crosses the soil and the plants and reads as something in the field. The operator's corrected edge
+        // is drawn always.
         ctx.beginPath(); ring(ctx, scene.block, X, Y); ctx.strokeStyle = C.blockEdge; ctx.lineWidth = 1.2; ctx.globalAlpha = 0.85; ctx.setLineDash(scene.intel.blockSource === "rows" ? [5, 3] : []); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+        drawn.boundary = 1;
       }
-      drawn.boundary = 1;
     }
     // The operator's boundary: white over a dark halo, so it reads against any ground.
     if (this.operational && !this.editing) {
@@ -691,6 +697,9 @@ export class TwinCanvasLayer extends L.Canvas {
 
   private drawCorn(ctx: Ctx, scene: Scene, X: (u: number) => number, Y: (u: number) => number, pxPerM: number, vx0: number, vy0: number, vx1: number, vy1: number, drawn: Record<string, number>) {
     const K = scene.corn!, S = CORN_STATUS, unc = this.layers.cornUncertain, sel = this.selection, RE = this.rowEdit, V = RE.verdicts;
+    // EXPERIMENT (photo ground): over the photographs, up close, the marks step back so the plants under them show:
+    // rows thin and translucent, every plant a ring (nothing filled over a seedling).
+    const overPhotos = !this.layers.ground && pxPerM >= 25;
     // Plants the photographs located: small neutral dots, never coloured as corn (nothing tells corn by its look).
     if (this.plants && this.showPlants && pxPerM >= 12) {
       // Certain: filled; probable (the certain rows support it): a ring; uncertain: a small grey dot.
@@ -698,9 +707,9 @@ export class TwinCanvasLayer extends L.Canvas {
       let np = 0;
       // Seen on no row and between the rows (not the crop) are review material: drawn only with the observations
       // the photographs do not confirm.
-      for (const kind of unc ? [3, 2, 1, 0] : [1, 0]) {
+      for (const kind of unc ? [3, 2, 5, 4, 1, 0] : [5, 4, 1, 0]) {
         ctx.beginPath(); let any = false;
-        const rr = kind >= 2 ? Math.max(1, r * 0.55) : kind === 1 ? r + 1 : r;
+        const rr = kind >= 4 ? r + 1 : kind >= 2 ? Math.max(1, r * 0.55) : kind === 1 ? r + 1 : r;
         for (const k of idx) {
           if ((P.certainty ? P.certainty[k] : 0) !== kind) continue;
           const x = X(P.x[k]), y = Y(P.y[k]);
@@ -711,7 +720,11 @@ export class TwinCanvasLayer extends L.Canvas {
         }
         if (!any) continue;
         if (kind === 3) { ctx.lineWidth = 1; ctx.strokeStyle = "#8c929a"; ctx.globalAlpha = 0.6; ctx.stroke(); ctx.globalAlpha = 1; continue; }
-        if (kind === 0) { ctx.fillStyle = C.plantLocated; ctx.globalAlpha = 0.9; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(20,22,20,0.8)"; ctx.stroke(); }
+        // Found along a row at the lower bar: a ring in its own colour (two photographs, or one sharp view).
+        if (kind >= 4) { ctx.lineWidth = 1.8; ctx.strokeStyle = kind === 4 ? C.plantAlongRowTwo : C.plantAlongRowOne; ctx.globalAlpha = 0.95; ctx.stroke(); ctx.globalAlpha = 1; continue; }
+        if (kind === 0 && overPhotos) { ctx.lineWidth = 2; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 1; ctx.stroke(); }
+        else if (kind === 1 && overPhotos) { ctx.lineWidth = 1; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 0.6; ctx.setLineDash([2, 2]); ctx.stroke(); ctx.setLineDash([]); }
+        else if (kind === 0) { ctx.fillStyle = C.plantLocated; ctx.globalAlpha = 0.9; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(20,22,20,0.8)"; ctx.stroke(); }
         else if (kind === 1) { ctx.lineWidth = 1.6; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 0.95; ctx.stroke(); }
         else { ctx.fillStyle = "#8c929a"; ctx.globalAlpha = 0.8; ctx.fill(); }
         ctx.globalAlpha = 1;
@@ -737,7 +750,7 @@ export class TwinCanvasLayer extends L.Canvas {
       ctx.setLineDash([]);
       for (const [st, colour] of [[S.row.unconfirmed, C.cornRowCourse], [S.row.corn, C.cornRow]] as const) {
         for (const kept of [false, true]) {
-          ctx.strokeStyle = colour; ctx.lineWidth = st === S.row.corn || kept ? rowW : courseW; ctx.globalAlpha = st === S.row.corn ? 0.9 : 0.7;
+          ctx.strokeStyle = colour; ctx.lineWidth = overPhotos ? Math.max(1.2, (st === S.row.corn || kept ? rowW : courseW) * 0.45) : st === S.row.corn || kept ? rowW : courseW; ctx.globalAlpha = overPhotos ? 0.55 : st === S.row.corn ? 0.9 : 0.7;
           ctx.beginPath();
           for (let k = 0; k < K.rows.n; k++) { if (K.rows.status[k] !== st || !inView(k)) continue; const v = V[String(K.rows.id[k])]; if (v === "remove" || (v === "keep") !== kept) continue; rowPath(k); nr++; }
           ctx.stroke();
@@ -957,6 +970,8 @@ export class TwinCanvasLayer extends L.Canvas {
     if (p.kind === "weed") { const k = indexOfId(s.weeds.id, p.id); return k < 0 ? null : [s.weeds.x[k], s.weeds.y[k], s.weeds.rM[k], reach(s.weeds.rings, k, s.weeds.x[k], s.weeds.y[k])]; }
     if (p.kind === "vegetation") { const k = indexOfId(s.vegetation.id, p.id); return k < 0 ? null : [s.vegetation.x[k], s.vegetation.y[k], s.vegetation.rM[k], reach(s.vegetation.rings, k, s.vegetation.x[k], s.vegetation.y[k])]; }
     if (p.kind === "cluster") return [s.clusters.x[p.index], s.clusters.y[p.index], s.clusters.rM[p.index], 0];
+    // A plant: its own dot, ringed a little wider than a seedling.
+    if (p.kind === "plant") { const P = this.plants; return P && p.index >= 0 && p.index < P.n ? [P.x[p.index], P.y[p.index], 0.08, 0] : null; }
     if (p.kind === "cornWeed" && s.corn) { const k = indexOfId(s.corn.weeds.id, p.id); return k < 0 ? null : [s.corn.weeds.x[k], s.corn.weeds.y[k], s.corn.weeds.rM[k], 0]; }
     return null;
   }
@@ -1012,6 +1027,18 @@ export class TwinCanvasLayer extends L.Canvas {
       let gBest = -1, gd = Infinity;
       for (let k = 0; k < K.gaps.n; k++) { if (K.gaps.status[k] !== S.gap.confirmed && !unc) continue; const dd = segD(K.gaps.x1[k], K.gaps.y1[k], K.gaps.x2[k], K.gaps.y2[k]); if (dd <= tolU && dd < gd) { gd = dd; gBest = k; } }
       if (gBest >= 0) return { kind: "cornGap", id: K.gaps.id[gBest] };
+      // A plant, where plants are drawn (as close as they are drawn, never the classes hidden).
+      const P = this.plants;
+      if (P && this.showPlants && scale / s.mpu >= 12) {
+        let pb = -1, pd = Infinity;
+        for (const k of P.index.query(x - tolU, y - tolU, x + tolU, y + tolU, 0)) {
+          const c = P.certainty ? P.certainty[k] : 0;
+          if (c >= 2 && !unc) continue;
+          const dd = Math.hypot(P.x[k] - x, P.y[k] - y);
+          if (dd <= tolU && dd < pd) { pd = dd; pb = k; }
+        }
+        if (pb >= 0) return { kind: "plant", index: pb, lat: P.points[pb][0], lng: P.points[pb][1] };
+      }
       let rBest = -1, rd = Infinity;
       for (let k = 0; k < K.rows.n; k++) {
         const o = K.rows.lines.off[k], e = K.rows.lines.off[k + 1], xy = K.rows.lines.xy;

@@ -9,9 +9,11 @@
 import { useSyncExternalStore } from "react";
 import { type BuildResult, type BuildRun, BuildAborted, startTwinBuild } from "./build/runBuild";
 import type { BuildCrop, BuildProgress, BuildStage } from "./build/types";
+import type { CornPreset } from "./cornPreset";
 import { TWIN_ANALYSIS_ENABLED } from "./analysisConfig";
 import { saveAnalysisRecord } from "./analysisOutbox";
 import { type TwinRecord, beginSave, saveBuiltTwin } from "./registry";
+import { beginTrace, endTrace, traceProgress } from "./buildTrace";
 import type { TwinBundle } from "./types";
 import { track } from "@/lib/pilot/telemetry";
 
@@ -32,6 +34,10 @@ let run: BuildRun | null = null;
 let userId: string | null = null;
 /** Whether the account that started this build gets an analysis record (analysisAccess.ts). */
 let analysisAsked = false;
+/** The photographs this tab is building from (photo ground: detail and evidence read them here; never uploaded). */
+let sessionFiles: File[] | null = null;
+/** This build leaves its marker on the device (buildTrace.ts). */
+let tracing = false;
 const listeners = new Set<() => void>();
 const set = (next: BuildSessionState) => { state = next; for (const l of listeners) l(); syncUnloadGuard(); };
 const patch = (p: Partial<Exclude<BuildSessionState, { status: "idle" }>>) => { if (state.status !== "idle") set({ ...state, ...p }); };
@@ -61,7 +67,7 @@ function syncUnloadGuard() {
 
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`);
 
-export type StartOptions = { name: string; crop: BuildCrop; weeds: "model" | "colour" | "none"; helpers?: number; userId: string; /** This account's corn builds make and save their analysis record (analysisAccess.ts). Default: none. */ analysis?: boolean };
+export type StartOptions = { name: string; crop: BuildCrop; weeds: "model" | "colour" | "none"; helpers?: number; userId: string; /** This account's corn builds make and save their analysis record (analysisAccess.ts). Default: none. */ analysis?: boolean; /** Photo ground for this account (photoGroundFlag.ts): the overview after the twin, and the photographs kept in this tab. Default: none. */ photoGround?: boolean; /** Leave a marker of how far the build got on this device (buildTrace.ts; the founder's device testing). Default: none. */ trace?: boolean; /** A corn build's setup (cornPreset.ts); default: cornFinal3Flag.ts defaultCornPreset ("final3" unless killed). */ cornPreset?: CornPreset };
 
 /** Start a build of `files`. Only one at a time: a running build must finish, fail or be cancelled first. */
 export function startBuildSession(files: File[], o: StartOptions): void {
@@ -69,13 +75,17 @@ export function startBuildSession(files: File[], o: StartOptions): void {
   const id = newId();
   userId = o.userId;
   analysisAsked = o.analysis === true;
+  sessionFiles = o.photoGround ? files : null;
+  tracing = o.trace === true;
+  if (tracing) beginTrace(files.length, o.crop);
   const startedAt = Date.now();
   set({ status: "building", id, name: o.name, crop: o.crop, photographs: files.length, startedAt, progress: null, stagesDone: [], result: null, record: null, save: null, error: null, buildMs: null });
   track("twin_build_started", { twinId: id, counts: { photographs: files.length }, detail: { crop: o.crop } });
   try {
-    run = startTwinBuild(files, { name: o.name, id, weeds: o.crop === "corn" ? "none" : o.weeds, helpers: o.helpers, crop: o.crop, ...(analysisWanted(o.crop) ? { analysis: true } : {}) }, {
+    run = startTwinBuild(files, { name: o.name, id, weeds: o.crop === "corn" ? "none" : o.weeds, helpers: o.helpers, crop: o.crop, ...(analysisWanted(o.crop) ? { analysis: true } : {}), ...(o.photoGround ? { photoGround: true } : {}), ...(o.cornPreset ? { cornPreset: o.cornPreset } : {}) }, {
       onProgress: p => {
         if (state.status !== "building") return;
+        if (tracing) traceProgress(p.stage);
         const prev = state.progress;
         const stagesDone = prev && prev.stage !== p.stage && !state.stagesDone.includes(prev.stage) ? [...state.stagesDone, prev.stage] : state.stagesDone;
         patch({ progress: p, stagesDone });
@@ -88,6 +98,7 @@ export function startBuildSession(files: File[], o: StartOptions): void {
   const mine = run;
   mine.done.then(result => {
     if (run !== mine) return;
+    if (tracing) { endTrace(); tracing = false; }
     const buildMs = result.report.totalMs ?? Date.now() - startedAt;
     patch({ status: "saving", result, buildMs, save: { done: 0, total: result.twin.atlases.length + 1 } });
     track("twin_build_finished", {
@@ -104,6 +115,7 @@ export function startBuildSession(files: File[], o: StartOptions): void {
 }
 
 function fail(status: "failed" | "cancelled", message: string) {
+  if (tracing) { endTrace(); tracing = false; }
   if (state.status === "idle") return;
   const durationMs = Date.now() - state.startedAt;
   track(status === "cancelled" ? "twin_build_cancelled" : "twin_build_failed", { twinId: state.id, durationMs, outcome: status === "cancelled" ? "cancelled" : "error", error: message, detail: { crop: state.crop, stage: state.progress?.stage ?? null }, counts: { photographs: state.photographs } });
@@ -185,10 +197,10 @@ export function releaseSessionOfOtherAccount(currentUser: string | null): void {
 }
 
 /** The in-memory twin and files of this tab's build, when it is the twin `id` (the viewer opens it before the save ends). */
-export function sessionTwin(id: string): { twin: TwinBundle; files: Map<string, Blob>; pending: Promise<Map<string, Blob>> } | null {
+export function sessionTwin(id: string): { twin: TwinBundle; files: Map<string, Blob>; pending: Promise<Map<string, Blob>>; ground: BuildResult["ground"]; photos: File[] | null } | null {
   if (state.status === "idle" || !state.result || state.result.twin.id !== id) return null;
-  return { twin: state.result.twin, files: state.result.files, pending: state.result.atlases };
+  return { twin: state.result.twin, files: state.result.files, pending: state.result.atlases, ground: state.result.ground ?? Promise.resolve(null), photos: sessionFiles };
 }
 
 /** Tests only. */
-export function __resetBuildSession() { run = null; userId = null; analysisAsked = false; set({ status: "idle" }); }
+export function __resetBuildSession() { run = null; userId = null; analysisAsked = false; sessionFiles = null; set({ status: "idle" }); }

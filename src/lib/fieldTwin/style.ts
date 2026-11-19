@@ -44,6 +44,9 @@ export type TwinLayers = {
   coverage: boolean;
   /** Every photograph's footprint (diagnostics). */
   footprints: boolean;
+  /** The field's edge estimated from the rows (a dashed line), drawn over the photographs too (diagnostics). Off: over
+   * the photographs it read as a feature of the ground, and it is not one; over the twin's own ground it is drawn. */
+  rowsEdgeOverPhotos: boolean;
   /** The ground fill itself; off when reference imagery is shown underneath. */
   ground: boolean;
   /** The field's surroundings: a muted basemap of OpenStreetMap data, seen when zoomed out. */
@@ -62,7 +65,7 @@ export type TwinMarkers = "emphasised" | "summary" | "all";
 export type TwinDetail = "simple" | "standard" | "full" | "custom";
 export type TwinDetailStop = Exclude<TwinDetail, "custom">;
 
-const DIAGNOSTICS = { inferred: true, droppedRows: false, singleView: false, onTree: false, uncertainty: false, footprints: false, evidence: false };
+const DIAGNOSTICS = { inferred: true, droppedRows: false, singleView: false, onTree: false, uncertainty: false, footprints: false, rowsEdgeOverPhotos: false, evidence: false };
 const GROUND = { pressure: true, beyondBoundary: false, boundary: true, heatScale: "field" as HeatScaleMode, zones: true, coverage: true, ground: true, surroundings: true, corn: true };
 
 /**
@@ -165,6 +168,9 @@ export const TWIN_COLOURS = {
    * the operator's colour); plants the photographs located, pale dots that are not any finding's colour. */
   rowRemoved: "#8c929a",
   plantLocated: "#efe6ff",
+  /** Plants found along a row at the lower bar: by two or more photographs, and by one sharp view (review colours). */
+  plantAlongRowTwo: "#ffd23f",
+  plantAlongRowOne: "#ff7ad9",
 };
 
 export const WEED_COLOUR = { betweenRows: TWIN_COLOURS.weed, onRow: TWIN_COLOURS.weedOnRow, single: TWIN_COLOURS.weedSingle, onTree: TWIN_COLOURS.weedOnTree };

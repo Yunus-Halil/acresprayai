@@ -10,6 +10,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth";
 import { usePilotRole } from "@/lib/pilot/access";
+import { usePhotoGround } from "@/lib/fieldTwin/photoGroundFlag";
+import { defaultCornPreset } from "@/lib/fieldTwin/cornFinal3Flag";
+import { stoppedBuildText, unfinishedTrace } from "@/lib/fieldTwin/buildTrace";
 import { type CheckCrop, type CheckFinding, type PhotoCheck, assessPhotographs, readForCheck } from "@/lib/fieldTwin/preflight";
 import { type BuildSessionState, cancelBuild, clearBuildSession, discardBuildSession, retrySave, sessionBusy, startBuildSession, useBuildSession } from "@/lib/fieldTwin/buildSession";
 import { type BuildStage, stagesFor } from "@/lib/fieldTwin/build/types";
@@ -142,6 +145,7 @@ function Progress({ s, founder }: { s: Exclude<BuildSessionState, { status: "idl
 export default function TwinNew() {
   const { user } = useAuth();
   const founder = usePilotRole() === "founder";
+  const photoGround = usePhotoGround();
   const analysisAllowed = useAnalysisAllowed();
   const units = useUnitSystem();
   const session = useBuildSession();
@@ -157,6 +161,8 @@ export default function TwinNew() {
   const folderInput = useRef<HTMLInputElement>(null);
   const blocker = useMemo(buildBlocker, []);
   const autoOpened = useRef<string | null>(null);
+  // The founder's device testing: the last build on this device, if the browser stopped it (buildTrace.ts).
+  const stopped = useMemo(() => (founder ? unfinishedTrace(sessionBusy(session)) : null), [founder, session]);
 
   // Open the twin as soon as the save has listed it (the viewer shows the save finishing).
   useEffect(() => {
@@ -195,7 +201,7 @@ export default function TwinNew() {
     if (!check || !user || !crop) return;
     const keep = new Set(check.usable);
     const usable = files.filter(f => keep.has(f.name));
-    startBuildSession(usable, { name: name.trim() || "Field", crop, weeds: founder ? weeds : "colour", userId: user.id, analysis: analysisAllowed });
+    startBuildSession(usable, { name: name.trim() || "Field", crop, weeds: founder ? weeds : "colour", userId: user.id, analysis: analysisAllowed, ...(photoGround ? { photoGround: true } : {}), ...(founder ? { trace: true } : {}), ...(crop === "corn" ? { cornPreset: defaultCornPreset() } : {}) });
   };
 
   if (session.status !== "idle") {
@@ -211,6 +217,7 @@ export default function TwinNew() {
         <h1 className="font-display text-3xl">New Field Twin</h1>
         <p className="mt-1 text-sm text-muted-foreground">From the photographs of one drone flight. <Link to="/app/help" className="underline underline-offset-4">Which photographs work</Link></p>
       </header>
+      {founder && stopped && <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800" role="status">{stoppedBuildText(stopped)} <Link to="/app/device-check" className="underline">Device check</Link></p>}
 
       {blocker && <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">{blocker}</div>}
 

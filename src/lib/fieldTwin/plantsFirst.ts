@@ -24,10 +24,11 @@
 // from the dots (bounded by what corn is sown at).
 import { type GeorefFrame, pixelToGround } from "@/lib/directGeoref/projection";
 import { type LatLngAlt, toEnu } from "@/lib/sourceFrames/odm";
-import { seedSpacing } from "./rowGuided";
+import { ROW_GUIDED, bandBeatsControls, seedSpacing } from "./rowGuided";
 
 export type Read = { name: string; scale: number; plants: [number, number][] };
-export type Sight = { p: number; u: number; v: number; e: number; n: number };
+/** `k` (read only, 2026-11-18): the plant's index in its read's `plants` (the field profile reads its look by it). */
+export type Sight = { p: number; u: number; v: number; e: number; n: number; k?: number };
 
 /** Each photograph's plants on the ground, metres east and north of `origin`, through its own camera. */
 export function projectSightings(reads: Read[], frames: Map<string, GeorefFrame>, origin: LatLngAlt): { sights: Sight[]; photos: string[] } {
@@ -36,19 +37,27 @@ export function projectSightings(reads: Read[], frames: Map<string, GeorefFrame>
     const f = frames.get(r.name);
     if (!f) continue;
     const p = photos.length; photos.push(r.name);
-    for (const [x, y] of r.plants) {
-      const u = x * r.scale, v = y * r.scale, g = pixelToGround(f, u, v);
+    for (let k = 0; k < r.plants.length; k++) {
+      const [x, y] = r.plants[k], u = x * r.scale, v = y * r.scale, g = pixelToGround(f, u, v);
       if (!g) continue;
       const [e, n] = toEnu({ lat: g.lat, lng: g.lng, altM: 0 }, origin);
-      sights.push({ p, u, v, e, n });
+      sights.push({ p, u, v, e, n, k });
     }
   }
   return { sights, photos };
 }
 
-/** A photograph's correction, metres: east a + b (u - u0) + c (v - v0), north the same with its own a, b, c. */
-export type PhotoShift = { e: [number, number, number]; n: [number, number, number]; u0: number; v0: number; cells: number };
-export const shiftOf = (s: PhotoShift, u: number, v: number): [number, number] => [s.e[0] + s.e[1] * (u - s.u0) + s.e[2] * (v - s.v0), s.n[0] + s.n[1] * (u - s.u0) + s.n[2] * (v - s.v0)];
+/** A photograph's correction, metres: east a + b (u - u0) + c (v - v0), north the same with its own a, b, c.
+ * `tilt` (PLANTS_FIRST.tilt): on top of that, what a camera tilted by a small angle does on flat ground and no plane
+ * holds. With G the mark's place on the ground from the photograph's middle (`g`: metres east and north per pixel
+ * along u and along v), the mark moves by (t . G) G, t being the two tilt angles over the flying height. */
+export type PhotoShift = { e: [number, number, number]; n: [number, number, number]; u0: number; v0: number; cells: number; tilt?: { g: [number, number, number, number]; t: [number, number] } };
+export const shiftOf = (s: PhotoShift, u: number, v: number): [number, number] => {
+  const du = u - s.u0, dv = v - s.v0;
+  let e = s.e[0] + s.e[1] * du + s.e[2] * dv, n = s.n[0] + s.n[1] * du + s.n[2] * dv;
+  if (s.tilt) { const ge = s.tilt.g[0] * du + s.tilt.g[1] * dv, gn = s.tilt.g[2] * du + s.tilt.g[3] * dv, k = s.tilt.t[0] * ge + s.tilt.t[1] * gn; e += k * ge; n += k * gn; }
+  return [e, n];
+};
 
 /** A grid over the ground for neighbour queries. */
 class Grid {
@@ -66,8 +75,31 @@ class Grid {
 export const PLANTS_FIRST = {
   /** How far apart two photographs' sightings may be and still vote on their offset, metres. */
   reachM: 0.3,
-  /** A photograph's cells (across x down) for the plane fit. */
-  gridU: 4, gridV: 3,
+  /** A photograph's cells (across x down) for the fit. */
+  gridU: 6, gridV: 4,
+  /** The fit holds the two tilt terms beside the plane (see PhotoShift), for a photograph with at least
+   * `tiltMinCells` cells that gave a peak (2026-11-16). Measured on what the plane alone left over, on a 6 x 4 grid:
+   * the worst cell of the median photograph was 17 cm off the other photographs on one flight and 22 cm on another,
+   * and the two terms, fitted afterwards, halved the cells left over by more than the merge gate (588 to 305, 1,209
+   * to 737). One plant was becoming two dots at the frames' edges. */
+  tilt: true, tiltMinCells: 16,
+  /** A photograph keeps the tilt fit only where it leaves that photograph's own cells closer together than the plane
+   * fit does (2026-11-16). The exact rule: the photographs are registered twice, once by a plane each on the grid
+   * `planeGridU` x `planeGridV` (the registration as it was) and once with the tilt terms on `gridU` x `gridV`. After
+   * each, every photograph's frame is read in the `gridU` x `gridV` cells as a round of the registration reads it: in
+   * each cell, the sharpest repeat of its marks in all the other photographs' marks. A photograph's left-over is the
+   * root mean square length of those repeats over the cells that give one under both registrations. It keeps the tilt
+   * fit when its left-over with it is smaller than with the plane; otherwise it keeps its plane fit.
+   * First, though, the flight is asked whether that comparison says anything: where the tilt fit is fitting noise, a
+   * photograph's left-over is smaller with it as often as larger. The photographs it leaves smaller must outnumber
+   * those it leaves larger by more than chance (a sign test: the chance of that many or more out of the two counts at
+   * one half, under rowGuided.ts's alpha); if not, no photograph keeps the tilt fit and the flight is registered
+   * exactly as before. Measured: on three flights whose marks stand several to a plant the left-over with the tilt
+   * fit was smaller on 20, 21 and 19 of 40 photographs (ratio to the plane's: median 0.99, 0.94, 1.00) and frame
+   * cells over 6 cm got worse; on the flight of single seedlings it was smaller on 110 of 123 (median ratio 0.51). */
+  tiltMustHelp: true, planeGridU: 4, planeGridV: 3,
+  /** The plant spacing is "not measured" when its score has no single peak (rowGuided.ts seedSpacing `needsAPeak`). */
+  seedNeedsAPeak: true,
   /** A cell's votes needed for a peak. */
   minVotes: 40,
   rounds: 5,
@@ -81,19 +113,53 @@ export const PLANTS_FIRST = {
   onRowShare: 0.12,
 };
 export type PlantsFirstOptions = typeof PLANTS_FIRST;
+/** The rules as they stood before 2026-11-16's registration and plant-spacing changes: a plane a photograph on a 4 x 3
+ * grid, and the plant spacing taken whatever its score. Kept so that result can be run beside the present one. */
+export const PLANTS_FIRST_V1: PlantsFirstOptions = { ...PLANTS_FIRST, gridU: 4, gridV: 3, tilt: false, tiltMustHelp: false, seedNeedsAPeak: false };
 
 /**
  * The photographs' corrections against each other (see the header). Returns one PhotoShift a photograph, and the
  * spread with which the same plant repeats between photographs once corrected (metres, the median distance of a
  * sighting from its nearest other photograph's sighting at the peak).
  */
-export function registerPhotos(sights: Sight[], nPhotos: number, o: PlantsFirstOptions = PLANTS_FIRST): { shifts: PhotoShift[]; repeatM: number } {
+export function registerPhotos(sights: Sight[], nPhotos: number, o: PlantsFirstOptions = PLANTS_FIRST): { shifts: PhotoShift[]; repeatM: number; /** Photographs that kept the tilt fit (`tiltMustHelp`). */ tilted?: number; /** Per photograph: its left-over (metres, RMS over the cells both registrations gave a repeat in) with the plane and with the tilt terms. */ leftOver?: { plane: number; tilt: number; cells: number }[] } {
+  if (!o.tilt || !o.tiltMustHelp) return registerOnce(sights, nPhotos, o);
+  // Both ways, then each photograph keeps the fit that leaves its own cells closer together (see PLANTS_FIRST.tiltMustHelp).
+  const plane = registerOnce(sights, nPhotos, { ...o, tilt: false, gridU: o.planeGridU, gridV: o.planeGridV }), tilt = registerOnce(sights, nPhotos, o);
+  const afterPlane = new Map<number, { x: number; y: number }>(), afterTilt = new Map<number, { x: number; y: number }>();
+  registerOnce(sights, nPhotos, o, plane.shifts, afterPlane); registerOnce(sights, nPhotos, o, tilt.shifts, afterTilt);
+  const nc = o.gridU * o.gridV, a = new Float64Array(nPhotos), b = new Float64Array(nPhotos), cells = new Int32Array(nPhotos);
+  for (const [k, pa] of afterPlane) { const pb = afterTilt.get(k); if (!pb) continue; const p = Math.floor(k / nc); a[p] += pa.x * pa.x + pa.y * pa.y; b[p] += pb.x * pb.x + pb.y * pb.y; cells[p]++; }
+  const keep = (p: number) => cells[p] > 0 && b[p] < a[p];
+  let tilted = 0, larger = 0; for (let p = 0; p < nPhotos; p++) { if (keep(p)) tilted++; else if (cells[p] > 0 && b[p] > a[p]) larger++; }
+  // Smaller on that many photographs or more, of those where the two differ, by chance alone (each as likely either way).
+  const byChance = (() => { const m = tilted + larger; let logC = 0, tail = 0; for (let i = 0; i <= m; i++) { if (i >= tilted) tail += Math.exp(logC - m * Math.LN2); logC += Math.log((m - i) / (i + 1)); } return tail; })();
+  const chance = byChance >= ROW_GUIDED.alpha;
+  const leftOver = Array.from({ length: nPhotos }, (_, p) => ({ plane: cells[p] ? Math.sqrt(a[p] / cells[p]) : NaN, tilt: cells[p] ? Math.sqrt(b[p] / cells[p]) : NaN, cells: cells[p] }));
+  if (!tilted || chance) return { ...plane, tilted: 0, leftOver };
+  if (tilted === nPhotos) return { ...tilt, tilted, leftOver };
+  const shifts = plane.shifts.map((s0, p) => (keep(p) ? tilt.shifts[p] : s0));
+  return { shifts, repeatM: registerOnce(sights, nPhotos, o, shifts, new Map()).repeatM, tilted, leftOver };
+}
+
+/** One registration by the rules given. `start`: begin from these corrections; `read`: do not fit, only read every
+ * photograph's cells once with the corrections as they stand (key: photograph x cells + cell) and say how the same
+ * plant repeats. */
+function registerOnce(sights: Sight[], nPhotos: number, o: PlantsFirstOptions, start: PhotoShift[] | null = null, read: Map<number, { x: number; y: number }> | null = null): { shifts: PhotoShift[]; repeatM: number } {
   const R = o.reachM, nb = Math.round((2 * R) / 0.01) + 1, NB = nb * nb, half = Math.max(2, Math.round(o.backgroundM / 0.01));
-  const shifts: PhotoShift[] = Array.from({ length: nPhotos }, () => ({ e: [0, 0, 0], n: [0, 0, 0], u0: 0, v0: 0, cells: 0 }));
+  const shifts: PhotoShift[] = start ? start.map(s0 => ({ ...s0 })) : Array.from({ length: nPhotos }, () => ({ e: [0, 0, 0], n: [0, 0, 0], u0: 0, v0: 0, cells: 0 }));
   // Each photograph's frame extent and centre, from its own sightings; each sighting's cell.
   const uMin = new Float64Array(nPhotos).fill(Infinity), uMax = new Float64Array(nPhotos).fill(-Infinity), vMin = new Float64Array(nPhotos).fill(Infinity), vMax = new Float64Array(nPhotos).fill(-Infinity), cnt = new Float64Array(nPhotos);
-  for (const s of sights) { uMin[s.p] = Math.min(uMin[s.p], s.u); uMax[s.p] = Math.max(uMax[s.p], s.u); vMin[s.p] = Math.min(vMin[s.p], s.v); vMax[s.p] = Math.max(vMax[s.p], s.v); shifts[s.p].u0 += s.u; shifts[s.p].v0 += s.v; cnt[s.p]++; }
-  for (let p = 0; p < nPhotos; p++) if (cnt[p]) { shifts[p].u0 /= cnt[p]; shifts[p].v0 /= cnt[p]; }
+  for (const s of sights) { uMin[s.p] = Math.min(uMin[s.p], s.u); uMax[s.p] = Math.max(uMax[s.p], s.u); vMin[s.p] = Math.min(vMin[s.p], s.v); vMax[s.p] = Math.max(vMax[s.p], s.v); if (!start) { shifts[s.p].u0 += s.u; shifts[s.p].v0 += s.v; } cnt[s.p]++; }
+  if (!start) for (let p = 0; p < nPhotos; p++) if (cnt[p]) { shifts[p].u0 /= cnt[p]; shifts[p].v0 /= cnt[p]; }
+  // For the tilt terms: each photograph's own slopes from pixels to ground (east and north per pixel along u and v),
+  // by least squares over its sightings.
+  if (o.tilt && !start) {
+    const me = new Float64Array(nPhotos), mn = new Float64Array(nPhotos), q = Array.from({ length: nPhotos }, () => new Float64Array(7));
+    for (const s of sights) { me[s.p] += s.e; mn[s.p] += s.n; }
+    for (const s of sights) { const du = s.u - shifts[s.p].u0, dv = s.v - shifts[s.p].v0, de = s.e - me[s.p] / cnt[s.p], dn = s.n - mn[s.p] / cnt[s.p], a = q[s.p]; a[0] += du * du; a[1] += du * dv; a[2] += dv * dv; a[3] += du * de; a[4] += dv * de; a[5] += du * dn; a[6] += dv * dn; }
+    for (let p = 0; p < nPhotos; p++) { const a = q[p], det = a[0] * a[2] - a[1] * a[1]; if (cnt[p] >= 3 && Math.abs(det) > 1e-9) shifts[p].tilt = { g: [(a[3] * a[2] - a[4] * a[1]) / det, (a[4] * a[0] - a[3] * a[1]) / det, (a[5] * a[2] - a[6] * a[1]) / det, (a[6] * a[0] - a[5] * a[1]) / det], t: [0, 0] }; }
+  }
   const nc = o.gridU * o.gridV;
   const cellOf = sights.map(s => Math.min(o.gridU - 1, Math.floor(((s.u - uMin[s.p]) / Math.max(1, uMax[s.p] - uMin[s.p])) * o.gridU)) * o.gridV + Math.min(o.gridV - 1, Math.floor(((s.v - vMin[s.p]) / Math.max(1, vMax[s.p] - vMin[s.p])) * o.gridV)));
   let repeatM = NaN;
@@ -140,6 +206,8 @@ export function registerPhotos(sights: Sight[], nPhotos: number, o: PlantsFirstO
       let sx = 0, sy = 0, sw = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const w = h[(by + dy) * nb + bx + dx]; sx += w * (bx + dx); sy += w * (by + dy); sw += w; }
       return { x: (sx / sw) * 0.01 - R, y: (sy / sw) * 0.01 - R, w: best };
     };
+    // Only reading: every cell's repeat with the corrections as they stand, and nothing fitted.
+    if (read) { for (const [k, h] of hist) { const pk = peakOf(h); if (pk) read.set(k, { x: pk.x, y: pk.y }); } return { shifts, repeatM }; }
     const next = shifts.map((s0, p): PhotoShift => {
       const meas: { u: number; v: number; x: number; y: number; w: number }[] = [];
       for (let c = 0; c < nc; c++) { const h = hist.get(p * nc + c); if (!h) continue; const pk = peakOf(h); if (!pk) continue; const uv = uvSum.get(p * nc + c)!; meas.push({ u: uv[0] / uv[2] - s0.u0, v: uv[1] / uv[2] - s0.v0, x: pk.x, y: pk.y, w: pk.w }); }
@@ -162,14 +230,48 @@ export function registerPhotos(sights: Sight[], nPhotos: number, o: PlantsFirstO
         if (Math.max(...meas.map(m => Math.abs(sol![1] * m.u + sol![2] * m.v))) > R) return [mean, 0, 0];
         return sol;
       };
+      // The plane and the two tilt terms together, east and north in one fit (o.tilt), where the photograph has cells
+      // enough: eight unknowns, the cells further than 4 cm from the fit dropped and it fitted again, as the plane below.
+      // Pixels are taken in thousands and ground metres in tens so the unknowns are of one size.
+      if (s0.tilt && meas.length >= o.tiltMinCells) {
+        const g = s0.tilt.g, at = (m: (typeof meas)[number]) => { const ge = (g[0] * m.u + g[1] * m.v) / 10, gn = (g[2] * m.u + g[3] * m.v) / 10; return { U: m.u / 1000, V: m.v / 1000, ge, gn }; };
+        const model = (s: number[], m: (typeof meas)[number]): [number, number] => { const { U, V, ge, gn } = at(m), k = s[6] * ge + s[7] * gn; return [s[1] * U + s[2] * V + k * ge, s[4] * U + s[5] * V + k * gn]; };
+        let used = meas, sol: number[] | null = null;
+        for (let it = 0; it < 3; it++) {
+          const rows: number[][] = [], vals: number[] = [], ws: number[] = [];
+          for (const m of used) { const { U, V, ge, gn } = at(m); rows.push([1, U, V, 0, 0, 0, ge * ge, ge * gn], [0, 0, 0, 1, U, V, ge * gn, gn * gn]); vals.push(m.x, m.y); ws.push(m.w, m.w); }
+          const s = solveLeastSquares(rows, vals, ws); if (!s) break; sol = s;
+          const keep = used.filter(m => { const [dx, dy] = model(s, m); return Math.abs(m.x - s[0] - dx) <= 0.04 && Math.abs(m.y - s[3] - dy) <= 0.04; });
+          if (keep.length === used.length || keep.length < o.tiltMinCells) break;
+          used = keep;
+        }
+        // Not believed if it would move any measured cell more than the reach from the middle (as the plane below).
+        if (sol && Math.max(...meas.map(m => Math.max(...model(sol!, m).map(Math.abs)))) <= R) {
+          const h = 0.5;
+          return { e: [s0.e[0] + h * sol[0], s0.e[1] + (h * sol[1]) / 1000, s0.e[2] + (h * sol[2]) / 1000], n: [s0.n[0] + h * sol[3], s0.n[1] + (h * sol[4]) / 1000, s0.n[2] + (h * sol[5]) / 1000], u0: s0.u0, v0: s0.v0, cells: meas.length, tilt: { g, t: [s0.tilt.t[0] + (h * sol[6]) / 100, s0.tilt.t[1] + (h * sol[7]) / 100] } };
+        }
+      }
       const fe = fit("x"), fn = fit("y");
-      return { e: [s0.e[0] + 0.5 * fe[0], s0.e[1] + 0.5 * fe[1], s0.e[2] + 0.5 * fe[2]], n: [s0.n[0] + 0.5 * fn[0], s0.n[1] + 0.5 * fn[1], s0.n[2] + 0.5 * fn[2]], u0: s0.u0, v0: s0.v0, cells: meas.length };
+      return { e: [s0.e[0] + 0.5 * fe[0], s0.e[1] + 0.5 * fe[1], s0.e[2] + 0.5 * fe[2]], n: [s0.n[0] + 0.5 * fn[0], s0.n[1] + 0.5 * fn[1], s0.n[2] + 0.5 * fn[2]], u0: s0.u0, v0: s0.v0, cells: meas.length, ...(s0.tilt ? { tilt: s0.tilt } : {}) };
     });
     for (let p = 0; p < nPhotos; p++) shifts[p] = next[p];
     const me = shifts.reduce((t, s) => t + s.e[0], 0) / Math.max(1, nPhotos), mn = shifts.reduce((t, s) => t + s.n[0], 0) / Math.max(1, nPhotos);
     for (const s of shifts) { s.e[0] -= me; s.n[0] -= mn; }
   }
   return { shifts, repeatM };
+}
+
+/** Weighted least squares: the unknowns minimising the sum of w (row . unknowns - value)^2; null when they are not determined. */
+function solveLeastSquares(rows: number[][], vals: number[], ws: number[]): number[] | null {
+  const m = rows[0].length, M = Array.from({ length: m }, () => new Array<number>(m + 1).fill(0));
+  rows.forEach((r, k) => { for (let i = 0; i < m; i++) { M[i][m] += ws[k] * r[i] * vals[k]; for (let j = 0; j < m; j++) M[i][j] += ws[k] * r[i] * r[j]; } });
+  for (let c = 0; c < m; c++) {
+    let pv = c; for (let r = c + 1; r < m; r++) if (Math.abs(M[r][c]) > Math.abs(M[pv][c])) pv = r;
+    if (!Number.isFinite(M[pv][c]) || Math.abs(M[pv][c]) < 1e-12) return null;
+    [M[c], M[pv]] = [M[pv], M[c]];
+    for (let r = 0; r < m; r++) { if (r === c) continue; const k = M[r][c] / M[c][c]; for (let j = c; j <= m; j++) M[r][j] -= k * M[c][j]; }
+  }
+  return M.map((r, i) => r[m] / r[i]);
 }
 
 function solve3(A: number[][], y: number[]): [number, number, number] | null {
@@ -188,14 +290,20 @@ export type Dot = { e: number; n: number; members: number[]; photos: number; /**
 export function mergeDots(sights: Sight[], shifts: PhotoShift[], gateM: number, minPhotos = 2): Dot[] {
   const xs = new Float64Array(sights.length), ys = new Float64Array(sights.length);
   sights.forEach((s, i) => { const [de, dn] = shiftOf(shifts[s.p], s.u, s.v); xs[i] = s.e + de; ys[i] = s.n + dn; });
+  return mergeXY(xs, ys, i => sights[i].p, gateM, minPhotos);
+}
+
+/** The grouping of mergeDots over any positions: `photoOf(i)` is the photograph of sighting i. */
+function mergeXY(xs: Float64Array, ys: Float64Array, photoOf: (i: number) => number, gateM: number, minPhotos: number): Dot[] {
+  const sights = { length: xs.length };
   const grid = new Grid(xs, ys, Math.max(0.05, gateM));
   const density = new Int32Array(sights.length);
-  for (let i = 0; i < sights.length; i++) grid.near(xs[i], ys[i], gateM, j => { if (sights[j].p !== sights[i].p && Math.hypot(xs[j] - xs[i], ys[j] - ys[i]) <= gateM) density[i]++; });
+  for (let i = 0; i < sights.length; i++) grid.near(xs[i], ys[i], gateM, j => { if (photoOf(j) !== photoOf(i) && Math.hypot(xs[j] - xs[i], ys[j] - ys[i]) <= gateM) density[i]++; });
   const order = Int32Array.from({ length: sights.length }, (_, i) => i).sort((a, b) => density[b] - density[a]);
   const claimed = new Uint8Array(sights.length), dots: Dot[] = [];
   const gather = (cx: number, cy: number): number[] => {
     const best = new Map<number, [number, number]>();
-    grid.near(cx, cy, gateM, j => { if (claimed[j]) return; const d = Math.hypot(xs[j] - cx, ys[j] - cy); if (d > gateM) return; const b = best.get(sights[j].p); if (!b || d < b[1]) best.set(sights[j].p, [j, d]); });
+    grid.near(cx, cy, gateM, j => { if (claimed[j]) return; const d = Math.hypot(xs[j] - cx, ys[j] - cy); if (d > gateM) return; const b = best.get(photoOf(j)); if (!b || d < b[1]) best.set(photoOf(j), [j, d]); });
     return [...best.values()].map(b => b[0]);
   };
   for (const i of order) {
@@ -211,6 +319,81 @@ export function mergeDots(sights: Sight[], shifts: PhotoShift[], gateM: number, 
     dots.push({ e: ex, n: ny, members: m, photos: m.length, spreadM: Math.sqrt(m.reduce((t, k) => t + (xs[k] - ex) ** 2 + (ys[k] - ny) ** 2, 0) / m.length) });
   }
   return dots;
+}
+
+export const ROW_RECALL = {
+  /** A candidate this close to a dot the stricter marks made is that plant again (another leaf of it): left out. */
+  exclM: 0.06,
+  /** A candidate this close to a stricter mark of its own photograph is that mark again. */
+  sameMarkM: 0.03,
+  /** Candidates of different photographs are one plant within this far along the rows and this far across them: a
+   * mark sits at the middle of the green its photograph saw, and which leaf that is changes from photograph to
+   * photograph, mostly along the row (measured: lone marks of one plant a median 6 cm apart). */
+  gateAlongM: 0.09, gateAcrossM: 0.045,
+  /** One photograph alone is enough on a row only where it sees sharply: within this angle of straight down
+   * (measured: a frame's edges are soft and lose the leaves' colour). */
+  sharpDeg: 20,
+  /** Loosened (off by default): one photograph anywhere in its frame is a candidate too (tier 3, placed last). */
+  anyView: false,
+};
+export type RowRecallOptions = typeof ROW_RECALL;
+
+/**
+ * Candidates for plants ALONG THE ROWS that the stricter marks did not make into a dot (2026-11-16): each photograph's
+ * marks at the lower bar (`low`, greenPoints.ts rowPlantPoints) and the stricter marks only one photograph made.
+ * Placed with the photographs' corrections as they stand (the registration is never redone with them), left out
+ * within `exclM` of an existing dot, joined across photographs with a gate longer along the rows than across them.
+ * Tier 1: two or more photographs. Tier 2: one photograph, where it sees sharply. Tier 3 (only with `anyView`): one
+ * photograph, anywhere in its frame. They are only ever kept on a row
+ * (reconstruct: probable at most, never a certain plant, tier 2 never a row of its own): off the rows nothing changes,
+ * so no weed and no dot between the rows comes from them.
+ */
+export function rowCandidates(low: Read[], frames: Map<string, GeorefFrame>, origin: LatLngAlt, photos: string[], shifts: PhotoShift[], sights: Sight[], dots: Dot[], directionDeg: number, o: RowRecallOptions = ROW_RECALL): { dots: Dot[]; tier: Uint8Array;
+  /** Read only, for the corn inspector: every sighting the candidates were gathered from (a lone stricter mark: its
+   * index in `sights`; a lower-bar mark: -1), and per candidate dot the sightings it gathered (indices into `from`). */
+  from: { p: number; u: number; v: number; sight: number }[]; members: number[][] } {
+  const pOf = new Map(photos.map((n, i) => [n, i]));
+  const ce: number[] = [], cn: number[] = [], cp: number[] = [], sharp: number[] = [], from: { p: number; u: number; v: number; sight: number }[] = [];
+  const offNadir = (f: GeorefFrame, u: number, v: number) => (Math.atan(Math.hypot((u - f.intrinsics.cx) / f.intrinsics.fx, (v - f.intrinsics.cy) / f.intrinsics.fy)) * 180) / Math.PI;
+  // The stricter marks only one photograph made.
+  const inDot = new Uint8Array(sights.length); for (const d of dots) for (const m of d.members) inDot[m] = 1;
+  const loneX: number[] = [], loneY: number[] = [], loneP: number[] = [];
+  sights.forEach((s, i) => {
+    if (inDot[i]) return;
+    const f = frames.get(photos[s.p]); if (!f) return;
+    const [de, dn] = shiftOf(shifts[s.p], s.u, s.v);
+    loneX.push(s.e + de); loneY.push(s.n + dn); loneP.push(s.p);
+    ce.push(s.e + de); cn.push(s.n + dn); cp.push(s.p); sharp.push(offNadir(f, s.u, s.v) <= o.sharpDeg ? 1 : 0); from.push({ p: s.p, u: s.u, v: s.v, sight: i });
+  });
+  const loneGrid = new Grid(loneX, loneY, 0.1);
+  for (const r of low) {
+    const p = pOf.get(r.name), f = frames.get(r.name); if (p == null || !f) continue;
+    for (const [x, y] of r.plants) {
+      const u = x * r.scale, v = y * r.scale, g = pixelToGround(f, u, v); if (!g) continue;
+      const [e0, n0] = toEnu({ lat: g.lat, lng: g.lng, altM: 0 }, origin), [de, dn] = shiftOf(shifts[p], u, v), e = e0 + de, n = n0 + dn;
+      let same = false; loneGrid.near(e, n, o.sameMarkM, k => { if (loneP[k] === p && Math.hypot(loneX[k] - e, loneY[k] - n) <= o.sameMarkM) same = true; });
+      if (same) continue;
+      ce.push(e); cn.push(n); cp.push(p); sharp.push(offNadir(f, u, v) <= o.sharpDeg ? 1 : 0); from.push({ p, u, v, sight: -1 });
+    }
+  }
+  // Not a plant the stricter marks already made.
+  const dotGrid = new Grid(dots.map(d => d.e), dots.map(d => d.n), 0.1);
+  const keep: number[] = [];
+  for (let i = 0; i < ce.length; i++) { let near = false; dotGrid.near(ce[i], cn[i], o.exclM, k => { if (Math.hypot(dots[k].e - ce[i], dots[k].n - cn[i]) <= o.exclM) near = true; }); if (!near) keep.push(i); }
+  // Joined across photographs: along / across the rows, the across axis stretched so one gate serves both.
+  const th = (directionDeg * Math.PI) / 180, ct = Math.cos(th), st = Math.sin(th), k = o.gateAlongM / o.gateAcrossM;
+  const xs = new Float64Array(keep.length), ys = new Float64Array(keep.length);
+  keep.forEach((i, j) => { xs[j] = ce[i] * ct + cn[i] * st; ys[j] = (-ce[i] * st + cn[i] * ct) * k; });
+  const groups = mergeXY(xs, ys, j => cp[keep[j]], o.gateAlongM, 1);
+  const out: Dot[] = [], tier: number[] = [], members: number[][] = [];
+  for (const g of groups) {
+    const m = g.members.map(j => keep[j]);
+    if (m.length === 1 && !sharp[m[0]] && !o.anyView) continue;
+    const e = m.reduce((t, i) => t + ce[i], 0) / m.length, n = m.reduce((t, i) => t + cn[i], 0) / m.length;
+    out.push({ e, n, members: [], photos: m.length, spreadM: Math.sqrt(m.reduce((t, i) => t + (ce[i] - e) ** 2 + (cn[i] - n) ** 2, 0) / m.length) });
+    tier.push(m.length >= 2 ? 1 : sharp[m[0]] ? 2 : 3); members.push(m);
+  }
+  return { dots: out, tier: Uint8Array.from(tier), from, members };
 }
 
 /**
@@ -309,9 +492,11 @@ export function rowsFromDots(dots: Dot[], directionDeg: number, spacingGuessM: n
   for (let i = 0; i < dots.length; i++) if (claimed[i] >= 0) prelim[claimed[i]].dots.push(i);
   // The seed spacing the dots show, for the gap rule at the row ends.
   const marks = prelim.flatMap((r, ri) => r.dots.map(i => ({ row: ri + 1, a: A[i] })));
-  const seed = seedSpacing(marks, S);
+  const seed = seedSpacing(marks, S, undefined, o.seedNeedsAPeak);
   const seedM = seed.spacingM;
-  const maxGap = 4 * (seedM ?? 0.18);
+  // Without a measured spacing (o.seedNeedsAPeak and no peak) a gap cannot be called long: the row runs from its first
+  // dot to its last. (Before, and still where the spacing is taken whatever its score, 0.18 m stood in for it.)
+  const maxGap = seedM == null && o.seedNeedsAPeak ? Infinity : 4 * (seedM ?? 0.18);
   const rows: DotRow[] = [];
   for (const r of prelim) {
     const ds = r.dots.sort((x, y) => A[x] - A[y]);
@@ -344,8 +529,12 @@ export function rowsFromDots(dots: Dot[], directionDeg: number, spacingGuessM: n
  * stay the same row from cell to cell); cells with too few certain plants take the offset of the nearest held cell.
  * A dot's row number is its across position less its cell's offset, in spacings, rounded; its residual is how far
  * from that row's line it lies.
+ * `patternOnly`: a cell that holds enough certain plants and no row pattern in them (strength under 0.3) is not given
+ * its neighbour's: its dots get no row number (residual Infinity), so no row is made of them. Without it such a cell
+ * was filled like a cell with too few plants, and the scattered plants of a headland within a fifth of a spacing of
+ * the carried lines became row plants.
  */
-export function rowNumbers(A: Float64Array, C: Float64Array, certain: Uint8Array, S: number, cellAlongM = 10, cellAcrossM = 6, minPlants = 12): { j: Int32Array; resid: Float64Array; cells: number } {
+export function rowNumbers(A: Float64Array, C: Float64Array, certain: Uint8Array, S: number, cellAlongM = 10, cellAcrossM = 6, minPlants = 12, patternOnly = false): { j: Int32Array; resid: Float64Array; cells: number; /** Cells with plants and no pattern, left without rows. */ flat: number } {
   const n = A.length;
   let aMin = Infinity, cMin = Infinity, aMax = -Infinity, cMax = -Infinity;
   for (let i = 0; i < n; i++) { aMin = Math.min(aMin, A[i]); aMax = Math.max(aMax, A[i]); cMin = Math.min(cMin, C[i]); cMax = Math.max(cMax, C[i]); }
@@ -353,8 +542,8 @@ export function rowNumbers(A: Float64Array, C: Float64Array, certain: Uint8Array
   const cellOf = (i: number) => Math.min(W - 1, Math.floor((A[i] - aMin) / cellAlongM)) * H + Math.min(H - 1, Math.floor((C[i] - cMin) / cellAcrossM));
   const sx = new Float64Array(W * H), sy = new Float64Array(W * H), cnt = new Int32Array(W * H);
   for (let i = 0; i < n; i++) if (certain[i]) { const k = cellOf(i), t = (2 * Math.PI * C[i]) / S; sx[k] += Math.cos(t); sy[k] += Math.sin(t); cnt[k]++; }
-  const phase = new Float64Array(W * H).fill(NaN), strength = new Float64Array(W * H);
-  for (let k = 0; k < W * H; k++) if (cnt[k] >= minPlants) { strength[k] = Math.hypot(sx[k], sy[k]) / cnt[k]; if (strength[k] >= 0.3) phase[k] = ((Math.atan2(sy[k], sx[k]) / (2 * Math.PI)) * S); }
+  const phase = new Float64Array(W * H).fill(NaN), strength = new Float64Array(W * H), flat = new Uint8Array(W * H);
+  for (let k = 0; k < W * H; k++) if (cnt[k] >= minPlants) { strength[k] = Math.hypot(sx[k], sy[k]) / cnt[k]; if (strength[k] >= 0.3) phase[k] = ((Math.atan2(sy[k], sx[k]) / (2 * Math.PI)) * S); else if (patternOnly) flat[k] = 1; }
   // Joined outward from the best-held cell: each offset unwrapped to within half a spacing of the neighbour it was reached from.
   const done = new Uint8Array(W * H), order: number[] = [];
   const held = Array.from({ length: W * H }, (_, k) => k).filter(k => Number.isFinite(phase[k])).sort((x, y) => cnt[y] * strength[y] - cnt[x] * strength[x]);
@@ -375,14 +564,14 @@ export function rowNumbers(A: Float64Array, C: Float64Array, certain: Uint8Array
   // Cells with too few certain plants: the nearest held cell's offset.
   const heldCells = order;
   for (let k = 0; k < W * H; k++) {
-    if (Number.isFinite(phase[k]) || !heldCells.length) continue;
+    if (Number.isFinite(phase[k]) || flat[k] || !heldCells.length) continue;
     const ai = Math.floor(k / H), ci = k % H; let best = heldCells[0], bd = Infinity;
     for (const h of heldCells) { const d = Math.hypot((Math.floor(h / H) - ai) * cellAlongM, ((h % H) - ci) * cellAcrossM); if (d < bd) { bd = d; best = h; } }
     phase[k] = phase[best];
   }
   const j = new Int32Array(n), resid = new Float64Array(n);
-  for (let i = 0; i < n; i++) { const ph = phase[cellOf(i)]; const x = (C[i] - (Number.isFinite(ph) ? ph : 0)) / S; j[i] = Math.round(x); resid[i] = (x - j[i]) * S; }
-  return { j, resid, cells: heldCells.length };
+  for (let i = 0; i < n; i++) { const k = cellOf(i); if (flat[k]) { resid[i] = Infinity; continue; } const ph = phase[k]; const x = (C[i] - (Number.isFinite(ph) ? ph : 0)) / S; j[i] = Math.round(x); resid[i] = (x - j[i]) * S; }
+  return { j, resid, cells: heldCells.length, flat: flat.reduce((t, x) => t + x, 0) };
 }
 
 /**
@@ -410,8 +599,105 @@ export const SEQUENCE = {
   /** A stretch with no plant longer than this (metres) is not bridged: the row stops and, past it, starts again.
    * "The row probably continues" is said over a missed plant or a short failed stretch, never across a headland. */
   maxBridgeM: 8,
+  /** Loosened placement on a row (off by default, 2026-11-16): a dot within `freeAcrossShare` of a row spacing of a
+   * certain row's course, no closer than half a plant spacing to a plant already on it and within `maxGapSeeds` of
+   * one, is on the row whatever its distance to its neighbours (a planter does not space plants exactly). */
+  free: false, freeAcrossShare: 0.07,
+  /** The loosened placement keeps this share of a plant spacing clear of the plants already on the row: measured
+   * 2026-11-16, at half a spacing it added 8,500 marks 7-10 cm from a plant already there (a seedling's other leaf),
+   * a distance under 4 % of neighbouring plants stand at. */
+  freeMinSeeds: 0.7,
+  /** No rows on unplanted ground (2026-11-16); both only on a flight whose ground the field judged (`ground` handed
+   * in). `patternCellsOnly`: a cell with plenty of certain plants and no row pattern in them holds no row (rowNumbers
+   * `patternOnly`; the plants on ground judged scattered are not counted in the pattern). `refuseScattered`: on ground the field's plants show as
+   * scattered (cornField.ts FIELD.planted, handed in as `ground`) no certain plant makes a row, no dot is a probable
+   * plant, no candidate is taken, and a row is cut where its course would cross that ground. Ground the field did not
+   * judge, and a flight it judged none of, read as before. */
+  patternCellsOnly: true, refuseScattered: true,
+  /** Rows guide the search, they never make a plant (2026-11-16). A candidate of the second look, and any dot the
+   * loosened placement would take, is kept on a row only along a stretch of it where dots stand on the row's line
+   * clearly more than on the ground between the rows: rowGuided.ts's stretch test (bandBeatsControls: the band against
+   * its two mid-alley strips, over `stretchM` of row), on the dots, which every photograph located without a row.
+   * Which dots are counted, for a dot of the stricter marks always those dots, and for a candidate:
+   *   "row"  the row's band as it stands: the stricter marks' dots and the candidates as strong as it or stronger
+   *          (its tier and the tiers placed before it), on the line against between the rows. A full row with three
+   *          plants missing passes on its own plants; a line through scattered plants or across bare ground does not.
+   *          Known limit: a bare strip shorter than a stretch shares its stretch with planted row and passes with it;
+   *   "own"  only the candidates as strong as it or stronger, against the same between the rows. Stricter, and
+   *          biased against a well-read row: its band holds only the plants the stricter marks missed, the alley
+   *          everything the second look finds there (measured 2026-11-16 on one photograph: 48 candidates of 2 to 6
+   *          photographs standing on seedlings of one row refused, the alleys beside it cracked soil);
+   *   "all"  every dot, whatever its tier;
+   *   "none" the test is not asked (as before). */
+  alleyTest: "row" as "none" | "own" | "row" | "all",
+  /** Where the test's two control strips are centred, as a share of the row spacing either side of the row: mid-alley
+   * (rowGuided.ts controlShare). Only the scoreboard changes it, to read phantom rows laid half way between the real
+   * ones against strips a quarter spacing either side of them. */
+  alleyControlShare: ROW_GUIDED.controlShare,
+  /** "Between two rows" is said only of a dot that stands off every row's line (2026-11-16). Before, a dot left off
+   * the row it stands on (a double, off the plant spacing, refused) was counted as lying beside that very row, and with
+   * the next row on its other side it read "between two rows, not the crop": on the first flight judged, 13,600 dots. */
+  betweenOffLines: true,
+  /** A rule that needs the plant spacing does not run where the spacing is not measured (2026-11-16; before, 0.18 m
+   * stood in for it). On such a flight: no dot becomes a probable plant and no candidate is placed (both are asked to
+   * stand a whole number of spacings from a plant: why 7), the loosened placement does not run (its clearance and its
+   * reach are counted in spacings), a row reaches no further than its own plants, and no stretch is called "not
+   * confirmed" (how long a run of missed plants is still ordinary is counted in spacings): a row is cut only where no
+   * plant stands for `maxBridgeM` or where its course crosses ground judged scattered. The certain plants, the rows
+   * they make and the rows found in a free slot do not use the spacing and read as before. */
+  spacingRulesNeedASpacing: true,
+  /** The final sweep (2026-11-16): a mark of the second look that stands alone on its row is taken off it. After every
+   * dot is placed and before the rows are built, each candidate on a row (every tier) is asked for company along that
+   * row: a plant found without help from a row, within the reach a row already takes dots in (`maxGapSeeds` plant
+   * spacings), on either side of it. With none it is off the row: why 8, "alone on its row". Who is company
+   * (`loneMarkCompany`):
+   *   "located"  the row's certain plants and its probable ones: every dot the stricter marks made, which no row
+   *              helped to find (a probable plant's place on the row is the spacing rule's, its finding is not);
+   *   "certain"  the row's certain plants only: the plants the row itself was made from (the design note's `own`).
+   *              Measured 2026-11-16 on the one flight with marks to sweep: 310 marks go instead of 137, most of the
+   *              difference at row ends beside a wheel track, next to probable plants.
+   * Another candidate is never company. A certain or a probable plant is never removed, and a dot on no row is not
+   * touched. One pass is the whole of it: what is removed was nobody's company. (A planter drops seed in a line at a
+   * steady spacing, so one faint mark alone in a bare strip is not read as its plant.) */
+  sweepLoneMarks: true, loneMarkCompany: "located" as "certain" | "located",
+  /** Off by default (2026-11-17): the plant spacing is not asked of a dot on a row's line. A dot that every other test
+   * lets through and that is refused only because it does not stand a whole number of plant spacings from the nearest
+   * plant on its row (off by more than `probableTol` of a spacing) goes on the row all the same. Every other test
+   * stays: ground judged scattered, the row's line and its reach, the band against the alley for a candidate, the
+   * double rule (closer than half a spacing to a plant on the row) and the reach of `maxGapSeeds` spacings from one.
+   * A candidate of the second look follows the same change. A row's course is not fitted through these dots: they are
+   * told apart (`Reconstruction.offSpacing`) and left out where a row's drawn course is fitted through its plants.
+   * (Beside it: SEQUENCE.free takes such a dot too, but only within `freeAcrossShare` of the line and no closer than
+   * `freeMinSeeds` to a plant; this option keeps the row's own band and the double rule's half a spacing.) */
+  placeOffSpacing: false,
+  /** Off by default (2026-11-18), a narrower `placeOffSpacing`: only a dot of the stricter marks goes on its row
+   * without the spacing asked of it. A candidate of the second look keeps the spacing rule as it stood. */
+  offSpacingStricterOnly: false,
+  /** Off by default (2026-11-18): how close to a plant on its row a dot may stand is learned from the field, in place of
+   * half a plant spacing. The limit is the distance under which the lowest `tooCloseQuantile` of the gaps between
+   * neighbouring certain plants on the flight's row lines fall (`Reconstruction.tooCloseM`): closer than the field's own
+   * certain plants stand to each other, a dot is a second mark on a plant. With no such gap the half spacing stands. */
+  tooCloseFromField: false, tooCloseQuantile: 0.05,
 };
+/** The rules as they stood on 2026-11-16 at f23efc0, before the changes above them here: kept so that result can be run beside the present one. */
+export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: false, refuseScattered: false, alleyTest: "none", betweenOffLines: false, spacingRulesNeedASpacing: false, sweepLoneMarks: false };
+/** The field's judgement of the ground as reconstruct takes it (cornField.ts FieldGround): at a place, metres east and
+ * north, 0 unknown, 1 planted, 2 scattered; `dotState` where the caller judged the dots itself. */
+/**
+ * Read only, for the corn inspector (2026-11-18): which test settled each dot in `reconstruct`. No rule reads it.
+ * Each value is written on the same line as the test it names, so a dot's rule can be found in this file by its name.
+ * `cutFromRow`: placed on a row, then left on no row when the row was built (a piece of under three plants, a stretch
+ * longer than `maxBridgeM` with no plant, or a stretch over ground judged scattered: `build` in reconstruct).
+ */
+export const SETTLED = { none: 0, certainRow: 1, scattered: 2, noRow: 3, noSpacing: 4, alley: 5, tooClose: 6, tooFar: 7, offSpacing: 8, placedAtSpacing: 9, placedOffSpacing: 10, freeAlley: 11, freeTooClose: 12, freePlaced: 13, alone: 14, geometryRow: 15, cutFromRow: 16, secondLook: 17 } as const;
+export type GroundJudge = { state: (e: number, n: number) => 0 | 1 | 2; dotState?: Uint8Array | null };
 export type RowSegment = { a0: number; a1: number; confirmed: boolean };
+/** A row's course in the rows' frame: its across position at knots along it, from its first plant to its last, and the dots it was fitted through. */
+export type RowCourse = { ka: Float64Array; kc: Float64Array; a0: number; a1: number; dots: number[] };
+/** A course's across position at `a` along (held level past its ends). */
+export const courseAt = (L: RowCourse, a: number) => { const X = L.ka, Y = L.kc; if (a <= X[0]) return Y[0]; if (a >= X[X.length - 1]) return Y[Y.length - 1]; let lo = 0, hi = X.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (X[m] <= a) lo = m; else hi = m; } const t = (a - X[lo]) / (X[hi] - X[lo] || 1); return Y[lo] + t * (Y[hi] - Y[lo]); };
+/** Whether a dot is a certain plant on its own evidence: enough photographs made it, and enough of those that looked at its ground. */
+export const certainEvidence = (d: Dot, covered: number, q: { certainViews: number; certainShare: number } = SEQUENCE) => d.photos >= q.certainViews && covered > 0 && d.photos / covered >= q.certainShare;
 export type SeqRow = { id: number; kind: "certain" | "geometry"; line: [number, number][]; dots: number[]; a0: number; a1: number; lengthM: number; perM: number; segments: RowSegment[] };
 export type Reconstruction = {
   /** Per dot: 0 certain, 1 probable (the certain geometry supports it), 2 uncertain. */
@@ -419,151 +705,74 @@ export type Reconstruction = {
   rows: SeqRow[];
   /** Per dot: the index of the row it is on, or -1. */
   rowOf: Int32Array;
-  /** Per dot: 1 when it is on no row and has a row on either side of it within a spacing: between the rows, not the crop. */
+  /** Per dot: 1 when it is on no row, off every row's line, and has a row on either side of it within a spacing: between the rows, not the crop. */
   between: Uint8Array;
-  /** Per dot, why it is on no row: 0 on a row, 1 no row reaches it, 2 as close as a double to a plant on the row, 3 not at the plant spacing, 4 between two rows. */
+  /** Per dot, why it is on no row: 0 on a row, 1 no row reaches it, 2 as close as a double to a plant on the row, 3 not at the plant spacing, 4 between two rows, 5 on ground the field's plants show as scattered, 6 a candidate (or a dot for the loosened placement) on a stretch of row whose band does not beat the ground between the rows, 7 the plant spacing is not measured on this flight, so the rule that would place it does not run, 8 a candidate that was on a row and alone on it (the final sweep, `sweepLoneMarks`). */
   why: Uint8Array;
-  /** The gap rule as measured, and what it did: gaps bridged as confirmed, stretches not confirmed, rows cut. */
-  gaps: { filled: number; gapM: number; bridged: number; notConfirmedStretches: number; cutOverMaxBridge: number; cutLengthM: number };
+  /** The gap rule as measured, and what it did: gaps bridged as confirmed, stretches not confirmed, rows cut (over a
+   * stretch with no plant, and where the course would cross ground judged scattered). */
+  gaps: { filled: number; gapM: number; bridged: number; notConfirmedStretches: number; cutOverMaxBridge: number; cutLengthM: number; cutOverScattered: number };
+  /** Unplanted ground: dots on ground judged scattered (all, and the certain ones among them), and cells with plants
+   * and no row pattern that were left without rows. */
+  unplanted: { dotsOnScattered: number; certainOnScattered: number; flatCells: number };
+  /** The band-against-alley test (`alleyTest`): dots it kept off a row. */
+  alleyRefused: number;
+  /** Whether the rules that need the plant spacing ran: false where it is not measured and `spacingRulesNeedASpacing`. */
+  spacingRules: boolean;
+  /** The final sweep (`sweepLoneMarks`): the candidates it took off a row, and for each the course (index into `courses`) it stood on. */
+  alone: { dot: number[]; course: number[] };
   geometry: { spacingM: number; directionDeg: number; seedM: number | null; rowLengthMedianM: number; perMMedian: number; certainDots: number; certainRows: number };
   /** Along / across of every dot in the rows' frame, metres. */
   a: Float64Array; c: Float64Array;
+  /** Per dot: 1 when it is on a row only by the loosened placement (`free`), not at the plant spacing. */
+  loose: Uint8Array;
+  /** The courses of the rows the certain plants made (before anything was placed along them), and of the rows found in
+   * a slot those leave. */
+  courses: RowCourse[]; geomCourses: RowCourse[];
+  /** Per dot: 1 when it is on its row only because the plant spacing was not asked of it (`placeOffSpacing`). */
+  offSpacing: Uint8Array;
+  /** The distance from a plant on its row under which a dot is as close as a double, metres: half a plant spacing, or
+   * the limit learned from the field (`tooCloseFromField`); and the gaps between neighbouring certain plants it was read from. */
+  tooCloseM: number; certainGaps: number;
+  /** Read only (SETTLED): per dot, the test that settled it. */
+  settled: Uint8Array;
+  /** Read only (layers/chain.ts, 2026-11-18): what L5 learned beyond the above (layers/l5Profile.ts spacingSpread; the
+   * ground judged from L4's certain plants, with LAYERS.groundFromObvious). */
+  /** L7 (layers/l7SecondLook.ts, LAYERS.secondLook): per dot, 1 when the second look put it on its row or added it. */
+  secondLook?: Uint8Array;
+  profile?: { spread: { all: { q1: number | null; q2: number | null; q3: number | null; n: number }; single: { q1: number | null; q2: number | null; q3: number | null; n: number }; lowerFenceM: number | null; upperFenceM: number | null }; groundL4: unknown };
 };
 
-/** `notCertain`: dots that may be probable at most (the second look's plants: they confirm a stretch, never start a row). */
-export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: number, spacingGuessM: number, o: PlantsFirstOptions = PLANTS_FIRST, q = SEQUENCE, notCertain: Uint8Array | null = null): Reconstruction {
-  const n = dots.length, certainty = new Uint8Array(n).fill(2);
-  for (let i = 0; i < n; i++) if (!notCertain?.[i] && dots[i].photos >= q.certainViews && covered[i] > 0 && dots[i].photos / covered[i] >= q.certainShare) certainty[i] = 0;
-  // 1-2. The certain plants, and the rows they make.
-  const cIdx: number[] = []; for (let i = 0; i < n; i++) if (certainty[i] === 0) cIdx.push(i);
-  const R1 = rowsFromDots(cIdx.map(i => dots[i]), directionDeg, spacingGuessM, o);
-  const th = (R1.directionDeg * Math.PI) / 180, ct = Math.cos(th), st = Math.sin(th), S = R1.spacingM;
-  const A = new Float64Array(n), C = new Float64Array(n);
-  for (let i = 0; i < n; i++) { A[i] = dots[i].e * ct + dots[i].n * st; C[i] = -dots[i].e * st + dots[i].n * ct; }
-  // A planter drives straight, but the ground the photographs are placed on is not rigid over a whole flight (cameras
-  // without RTK drift by tens of centimetres over a hundred metres): a row is straight over a stretch and follows that
-  // slow drift. Its course is a line fitted locally (tricube weights within `localM` either way), every 2 m along it,
-  // robustly: plants further than `fitTol` of a spacing from the course are dropped and it is fitted again.
-  type Line = { ka: Float64Array; kc: Float64Array; a0: number; a1: number; dots: number[] };
-  const at = (L: Line, a: number) => { const X = L.ka, Y = L.kc; if (a <= X[0]) return Y[0]; if (a >= X[X.length - 1]) return Y[Y.length - 1]; let lo = 0, hi = X.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (X[m] <= a) lo = m; else hi = m; } const t = (a - X[lo]) / (X[hi] - X[lo] || 1); return Y[lo] + t * (Y[hi] - Y[lo]); };
-  const course = (use: number[], a0: number, a1: number): { ka: Float64Array; kc: Float64Array } => {
-    const sorted = [...use].sort((x, y) => A[x] - A[y]), ka: number[] = [], kc: number[] = [], h = q.localM;
-    for (let a = a0; ; a = Math.min(a1, a + 2)) {
-      let sw = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
-      for (const i of sorted) { const d = A[i] - a; if (d < -h) continue; if (d > h) break; const w = (1 - Math.abs(d / h) ** 3) ** 3; sw += w; sx += w * d; sy += w * C[i]; sxx += w * d * d; sxy += w * d * C[i]; }
-      if (sw > 0) { const det = sw * sxx - sx * sx; const c = Math.abs(det) > 1e-9 && sw >= 3 ? (sy * sxx - sx * sxy) / det : sy / sw; ka.push(a); kc.push(c); }
-      if (a >= a1) break;
-    }
-    return { ka: Float64Array.from(ka), kc: Float64Array.from(kc) };
-  };
-  const fit = (idx: number[]): Line | null => {
-    if (idx.length < 2) return null;
-    let use = idx, L: Line | null = null;
-    for (let it = 0; it < 4; it++) {
-      const a0 = Math.min(...use.map(i => A[i])), a1 = Math.max(...use.map(i => A[i]));
-      const k = course(use, a0, a1); if (k.ka.length < 1) break;
-      L = { ...k, a0, a1, dots: use };
-      const keep = idx.filter(i => Math.abs(C[i] - at(L!, A[i])) <= q.fitTol * S);
-      if (keep.length === use.length || keep.length < 2) break;
-      use = keep;
-    }
-    return L;
-  };
-  // Each certain plant's row number from the planter's pattern (rowNumbers), and one straight line per row number.
-  const isCertain = new Uint8Array(n); for (const i of cIdx) isCertain[i] = 1;
-  const RN = rowNumbers(A, C, isCertain, S);
-  const byJ = new Map<number, number[]>();
-  for (const i of cIdx) if (Math.abs(RN.resid[i]) <= 0.2 * S) (byJ.get(RN.j[i]) ?? byJ.set(RN.j[i], []).get(RN.j[i])!).push(i);
-  let lines = [...byJ.values()].filter(g => g.length >= 5).map(fit).filter((L): L is Line => !!L && L.a1 - L.a0 >= q.minCertainRowM);
-  // Pieces of one row joined: two lines that agree (within `joinTol` of a spacing) where one ends and the other begins.
-  for (let changed = true; changed;) {
-    changed = false;
-    lines.sort((x, y) => x.a0 - y.a0);
-    outer: for (let i = 0; i < lines.length; i++) for (let j = i + 1; j < lines.length; j++) {
-      const a = lines[i], b = lines[j], mid = (Math.min(a.a1, b.a1) + Math.max(a.a0, b.a0)) / 2;
-      if (Math.abs(at(a, mid) - at(b, mid)) > q.joinTol * S) continue;
-      // Not two neighbouring rows overlapping: where both hold plants, they must be the same line all along.
-      const ov0 = Math.max(a.a0, b.a0), ov1 = Math.min(a.a1, b.a1);
-      if (ov1 > ov0 && (Math.abs(at(a, ov0) - at(b, ov0)) > q.joinTol * S || Math.abs(at(a, ov1) - at(b, ov1)) > q.joinTol * S)) continue;
-      const m = fit([...a.dots, ...b.dots]); if (!m) continue;
-      lines = lines.filter((_, k) => k !== i && k !== j); lines.push(m); changed = true; break outer;
+export type StretchCount = { /** Index into the courses given. */ row: number; a0: number; a1: number; /** Per class: dots within the band on the row's line, and in its two mid-alley strips together. */ band: Int32Array; alley: Int32Array };
+
+/**
+ * What stands on each row's line and what stands between the rows there (2026-11-16), per stretch of `stretchM` along
+ * each course and per class of dot (`cls`, negative: not counted). The band is the ground within `halfM` of the course;
+ * the two control strips are centred `controlShare` of the row spacing either side of it (mid-alley, the ground
+ * farthest from both neighbouring rows) and are as wide as the band, never wider than `controlHalfShare` allows:
+ * rowGuided.ts's strips, on the dots. A dot past a course's end by up to `reachM` counts in its last stretch.
+ * `controlScale` times an alley count is a count over the band's area (1 when the strips are as wide as the band).
+ * `stretchOf(row, a)` is the index of the stretch of course `row` that holds `a` along.
+ */
+export function bandAndAlley(courses: RowCourse[], A: ArrayLike<number>, C: ArrayLike<number>, cls: ArrayLike<number>, nCls: number, S: number, halfM: number, reachM: number, o: Pick<typeof ROW_GUIDED, "stretchM" | "controlShare" | "controlHalfShare"> = ROW_GUIDED): { stretches: StretchCount[]; first: number[]; controlScale: number; stretchOf: (row: number, a: number) => number } {
+  const halfC = Math.min(halfM, o.controlHalfShare * S), off = o.controlShare * S;
+  const first: number[] = [], out: StretchCount[] = [];
+  // Whole stretches; the last takes what is left over (a sliver at a row's end could never pass the test on its own).
+  courses.forEach((r, ri) => { first.push(out.length); const n = Math.max(1, Math.floor((r.a1 - r.a0) / o.stretchM + 1e-9)); for (let k = 0; k < n; k++) out.push({ row: ri, a0: r.a0 + k * o.stretchM, a1: k === n - 1 ? r.a1 : r.a0 + (k + 1) * o.stretchM, band: new Int32Array(nCls), alley: new Int32Array(nCls) }); });
+  first.push(out.length);
+  const stretchOf = (ri: number, a: number) => first[ri] + Math.min(first[ri + 1] - first[ri] - 1, Math.max(0, Math.floor((a - courses[ri].a0) / o.stretchM)));
+  for (let i = 0; i < A.length; i++) {
+    const c = cls[i]; if (c < 0) continue;
+    for (let ri = 0; ri < courses.length; ri++) {
+      const r = courses[ri]; if (A[i] < r.a0 - reachM || A[i] > r.a1 + reachM) continue;
+      const d = Math.abs(C[i] - courseAt(r, A[i])), inBand = d <= halfM;
+      if (!inBand && Math.abs(d - off) > halfC) continue;
+      const k = stretchOf(ri, A[i]);
+      if (inBand) out[k].band[c]++; else out[k].alley[c]++;
     }
   }
-  // 3. The field's own geometry, from the certain rows.
-  const med = (xs: number[]) => { const t = [...xs].sort((x, y) => x - y); return t.length ? t[t.length >> 1] : NaN; };
-  const seedM = R1.seedM, seed = seedM ?? 0.18;
-  const geometry = { spacingM: S, directionDeg: R1.directionDeg, seedM, rowLengthMedianM: med(lines.map(r => r.a1 - r.a0)), perMMedian: med(lines.map(r => r.dots.length / Math.max(1e-6, r.a1 - r.a0))), certainDots: cIdx.length, certainRows: lines.length };
-  // 4-5. Every other dot again, strongest first: on a certain row's line (within its reach past the ends), at a whole
-  // number of plant spacings from the nearest plant on it, it is probable; between the rows it is not the crop.
-  const onRow = o.onRowShare * S, reach = q.maxGapSeeds * seed;
-  // Why a dot is on no row (diagnostics): 0 on a row, 1 no row reaches it, 2 as close to a plant on the row as a
-  // double, 3 not a whole number of plant spacings from the row's plants, 4 between two rows (set at the end).
-  const why = new Uint8Array(n);
-  const nearestRow = (i: number, list: Line[]) => { let best = -1, bd = onRow; list.forEach((r, ri) => { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) return; const d = Math.abs(C[i] - at(r, A[i])); if (d <= bd) { bd = d; best = ri; } }); return best; };
-  const along = lines.map(r => r.dots.map(i => A[i]));
-  const extra = lines.map(() => [] as number[]);
-  const onCertain = new Uint8Array(n); for (const r of lines) for (const i of r.dots) onCertain[i] = 1;
-  const order = Array.from({ length: n }, (_, i) => i).filter(i => !onCertain[i]).sort((x, y) => dots[y].photos - dots[x].photos);
-  for (const i of order) {
-    const ri = nearestRow(i, lines); if (ri < 0) { why[i] = 1; continue; }
-    let nearest = Infinity; for (const a of along[ri]) nearest = Math.min(nearest, Math.abs(a - A[i]));
-    if (nearest < 0.5 * seed) { why[i] = 2; continue; } // as close as a double, or the same plant twice: not taken on geometry
-    const k = Math.round(nearest / seed);
-    if (k < 1 || k > q.maxGapSeeds || Math.abs(nearest - k * seed) > q.probableTol * seed) { why[i] = 3; continue; }
-    if (certainty[i] === 2) certainty[i] = 1;
-    along[ri].push(A[i]); extra[ri].push(i); onCertain[i] = 1;
-  }
-  // New rows from what is left, only in a row slot of the planter's pattern that no certain row holds there, as dense
-  // as the certain rows are, straight.
-  const restByJ = new Map<number, number[]>();
-  for (let i = 0; i < n; i++) if (!onCertain[i] && Math.abs(RN.resid[i]) <= onRow) (restByJ.get(RN.j[i]) ?? restByJ.set(RN.j[i], []).get(RN.j[i])!).push(i);
-  const geomLines: Line[] = [];
-  for (const g of restByJ.values()) {
-    if (g.length < 5) continue;
-    const L = fit(g); if (!L || L.a1 - L.a0 < q.minCertainRowM) continue;
-    // Not where a certain row already runs: the slot must be free over this stretch.
-    const mid = (L.a0 + L.a1) / 2;
-    if (lines.some(cr => mid >= cr.a0 - 2 && mid <= cr.a1 + 2 && Math.abs(at(cr, mid) - at(L, mid)) < 0.5 * S)) continue;
-    if (L.dots.length / Math.max(1e-6, L.a1 - L.a0) < q.minRowDensityShare * geometry.perMMedian) continue;
-    geomLines.push(L);
-  }
-  // How full the certain rows are, and so how long a run of missed plants is still ordinary there.
-  const filled = Math.min(0.95, Math.max(0.15, geometry.perMMedian * seed));
-  const gapK = Math.max(q.gapSeeds, Math.ceil(Math.log(q.gapRisk) / Math.log(1 - filled))), gapM = gapK * seed;
-  const breaks = { bridged: 0, notConfirmedStretches: 0, cutOverMaxBridge: 0, cutLengthM: 0 };
-  // Rows with their stretches: plants confirmed, or a gap of over `gapM` ("the row probably
-  // continues here; plants not confirmed").
-  const rows: SeqRow[] = [], rowOf = new Int32Array(n).fill(-1);
-  const build = (kind: SeqRow["kind"], ds: number[], L: Line) => {
-    const all = [...new Set(ds)].sort((x, y) => A[x] - A[y]);
-    // Cut where no plant stands for over maxBridgeM; each piece with 3 or more plants is a row of its own.
-    for (let s0 = 0; s0 < all.length;) { let e0 = s0; while (e0 + 1 < all.length && A[all[e0 + 1]] - A[all[e0]] <= q.maxBridgeM) e0++; if (e0 - s0 + 1 >= 3) piece(kind, all.slice(s0, e0 + 1), L); if (e0 + 1 < all.length) { breaks.cutOverMaxBridge++; breaks.cutLengthM += A[all[e0 + 1]] - A[all[e0]]; } s0 = e0 + 1; }
-  };
-  const piece = (kind: SeqRow["kind"], sorted: number[], L: Line) => {
-    if (sorted.length < 2) return;
-    const a0 = A[sorted[0]], a1 = A[sorted[sorted.length - 1]], segs: RowSegment[] = [];
-    let s0 = a0;
-    for (let k = 1; k < sorted.length; k++) { const g0 = A[sorted[k - 1]], g1 = A[sorted[k]]; if (g1 - g0 > gapM) { if (g0 > s0) segs.push({ a0: s0, a1: g0, confirmed: true }); segs.push({ a0: g0, a1: g1, confirmed: false }); s0 = g1; breaks.notConfirmedStretches++; } else if (g1 - g0 > 1.5 * seed) breaks.bridged++; }
-    if (a1 > s0) segs.push({ a0: s0, a1, confirmed: true });
-    // The drawn course: refitted through all its plants (the certain ones and those the second look added).
-    const k = course(sorted, a0, a1), LL: Line = { ...k, a0, a1, dots: sorted };
-    const line: [number, number][] = []; for (let a = a0; ; a = Math.min(a1, a + 1)) { const c = at(k.ka.length ? LL : L, a); line.push([a * ct - c * st, a * st + c * ct]); if (a >= a1) break; }
-    for (const i of sorted) rowOf[i] = rows.length;
-    rows.push({ id: rows.length + 1, kind, line, dots: sorted, a0, a1, lengthM: a1 - a0, perM: sorted.length / Math.max(1e-6, a1 - a0), segments: segs });
-  };
-  lines.forEach((L, ri) => build("certain", [...L.dots, ...extra[ri]], L));
-  for (const L of geomLines) { for (const i of L.dots) if (certainty[i] === 2) certainty[i] = 1; build("geometry", L.dots, L); }
-  // A probable dot that ended on no row is uncertain again.
-  for (let i = 0; i < n; i++) if (certainty[i] === 1 && rowOf[i] < 0) certainty[i] = 2;
-  // Between the rows: a dot on no row, with a row on either side of it within a spacing, is not the crop.
-  const between = new Uint8Array(n);
-  const all = [...lines, ...geomLines];
-  for (let i = 0; i < n; i++) {
-    if (rowOf[i] >= 0) continue;
-    let below = false, above = false;
-    for (const r of all) { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) continue; const d = C[i] - at(r, A[i]); if (d > 0 && d < 1.2 * S) below = true; if (d < 0 && d > -1.2 * S) above = true; }
-    if (below && above) { between[i] = 1; why[i] = 4; }
-  }
-  for (let i = 0; i < n; i++) if (rowOf[i] >= 0) why[i] = 0; else if (!why[i]) why[i] = 1;
-  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, geometry, a: A, c: C };
+  return { stretches: out, first, controlScale: halfM / halfC, stretchOf };
 }
+
+// reconstruct (steps 4 on: the rows through the certain dots, every other dot against them) is the layers L4 to L7
+// chained: fieldTwin/layers/chain.ts (moved there 2026-11-18 so that this file imports no layer).

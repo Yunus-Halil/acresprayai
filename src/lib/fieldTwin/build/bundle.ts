@@ -206,7 +206,7 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
       ...(P ? { plants: {
         points: P.points, certainty: P.shown, photos: P.photos,
         note: "One dot per plant two or more photographs located, placed where they saw it. Filled: a plant on a row, seen by most photographs over it. Ring: probable (on a row, at the field's plant spacing). Grey: seen, on no row. Grey cross: between two rows, not the crop. Located by the photographs, not identified as corn by its look; not a stand count.",
-        summary: { plants: P.summary.plants, certain: P.summary.certain, probable: P.summary.probable, onNoRow: P.summary.onNoRow, betweenRows: P.summary.betweenRows, confirmedM: P.summary.confirmedM, notConfirmedM: P.summary.notConfirmedM },
+        summary: { plants: P.summary.plants, certain: P.summary.certain, probable: P.summary.probable, onNoRow: P.summary.onNoRow, betweenRows: P.summary.betweenRows, confirmedM: P.summary.confirmedM, notConfirmedM: P.summary.notConfirmedM, ...(P.summary.alongRowsTwo != null ? { alongRowsTwo: P.summary.alongRowsTwo, alongRowsOne: P.summary.alongRowsOne ?? 0 } : {}) },
       } } : {}),
       summary: {
         cornRows: fieldRows.filter(r => r.status === "corn").length, unconfirmedRows: fieldRows.filter(r => r.status !== "corn").length,

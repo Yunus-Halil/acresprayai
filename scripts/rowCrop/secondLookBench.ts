@@ -14,7 +14,8 @@ import { decodeImage } from "../bench/images";
 import { framesFromAnalysis, parseTwinAnalysis } from "../../src/lib/fieldTwin/analysis";
 import { type CornPhotoRead, cornField } from "../../src/lib/fieldTwin/cornField";
 import { frameFootprint, pixelToGround } from "../../src/lib/directGeoref/projection";
-import { type Dot, PLANTS_FIRST, type Read, coverage, mergeDots, projectSightings, reconstruct, registerPhotos, shiftOf } from "../../src/lib/fieldTwin/plantsFirst";
+import { type Dot, PLANTS_FIRST, type Read, coverage, mergeDots, projectSightings, registerPhotos, shiftOf } from "../../src/lib/fieldTwin/plantsFirst";
+import { reconstruct } from "../../src/lib/fieldTwin/layers/chain";
 import { ROW_GUIDED, type PhotoSearch, type RowLine, mergeAlongRows, searchPhoto } from "../../src/lib/fieldTwin/rowGuided";
 import { fromEnu, toEnu } from "../../src/lib/sourceFrames/odm";
 

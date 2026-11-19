@@ -7,10 +7,11 @@
 //   rows     each row cut into stretches running exactly from a plant to a plant: "corn" where plants were seen along
 //            it, "unconfirmed" where the row probably continues but no plant was confirmed (never across a headland)
 // The corn stage's own rows (cornField) stay the fallback: a flight whose plants make no certain row keeps them.
-import type { GeorefFrame } from "@/lib/directGeoref/projection";
-import { fromEnu } from "@/lib/sourceFrames/odm";
-import type { CornFieldResult, CornPhotoRead } from "./cornField";
-import { PLANTS_FIRST, coverage, mergeDots, projectSightings, reconstruct, registerPhotos } from "./plantsFirst";
+import { type GeorefFrame, pixelToGround } from "@/lib/directGeoref/projection";
+import { ROW_POINTS } from "@/lib/rowCrop/greenPoints";
+import { type LatLngAlt, fromEnu, toEnu } from "@/lib/sourceFrames/odm";
+import type { CornFieldResult, CornPhotoRead, FieldGround } from "./cornField";
+import { PLANTS_FIRST, type Reconstruction, SEQUENCE } from "./plantsFirst";
 
 export type CornStretch = {
   /** The field row it belongs to, and whether plants were seen along it. */
@@ -28,7 +29,9 @@ export type CornFieldRow = { id: number; plants: number; certain: number; perM: 
 export type CornPlants = {
   /** Per plant: latitude, longitude. */
   points: [number, number][];
-  /** Per plant: 0 a certain plant on a row, 1 a probable one, 2 seen on no row, 3 between two rows (not the crop). */
+  /** Per plant: 0 a certain plant on a row, 1 a probable one, 2 seen on no row, 3 between two rows (not the crop);
+   * found along a row at the lower bar (2026-11-16, probable): 4 by two or more photographs, 5 by one photograph's sharp view;
+   * 6 a plant the second look added (L7, LAYERS.secondLook, development only). */
   shown: number[];
   /** Per plant: photographs that located it. */
   photos: number[];
@@ -36,22 +39,45 @@ export type CornPlants = {
   /** The field rows the stretches belong to (`CornStretch.row`). */
   rows: CornFieldRow[];
   geometry: { spacingM: number; directionDeg: number; seedM: number | null; certainRows: number; certainDots: number };
-  summary: { plants: number; certain: number; probable: number; onNoRow: number; betweenRows: number; rows: number; confirmedM: number; notConfirmedM: number };
+  summary: { plants: number; certain: number; probable: number; onNoRow: number; betweenRows: number; rows: number; confirmedM: number; notConfirmedM: number;
+    /** Plants found along the rows at the lower bar (shown 4 and 5), when a photograph carried candidates. */
+    alongRowsTwo?: number; alongRowsOne?: number;
+    /** Of the plants on rows, those there only by the loosened placement (development, `free`). */
+    loosened?: number;
+    /** Of the plants on rows, those the second look put there (L7, development). */
+    secondLook?: number };
+  /** Per plant: 1 when it is on its row only by the loosened placement (development, `free`). */
+  loose?: number[];
 };
 
 /** Shortest stretch kept, metres (a sliver at a row's end says nothing). */
 const MIN_STRETCH_M = 0.3;
 
+/** A flight's dots before any row is read: the stricter marks' dots first (`strict` of them), then the candidates for
+ * the rows with their tier (plantsFirst.ts rowCandidates); how many photographs looked at each; and the first reading
+ * of rows through the certain dots (direction, row spacing, plant spacing). */
+// L3 Place (fieldTwin/layers/l3Place.ts): the dots on the ground, merged across the photographs; the options and the
+// candidates' points live there too (moved 2026-11-18: no import cycle), re-exported here.
+export { type CornPlantsOptions, type PlacedDots, candidatePoints, placeDots } from "./layers/l3Place";
+import { type CornPlantsOptions, type PlacedDots, placeDots } from "./layers/l3Place";
+import { reconstruct } from "./layers/chain";
+import { LAYERS } from "./layers/options";
+
+/** Steps 4 on: the rows through the certain dots, and every other dot against them (plantsFirst.ts reconstruct). */
+export function readRows(P: PlacedDots, F: CornFieldResult, opts: CornPlantsOptions = {}): Reconstruction {
+  const q = opts.sequence ?? SEQUENCE;
+  return reconstruct(P.all, P.covered, F.directionDeg ?? 0, F.pitchM ?? 0.76, opts.placing ?? PLANTS_FIRST, opts.free ? { ...q, free: true } : q, P.tier ? Uint8Array.from(P.tier, t => (t ? 1 : 0)) : null, P.tier, P.pre, opts.ground ? { state: opts.ground.state, dotState: P.groundState ?? null } : null, opts.layers ? { ...LAYERS, ...opts.layers } : LAYERS);
+}
+
 /** The plants and the rows through them; null when the plants make no certain row (the caller keeps cornField's rows). */
-export function cornPlantsFirst(reads: CornPhotoRead[], frames: Map<string, GeorefFrame>, F: CornFieldResult): CornPlants | null {
-  const { sights, photos } = projectSightings(reads, frames, F.origin);
-  if (photos.length < 2 || sights.length < 50) return null;
-  const reg = registerPhotos(sights, photos.length);
-  const gateM = Math.min(PLANTS_FIRST.gateMax, Math.max(PLANTS_FIRST.gateMin, PLANTS_FIRST.gateTimes * reg.repeatM));
-  const dots = mergeDots(sights, reg.shifts, gateM);
-  if (!dots.length) return null;
-  const covered = coverage(dots, frames, photos, reg.shifts, F.origin);
-  const rec = reconstruct(dots, covered, F.directionDeg ?? 0, F.pitchM ?? 0.76);
+export function cornPlantsFirst(reads: CornPhotoRead[], frames: Map<string, GeorefFrame>, F: CornFieldResult, opts: CornPlantsOptions = {}): CornPlants | null {
+  const P = placeDots(reads, frames, F, opts);
+  return P ? cornPlantsOf(P, readRows(P, F, opts), F, opts) : null;
+}
+
+/** What a build keeps of a reading of the rows (see the header). */
+export function cornPlantsOf(P: PlacedDots, rec: Reconstruction, F: CornFieldResult, opts: CornPlantsOptions = {}): CornPlants | null {
+  const { all, strict, tier } = P;
   const G = rec.geometry;
   if (!G.certainRows || !rec.rows.length) return null;
 
@@ -77,13 +103,16 @@ export function cornPlantsFirst(reads: CornPhotoRead[], frames: Map<string, Geor
     if (stretches.some(s => s.row === r.id)) fieldRows.push({ id: r.id, plants: r.dots.length, certain, perM: Math.round(r.perM * 100) / 100, kind: r.kind });
   }
   if (!stretches.some(s => s.confirmed)) return null;
-  const shown = dots.map((_, i) => (rec.rowOf[i] >= 0 ? (rec.certainty[i] === 0 ? 0 : 1) : rec.between[i] ? 3 : 2));
-  const cnt = [0, 0, 0, 0]; for (const v of shown) cnt[v]++;
+  // Every dot of the stricter marks, as before; a candidate only when it stands on a row.
+  const kept: number[] = []; for (let i = 0; i < all.length; i++) if (i < strict || rec.rowOf[i] >= 0) kept.push(i);
+  const shown = kept.map(i => (i >= strict ? (rec.secondLook?.[i] ? 6 : tier![i] === 1 ? 4 : 5) : rec.rowOf[i] >= 0 ? (rec.certainty[i] === 0 ? 0 : 1) : rec.between[i] ? 3 : 2));
+  const cnt = [0, 0, 0, 0, 0, 0, 0]; for (const v of shown) cnt[v]++;
   const sumM = (ok: boolean) => Math.round(stretches.filter(s => s.confirmed === ok).reduce((t, s) => t + s.lengthM, 0) * 10) / 10;
   return {
-    points: dots.map(d => ll(d.e, d.n)), shown, photos: dots.map(d => d.photos), stretches, rows: fieldRows,
+    points: kept.map(i => ll(all[i].e, all[i].n)), shown, photos: kept.map(i => all[i].photos), stretches, rows: fieldRows,
+    ...(opts.free ? { loose: kept.map(i => (rec.rowOf[i] >= 0 && (rec.loose[i] || tier?.[i] === 3) ? 1 : 0)) } : {}),
     geometry: { spacingM: G.spacingM, directionDeg: G.directionDeg, seedM: G.seedM, certainRows: G.certainRows, certainDots: G.certainDots },
-    summary: { plants: dots.length, certain: cnt[0], probable: cnt[1], onNoRow: cnt[2], betweenRows: cnt[3], rows: rec.rows.length, confirmedM: sumM(true), notConfirmedM: sumM(false) },
+    summary: { plants: kept.length, certain: cnt[0], probable: cnt[1], onNoRow: cnt[2], betweenRows: cnt[3], rows: rec.rows.length, confirmedM: sumM(true), notConfirmedM: sumM(false), ...(tier ? { alongRowsTwo: cnt[4], alongRowsOne: cnt[5] } : {}), ...(opts.free ? { loosened: kept.filter(i => rec.rowOf[i] >= 0 && (rec.loose[i] || tier?.[i] === 3)).length } : {}), ...(rec.secondLook ? { secondLook: kept.filter(i => rec.secondLook![i]).length } : {}) },
   };
 }
 

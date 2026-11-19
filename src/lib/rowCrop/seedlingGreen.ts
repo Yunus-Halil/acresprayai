@@ -53,6 +53,16 @@ export type SeedlingGreenOptions = typeof SEEDLING_GREEN;
 export const SEEDLING_V1: SeedlingGreenOptions = { ...SEEDLING_GREEN, dark: null };
 
 /**
+ * The lower bar for plants along rows (2026-11-16): the dark-leaf rule at 14 / 8.75 where the whole-frame mask asks 24 / 15.
+ * Measured on the first independent flight: a dark seedling leaf scores about 14 in the middle of a frame and about 9
+ * at its corner (dark soil 2 to 4), so 24 passes only the greenest part of a leaf and a frame's soft edges lose whole
+ * plants (3 to 5 times fewer marks than its middle). At 14 over a whole frame, soil specks pass too (13 dots between
+ * the rows per 100 on them, against 1.4): so these marks are only ever used ALONG A ROW the stricter mask's plants
+ * made (plantsFirst.ts rowCandidates). Never the whole-frame mask, never a weed.
+ */
+export const SEEDLING_ROW: SeedlingGreenOptions = { ...SEEDLING_GREEN, dark: { ...SEEDLING_GREEN.dark!, strongTint: 14, weakTint: 8.75 } };
+
+/**
  * The second, more sensitive look (emergence V2, 2026-11-02), run only in narrow windows: along a reconstructed row
  * where a plant is expected and none was found, and on ground no row reaches where a later planting may stand. Chosen
  * on photograph 100's later planting, barely emerged: these thresholds line its specks up at the row pitch (0.55

@@ -4,6 +4,7 @@
 // buildTwin, boundaryEvidence, boundary) turned into pure stages that take photographs through two small
 // abstractions, so the same code runs in a browser worker (browserPhotos.ts: createImageBitmap, OffscreenCanvas)
 // and in Node (scripts/directGeoref/nodePhotos.ts: jpeg-js) for the scripts and the tests.
+import type { CornPreset } from "../cornPreset";
 import type { PhotoPixels } from "../../photoScout/pattern";
 import type { WeedVisionResult } from "../../weedVision/client";
 import type { Pool } from "./pool";
@@ -99,6 +100,8 @@ export type BuildOptions = {
   atlases?: "now" | "later";
   /** Helper workers for the parallel stages (ties, the colour pass, the crops); without one everything runs inline. */
   pool?: Pool;
+  /** Corn reads at once on the helpers (concurrency.ts sizes it by the device's memory; default CORN_STAGE.maxParallel). The twin is the same either way. */
+  cornParallel?: number;
   /** A corn build: also hand back the analysis record (../analysis.ts). Default false; the twin is the same either way. */
   analysis?: boolean;
   /**
@@ -107,6 +110,15 @@ export type BuildOptions = {
    * present mask (leaves darker than their soil) and still combines by v2. Default: the present reader and field rules.
    */
   cornVariant?: CornVariant;
+  /** A corn build: the corn setup it reads with (../cornPreset.ts). The browser's builds always name one ("today", or
+   * "final3" behind the founder's flag, ../cornFinal3Flag.ts); unset, the scripts' way: the code's defaults. */
+  cornPreset?: CornPreset | null;
+  /**
+   * Photo ground (behind its flag, photoGroundFlag.ts): hand back a generator for the overview of the flight's
+   * photographs laid on the ground (../photoGround.ts), cut from the previews after the twin and its atlases. Default
+   * false. The twin, its files and every stage before are the same either way; the overview is never one of `files`.
+   */
+  photoGround?: boolean;
 };
 export type CornVariant = "corn-v1.0" | "dark-only";
 

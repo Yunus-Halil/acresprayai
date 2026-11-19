@@ -2,6 +2,7 @@
 // operator, and the report the page shows. Runs wherever the two abstractions (PhotoSource, Codec) are provided:
 // a browser worker (worker.ts) or Node (scripts/directGeoref/buildTwinApp.ts).
 import { analysisBytes, buildTwinAnalysis } from "../analysis";
+import { type GroundFile, overviewGround } from "../photoGround";
 import { parseTwin, type TwinBundle } from "../types";
 import { type AtlasFile, assembleBundle, evidenceAndBoundary } from "./bundle";
 import { alignCameras, baseFrames } from "./cameras";
@@ -23,6 +24,8 @@ export type BuildReport = {
   timings: StageTimings;
   totalMs: number;
   notes: string[];
+  /** In a browser: the helpers and the corn reads at once the device was given (concurrency.ts). */
+  concurrency?: { helpers: number; cornParallel: number; reason: string };
 };
 
 export type BuildOutput = {
@@ -32,6 +35,8 @@ export type BuildOutput = {
   report: BuildReport;
   /** With `atlases: "later"`: cuts the atlases after the twin has opened, one file at a time. */
   cutAtlases: (() => AsyncGenerator<AtlasFile>) | null;
+  /** With `photoGround`: the overview tiles and their manifest (ground/...), made when called; never part of `files`. */
+  cutGround: (() => AsyncGenerator<GroundFile>) | null;
   /** The analysis record as JSON bytes (../analysis.ts): a corn build asked for one with `analysis`, else null. Never part of `files`. */
   analysis: Uint8Array | null;
 };
@@ -74,7 +79,7 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   // weed passes (the colour rules would call the corn itself weeds).
   let corn: CornStageResult | null = null, rows: Awaited<ReturnType<typeof rowsAndTrees>> = null;
   if (crop === "corn") {
-    corn = await timed("corn", () => cornStage(kept, cams.frames, hooks, pool, photoFiles, options.cornVariant));
+    corn = await timed("corn", () => cornStage(kept, cams.frames, hooks, pool, photoFiles, options.cornVariant, options.cornParallel, options.cornPreset ?? null));
     if (corn.failed.length) for (const f of corn.failed) notes.push(`${f.name}: Corn V1 could not read it (${f.reason})`);
     if (!corn.field.rows.length) notes.push("no corn rows were read in any photograph: the twin has no corn rows, findings or cultivated block");
     else if (!corn.field.summary.cornRows) notes.push("no row is confirmed corn across the photographs: every row is a planted row, crop not confirmed, and no weed candidate or gap is confirmed");
@@ -125,5 +130,11 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
       hooks.log?.(`analysis record: not made (${(e as Error)?.message ?? String(e)})`);
     }
   }
-  return { twin: built.twin, files, report, cutAtlases: later ? built.cutAtlases : null, analysis };
+  // Photo ground: from the same previews the photographs stage read, through the aligned cameras; made only when the
+  // caller asks, after everything above, so the twin, its timings and its files never wait for it.
+  const groundFrames = new Map([...cams.frames].filter(([n]) => sources.has(n)));
+  const cutGround = options.photoGround
+    ? () => overviewGround(built.twin.id, groundFrames, name => pixels(name), (rgba, w, h) => codec.encodeJpeg(rgba, w, h, 82), { signal: hooks.signal, source: previews === reads.length ? "the camera's own previews" : previews ? `the camera's own previews (${previews} of ${reads.length}), quarter decodes for the rest` : "quarter decodes of the photographs" })
+    : null;
+  return { twin: built.twin, files, report, cutAtlases: later ? built.cutAtlases : null, analysis, cutGround };
 }

@@ -5,6 +5,7 @@ import path from "path";
 import { execSync } from "child_process";
 import fs from "fs";
 import type { Plugin } from "vite";
+import { cornInspectorDev } from "./scripts/rowCrop/cornInspectorPlugin";
 
 // The commit the build came from, stamped into the bundle so the scan page's
 // footer can say which version is on screen. Vercel sets the SHA at build
@@ -42,12 +43,13 @@ const fieldTwinDevFiles = (): Plugin => ({
         res.end(JSON.stringify(ids));
         return;
       }
-      const m = /^\/([a-z0-9][a-z0-9-]{0,63})\/(twin\.json|reference\.json|plants\.json|atlas-\d+\.jpg|tiles\/\d{1,2}\/\d{1,9}\/\d{1,9}\.jpg)$/.exec(url);
+      // EXPERIMENT (experiment/photo-ground): pg/ground.json and pg/{overview,detail}/<z>/<x>/<y>.jpg from scripts/directGeoref/photoGround.ts.
+      const m = /^\/([a-z0-9][a-z0-9-]{0,63})\/(twin\.json|reference\.json|plants\.json|atlas-\d+\.jpg|tiles\/\d{1,2}\/\d{1,9}\/\d{1,9}\.jpg|pg\/ground\.json|pg\/(?:overview|detail)\/\d{1,2}\/\d{1,9}\/\d{1,9}\.jpg|ground\/ground\.json|ground\/\d{1,2}\/\d{1,9}\/\d{1,9}\.jpg)$/.exec(url);
       if (!m) return next();
       const file = path.join(root, m[1], m[2]);
       if (!fs.existsSync(file)) {
         // Beyond the photographs there is no tile: an empty picture, so the map stays quiet about it.
-        if (m[2].startsWith("tiles/")) { res.setHeader("Content-Type", "image/gif"); res.end(Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64")); return; }
+        if (m[2].startsWith("tiles/") || m[2].startsWith("pg/o") || m[2].startsWith("pg/d") || /^ground\/\d/.test(m[2])) { res.setHeader("Content-Type", "image/gif"); res.end(Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64")); return; }
         res.statusCode = 404; res.end(); return;
       }
       res.setHeader("Content-Type", m[2].endsWith(".json") ? "application/json" : "image/jpeg");
@@ -75,6 +77,8 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     fieldTwinDevFiles(),
+    // The corn inspector's dev-server side (/dev/corn-inspector): `apply: "serve"`, never in a build.
+    cornInspectorDev(__dirname),
     // The offline shell. Operators plan at home and stand in fields with no
     // signal: the app shell precaches so a cold open renders, and everything
     // browsed with connectivity (field/grid/plan/log rows, ortho tiles,

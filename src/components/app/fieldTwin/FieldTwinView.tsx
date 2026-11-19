@@ -18,7 +18,11 @@ import type { DrawStats, TwinPick } from "./TwinCanvasLayer";
 import TwinInspector from "./TwinInspector";
 import { CornFieldPanel, CornLegend } from "./CornPanels";
 import { isLocalTwin } from "@/lib/fieldTwin/cornView";
-import TwinMap, { type ReferenceImagery, type TwinMapHandle } from "./TwinMap";
+import TwinMap, { type PhotoGroundLayer, type ReferenceImagery, type TwinMapHandle } from "./TwinMap";
+import { type DetailState, PhotoEvidence, PhotoGroundAbsent, PhotoGroundPanel } from "./PhotoGround";
+import { usePhotoGround } from "@/lib/fieldTwin/photoGroundFlag";
+import type { GroundManifest } from "@/lib/fieldTwin/photoGround";
+import { type PhotoAccess, cutDetail, detailPlanFor, photoAccessFrom } from "@/lib/fieldTwin/photoAccess";
 import ReviewBar, { reviewTargetOf } from "./ReviewBar";
 import { type ReviewFocus, locateReviewed } from "./reviewFocus";
 import { reviewKey, useTwinReviews } from "@/lib/fieldTwin/reviews";
@@ -49,7 +53,7 @@ export function placementText(twin: TwinBundle): string {
 
 const BOUNDARY_REVIEW = { kind: "boundary" as const, id: "cultivated" };
 
-export type ReferenceOption = { id: string; label: string; url: string; maxNativeZoom: number; note: string };
+export type ReferenceOption = { id: string; label: string; url: string; maxNativeZoom: number; note: string; minZoom?: number; underlay?: { url: string; maxNativeZoom: number } | null };
 
 export type DevApi = {
   map: L.Map; setView: (lat: number, lng: number, zoom: number) => void; setLayers: (patch: Partial<TwinLayers>) => void; setDetail: (stop: TwinDetailStop) => void; select: (p: TwinPick) => void;
@@ -94,7 +98,16 @@ type Props = {
   focus?: ReviewFocus | null;
   onFocus?: (found: { status: string } | null) => void;
   /** Corn twins: plants the photographs located, drawn up close and snapped to by the row editor. Defaults to the twin's own (twin.corn.plants); the dev preview passes its plants.json. */
-  plants?: { points: LatLngPair[]; note: string; certainty?: number[] | null } | null;
+  plants?: { points: LatLngPair[]; note: string; certainty?: number[] | null; photos?: number[] | null } | null;
+  /**
+   * Photo ground (behind its flag; photoGround.ts): the overview of the flight's photographs under the twin, its tiles
+   * from a resolver. Absent, or with the flag off, the viewer is exactly the geometry-only twin.
+   */
+  ground?: { manifest: GroundManifest; overview: (z: number, x: number, y: number) => Promise<string | null> } | null;
+  /** The flight's own photographs, when this tab holds them (it just built the twin): detail and evidence from them. */
+  photoFiles?: File[] | null;
+  /** Photo ground could be shown, but this twin has no overview in this tab (a reopened twin): say why, once. */
+  groundAbsent?: boolean;
 };
 
 const DETAIL_KEY = "swathwise:twin-detail";
@@ -146,10 +159,10 @@ function measured<T>(name: string, fn: () => T): T {
   return v;
 }
 
-export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], initialReference = null, expose = false, detail: detailProp, audience = "founder", review, focus = null, onFocus, plants: plantsOverride = null }: Props) {
+export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], initialReference = null, expose = false, detail: detailProp, audience = "founder", review, focus = null, onFocus, plants: plantsOverride = null, ground: groundProp = null, photoFiles = null, groundAbsent = false }: Props) {
   const units = useUnitSystem();
   // A corn twin built with the plants first carries its plants; the dev preview can lay its own plants.json over them.
-  const plants = useMemo(() => plantsOverride ?? (twin.corn?.plants ? { points: twin.corn.plants.points, note: twin.corn.plants.note, certainty: twin.corn.plants.certainty } : null), [plantsOverride, twin.corn?.plants]);
+  const plants = useMemo(() => plantsOverride ?? (twin.corn?.plants ? { points: twin.corn.plants.points, note: twin.corn.plants.note, certainty: twin.corn.plants.certainty, photos: twin.corn.plants.photos } : null), [plantsOverride, twin.corn?.plants]);
   const founderView = audience === "founder";
   const stops = founderView ? DETAIL_STOPS : PARTICIPANT_STOPS;
   const referenceOptions = founderView ? referenceProp : [];
@@ -241,11 +254,37 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const resultsOpen = query.mode !== "overview";
 
   const refOption = referenceOptions.find(o => o.id === refId) ?? null;
-  const reference = useMemo<ReferenceImagery | null>(() => (refOption ? { url: refOption.url, maxNativeZoom: refOption.maxNativeZoom, opacity: refOpacity, swipe: refSwipe } : null), [refOption, refOpacity, refSwipe]);
+  const reference = useMemo<ReferenceImagery | null>(() => (refOption ? { url: refOption.url, maxNativeZoom: refOption.maxNativeZoom, opacity: refOpacity, swipe: refSwipe, minZoom: refOption.minZoom, underlay: refOption.underlay ?? null } : null), [refOption, refOpacity, refSwipe]);
   const local = isLocalTwin(twin);
   const corn = !!twin.corn;
   // A corn twin has no orchard weed pass: no pressure heatmap or findings regions (they would read 0 % everywhere).
-  const effectiveLayers = useMemo<TwinLayers>(() => ({ ...layers, ground: !reference, surroundings: layers.surroundings && !local, ...(corn ? { pressure: false, zones: false, beyondBoundary: false } : {}) }), [layers, reference, local, corn]);
+  // Photo ground: only with the flag on and an overview for this twin; off, nothing below changes the viewer.
+  const groundAllowed = usePhotoGround();
+  const groundOn = groundAllowed && !!groundProp;
+  const [groundShown, setGroundShown] = useState(true);
+  const [photoAccess, setPhotoAccess] = useState<PhotoAccess | null>(() => (photoFiles?.length ? photoAccessFrom(photoFiles, "this build") : null));
+  const [detailTiles, setDetailTiles] = useState<Map<string, string>>(() => new Map());
+  const [detailState, setDetailState] = useState<DetailState>({ busy: false, note: null, tiles: 0 });
+  useEffect(() => () => { for (const u of detailTiles.values()) URL.revokeObjectURL(u); }, [detailTiles]);
+  const photosUnder = groundOn && groundShown;
+  const photoGroundLayer = useMemo<PhotoGroundLayer | null>(() => (photosUnder && groundProp ? { overview: groundProp.overview, overviewZoom: groundProp.manifest.overview.zoom, detail: detailTiles, detailZoom: groundProp.manifest.detail.zoom, detailMinZoom: groundProp.manifest.detail.zoom } : null), [photosUnder, groundProp, detailTiles]);
+  const requestDetail = async () => {
+    const h = handle.current, M = groundProp?.manifest;
+    if (!h || !M || !photoAccess) return;
+    const b = h.map.getBounds(), { z, plan, tooMany } = detailPlanFor(M, [b.getSouth(), b.getWest()], [b.getNorth(), b.getEast()]);
+    if (tooMany) { setDetailState(s => ({ ...s, note: "Zoom in further first: sharper photographs are cut for a view at most a few dozen metres across." })); return; }
+    if (!plan.length) { setDetailState(s => ({ ...s, note: "No photograph covers this view." })); return; }
+    const names = new Set(plan.flatMap(t => t.cands.map(k => M.frames[k]?.name)));
+    const files = [...photoAccess.byName].filter(([n]) => names.has(n));
+    setDetailState(s => ({ ...s, busy: true, note: null }));
+    try {
+      const fresh = new Map<string, string>();
+      const r = await cutDetail({ manifest: M, z, plan, files }, (zz, x, y, url) => { fresh.set(`${zz}/${x}/${y}`, url); });
+      setDetailTiles(prev => { const next = new Map(prev); for (const [k, u] of fresh) { const old = next.get(k); if (old) URL.revokeObjectURL(old); next.set(k, u); } return next; });
+      setDetailState(s => ({ busy: false, note: `${r.tiles} tiles from ${r.photographs} photographs in ${(r.ms / 1000).toFixed(1)} s.`, tiles: s.tiles + r.tiles }));
+    } catch (e) { setDetailState(s => ({ ...s, busy: false, note: `Could not cut the photographs: ${(e as Error).message}` })); }
+  };
+  const effectiveLayers = useMemo<TwinLayers>(() => ({ ...layers, ground: !reference && !photosUnder, surroundings: layers.surroundings && !local, ...(corn ? { pressure: false, zones: false, beyondBoundary: false } : {}) }), [layers, reference, local, corn, photosUnder]);
 
   const onMapPick = (p: TwinPick, pointer: string) => {
     if (!rowEditing) { setSelection(p); return; }
@@ -384,7 +423,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
       <style>{`.twin-root .leaflet-top.leaflet-right, .twin-root .leaflet-bottom.leaflet-right { right: var(--twin-right, 0); transition: right .15s ease; } .twin-root .leaflet-control-scale-line { background: rgba(24,26,24,.85); color: #d9ddd6; border-color: #8a8f88; } .twin-root .leaflet-control-attribution { background: rgba(24,26,24,.85); color: #9aa09a; }`}</style>
       <TwinMap scene={scene} layers={effectiveLayers} selection={selection} units={units} onPick={onMapPick} onDetail={setDetail} onStats={setStats}
         onMove={c => setCentre(c)} onReady={h => { handle.current = h; setStats(h.layer.stats); }} reference={reference} onSwipe={setRefSwipe} findings={findings}
-        operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} rowEdits={rowEditsProp} plants={plantsProp} onRowEnd={onRowEnd} />
+        operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} rowEdits={rowEditsProp} plants={plantsProp} onRowEnd={onRowEnd} photoGround={photoGroundLayer} />
 
       {/* The row editor's card for a tapped row and its Undo bar, bottom centre over the map. */}
       {rowEditing && (
@@ -415,6 +454,8 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
           </div>
           <p className="mt-1 text-[10px] leading-snug text-neutral-500">{DETAIL_HINT[detailStop]}</p>
         </div>
+        {groundAllowed && !groundProp && groundAbsent && <PhotoGroundAbsent />}
+        {groundOn && groundProp && <PhotoGroundPanel manifest={groundProp.manifest} shown={groundShown} setShown={setGroundShown} access={photoAccess} setAccess={setPhotoAccess} detail={detailState} onDetail={() => { void requestDetail(); }} />}
         {twin.corn && <CornFieldPanel twin={twin} corn={twin.corn} layers={layers} setLayers={setLayers} units={units} showPlants={showPlants} setShowPlants={setShowPlants} plantCount={plants?.points.length ?? null} onSelect={(p, lat, lng, across) => { setSelection(p); zoomTo(lat, lng, across); }} />}
         {twin.corn && founderView && <RowEditPanel edits={rowEdits} editing={rowEditing} onStart={startRowEditing} onDone={finishRowEditing}
           onClearAll={() => { commitRows(NO_ROW_EDITS, "All corrections cleared"); }} hideRows={hideRows} setHideRows={setHideRows}
@@ -531,6 +572,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
                   {toggle("droppedRows", "Row candidates not kept", TWIN_COLOURS.rowDropped, `${twin.rows.length - counts.rows}`)}
                   </>}
                   {toggle("footprints", "Photo footprints", TWIN_COLOURS.footprint, `${twin.footprints.length}`)}
+                  {(photosUnder || reference) && intel.blockSource === "rows" && toggle("rowsEdgeOverPhotos", "Field edge from the rows, over the photographs", TWIN_COLOURS.blockEdge, "dashed; hidden over the photographs: it is estimated from the rows, not seen in them")}
                   {scene.evidence && toggle("evidence", "Boundary evidence", TWIN_COLOURS.evidence.cover, `what the photographs showed per ${scene.evidence.cellM} m: soil brown, canopy green, cover yellow, road grey, trees off the rows purple`)}
                   {referenceOptions.length > 0 && (
                     <div className="mt-2 text-xs text-neutral-200">
@@ -571,7 +613,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
         </div>
         <p className="mt-0.5 text-neutral-300">Review-only: these are observations for you to check, not treatment decisions.</p>
         {!local && <p className="mt-0.5 text-neutral-400">{placementText(twin)}</p>}
-        {twin.corn ? <><p className="mt-0.5 text-neutral-400">Click a row, weed or gap to inspect it.{layers.cornUncertain ? "" : " Observations the photographs do not confirm are hidden: the Corn panel counts them and shows them."}</p><CornLegend corn={twin.corn} showPlants={!!plants && showPlants} uncertain={layers.cornUncertain} /></> : <p className="mt-0.5 text-neutral-400">{detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>}
+        {twin.corn ? <><p className="mt-0.5 text-neutral-400">Click a row, weed or gap to inspect it.{layers.cornUncertain ? "" : " Observations the photographs do not confirm are hidden: the Corn panel counts them and shows them."}</p><CornLegend corn={twin.corn} showPlants={!!plants && showPlants} uncertain={layers.cornUncertain} overPhotos={photosUnder} /></> : <p className="mt-0.5 text-neutral-400">{detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>}
         {local && <p className="mt-0.5 text-amber-300/90">Locally aligned test flight: positions relative to each other, scale estimated from the corn rows. Not on the map.</p>}
         {twin.stats.weedTier === "colour" && <p className="mt-0.5 text-amber-300/90">Weeds by colour rules, not a model: green against the soil around it, crowns left out, strips split at their plants. Yellowing plants and plants under 4 cm are missed; a green shoot at a crown's edge can be counted.</p>}
         {twin.stats.weedTier === "none" && !twin.corn && <p className="mt-0.5 text-neutral-500">No weed pass ran on this twin.</p>}
@@ -581,7 +623,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
             {HEAT_STOPS.map((st, i) => <span key={st.pct} className="flex items-center gap-1"><span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: swatch(st.rgb, st.alpha) }} />{pctText(heatScale.stops[i])} %{i === HEAT_STOPS.length - 1 ? "+" : ""}</span>)}
             {heatScale.stretched && <span className="text-neutral-500" title="This field's cover runs above the fixed bands, so the colours are spread over its own range: the median of the block's observed ground is the first raised stop, its worst 1 % the last. The numbers are real cover.">bands set by this field</span>}
             <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: "rgba(96,122,98,0.6)" }} />under canopy{canopyCells ? ` (${canopyCells} cells)` : ""}</span>
-            <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-3.5 rounded-sm border border-[#3a3f3a]" style={{ background: `repeating-linear-gradient(135deg, ${TWIN_COLOURS.hatch} 0 1px, ${TWIN_COLOURS.imagery} 1px 4px)` }} />not photographed</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-3.5 rounded-sm border border-[#3a3f3a]" style={{ background: `repeating-linear-gradient(135deg, ${TWIN_COLOURS.hatch} 0 1px, ${TWIN_COLOURS.imagery} 1px 4px)` }} />not photographed{photosUnder ? " (dark under the photographs)" : ""}</span>
           </div>
         )}
         {detail?.level === "field" && !simple && !corn && <p className="mt-0.5 text-neutral-500">{s.blockHa != null ? `Cultivated block ${fmtArea(s.blockHa * 10_000, units).text} (${intel.blockSource === "corrected" ? "corrected by you" : intel.blockSource === "inferred" ? "inferred from the photographs" : "from the rows"}); ` : ""}{intel.zones.length} regions at 1.5 % cover or more, {result.query.mode === "overview" ? `${result.prominence.count} emphasised` : `${result.findings.length} findings listed`}.</p>}
@@ -598,7 +640,8 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
             return target ? <ReviewBar target={target} reviews={reviews} canSay={canSay} disabledReason={review?.disabledReason ?? (review?.twinId ? null : "Reviews open once the twin is saved to your account.")}
               onSave={r => saveReview({ kind: r.kind, id: r.id, verdict: r.verdict, note: r.note, algorithmStatus: r.algorithmStatus, says: r.says })} onClear={(k, id) => clearReview(k, id)} /> : null;
           })()}
-          <TwinInspector technical={founderView} twin={twin} scene={scene} selection={selection} atlasUrl={atlasUrl} onClose={() => setSelection(null)} onZoomTo={zoomTo} findings={result} onSelectWeed={id => { const w = twin.weeds.find(x => x.id === id); if (w) { setSelection({ kind: "weed", id }); zoomTo(w.lat, w.lng, Math.max(2, w.diameterM * 8)); } }} />
+          <TwinInspector technical={founderView} twin={twin} scene={scene} selection={selection} plants={plants} atlasUrl={atlasUrl} onClose={() => setSelection(null)} onZoomTo={zoomTo} findings={result} onSelectWeed={id => { const w = twin.weeds.find(x => x.id === id); if (w) { setSelection({ kind: "weed", id }); zoomTo(w.lat, w.lng, Math.max(2, w.diameterM * 8)); } }} />
+          {groundOn && groundProp && (() => { const at = placeOf(twin, selection); return at ? <PhotoEvidence manifest={groundProp.manifest} access={photoAccess} setAccess={setPhotoAccess} lat={at.lat} lng={at.lng} what={at.what} windowM={at.windowM} markM={at.markM} /> : null; })()}
           {reviewing && <div className="mt-4 border-t border-[#2e322e] pt-3"><FeedbackButton kind="finding" twinId={review?.twinId ?? null} context={{ selection: selection.kind, ...("id" in selection ? { id: selection.id } : {}) }} label="Tell us more about this" variant="ghost" /></div>}
         </aside>
       ) : resultsOpen ? (
@@ -608,4 +651,19 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
       ) : null}
     </div>
   );
+}
+
+/** Where a selection is, and what to call it beside its photographs (photo ground's evidence), or null. */
+function placeOf(twin: TwinBundle, p: TwinPick): { lat: number; lng: number; what: string; windowM?: number; markM?: number } | null {
+  if (!p) return null;
+  const mid = (line: LatLngPair[]) => line[line.length >> 1];
+  if (p.kind === "plant") return { lat: p.lat, lng: p.lng, what: "this plant" };
+  const K = twin.corn;
+  if (p.kind === "cornWeed" && K) { const w = K.weeds.find(x => x.id === p.id); if (!w) return null; const d = 2 * Math.sqrt(w.areaM2 / Math.PI); return { lat: w.lat, lng: w.lng, what: "this weed candidate", windowM: Math.max(0.6, 4 * d), markM: Math.max(0.06, d) }; }
+  if (p.kind === "cornGap" && K) { const g = K.gaps.find(x => x.id === p.id); return g ? { lat: (g.a[0] + g.b[0]) / 2, lng: (g.a[1] + g.b[1]) / 2, what: "this gap", windowM: g.lengthM + 0.8, markM: g.lengthM } : null; }
+  if (p.kind === "cornRow" && K) { const r = K.rows.find(x => x.id === p.id); if (!r) return null; const [lat, lng] = mid(r.line); return { lat, lng, what: "this stretch of row" }; }
+  if (p.kind === "weed") { const w = twin.weeds.find(x => x.id === p.id); return w ? { lat: w.lat, lng: w.lng, what: "this weed candidate", windowM: Math.max(0.6, 4 * w.diameterM), markM: Math.max(0.06, w.diameterM) } : null; }
+  if (p.kind === "tree") { const t = twin.trees.find(x => x.id === p.id); return t ? { lat: t.lat, lng: t.lng, what: "this tree", windowM: Math.max(1.2, 3.2 * t.crownRadiusM), markM: 2 * t.crownRadiusM } : null; }
+  if (p.kind === "vegetation") { const v = twin.vegetation.find(x => x.id === p.id); if (!v) return null; const d = 2 * Math.sqrt(v.areaM2 / Math.PI); return { lat: v.lat, lng: v.lng, what: "this vegetation", windowM: Math.max(0.6, 4 * d), markM: Math.max(0.06, d) }; }
+  return null;
 }
