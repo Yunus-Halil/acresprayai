@@ -14,8 +14,9 @@ import { PhotoEvidence } from "./PhotoGround";
 
 /** What the founder's plant photographs read: the crop, the rings, how far around the plant its neighbours are looked for. */
 export const PLANT_PHOTOS = {
-  windowM: 0.6, markM: 0.05, max: 24, px: 300, neighbourM: 0.45, maxNeighbours: 60,
-  onRowColour: "#9be26a", offRowColour: rgbCss(CORN_RENDER.offRow),
+  windowM: 0.6, markM: 0.06, max: 24, px: 480, neighbourM: 0.45, maxNeighbours: 60, scaleM: 0.1,
+  /** Rings that stand out on green leaves and tan soil alike: amber on a row, the map's own blue off the rows. */
+  onRowColour: "#ffb627", offRowColour: rgbCss(CORN_RENDER.offRow),
 };
 
 export type CameraSource = () => Promise<GeorefFrame[] | null>;
@@ -83,7 +84,7 @@ export default function PlantPhotos({ plants, index, lat, lng, groundFrames, cam
   }
   return (
     <PhotoEvidence frames={frames} access={access} setAccess={setAccess} lat={lat} lng={lng} what="this plant"
-      windowM={PLANT_PHOTOS.windowM} markM={PLANT_PHOTOS.markM} max={PLANT_PHOTOS.max} px={PLANT_PHOTOS.px} others={others} intro={intro}
-      legend={<>Around it, the other plants the twin located: <span style={{ color: PLANT_PHOTOS.onRowColour }}>on a row</span>, <span style={{ color: PLANT_PHOTOS.offRowColour }}>off the rows</span>.</>} />
+      windowM={PLANT_PHOTOS.windowM} markM={PLANT_PHOTOS.markM} max={PLANT_PHOTOS.max} px={PLANT_PHOTOS.px} others={others} intro={intro} northUp scaleM={PLANT_PHOTOS.scaleM} lead
+      legend={<>Other plants the twin located: <span className="font-semibold" style={{ color: PLANT_PHOTOS.onRowColour }}>amber, on a row</span>; <span className="font-semibold" style={{ color: PLANT_PHOTOS.offRowColour }}>blue, off the rows</span> (blue on the map too).</>} />
   );
 }

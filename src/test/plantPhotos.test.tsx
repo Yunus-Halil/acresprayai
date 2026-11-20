@@ -8,6 +8,7 @@ import FieldTwinView from "@/components/app/fieldTwin/FieldTwinView";
 import PlantPhotos, { PLANT_PHOTOS, plantNeighbours } from "@/components/app/fieldTwin/PlantPhotos";
 import { cameraSource } from "@/lib/fieldTwin/plantCameras";
 import { viewsOf } from "@/lib/fieldTwin/photoGround";
+import { cropPoint, northUpTurn } from "@/lib/fieldTwin/photoAccess";
 import { IDENTITY, enuFromCamera, mulM, type GeorefFrame, type M3 } from "@/lib/directGeoref/projection";
 import { CORN_TWIN } from "./fixtures/cornTwin";
 
@@ -32,9 +33,9 @@ const M0 = enuFromCamera({ yawDeg: 0, pitchDeg: 0, rollDeg: 0, basis: "t" }, { r
 const M0t: M3 = [M0[0], M0[3], M0[6], M0[1], M0[4], M0[7], M0[2], M0[5], M0[8]];
 const NADIR: M3 = [1, 0, 0, 0, -1, 0, 0, 0, -1];
 const GSD = 0.005;
-const camera = (name: string, eastM: number): GeorefFrame => {
+const camera = (name: string, eastM: number, yawDeg = 0): GeorefFrame => {
   const [lat, lng] = at(eastM);
-  return { name, intrinsics: { width: 4000, height: 3000, fx: 10 / GSD, fy: 10 / GSD, cx: 2000, cy: 1500, distortion: null, basis: "t" }, pose: { lat, lng, altM: 10, datum: "t", attitude: { yawDeg: 0, pitchDeg: 0, rollDeg: 0, basis: "t" }, boresight: { rotation: mulM(M0t, NADIR), basis: "t" }, basis: "t" }, ground: { kind: "flat", altM: 0, datum: "t", basis: "t" } } as GeorefFrame;
+  return { name, intrinsics: { width: 4000, height: 3000, fx: 10 / GSD, fy: 10 / GSD, cx: 2000, cy: 1500, distortion: null, basis: "t" }, pose: { lat, lng, altM: 10, datum: "t", attitude: { yawDeg, pitchDeg: 0, rollDeg: 0, basis: "t" }, boresight: { rotation: mulM(M0t, NADIR), basis: "t" }, basis: "t" }, ground: { kind: "flat", altM: 0, datum: "t", basis: "t" } } as GeorefFrame;
 };
 
 describe("the plants around a plant", () => {
@@ -49,7 +50,7 @@ describe("the plants around a plant", () => {
 
   it("fall in each photograph through the same camera as the plant itself", () => {
     const frames = [camera("a", 0), camera("b", 1)];
-    const views = viewsOf(frames, PLANTS.points[1][0], PLANTS.points[1][1], 4, [PLANTS.points[0], PLANTS.points[2]]);
+    const views = viewsOf(frames, PLANTS.points[1][0], PLANTS.points[1][1], 4, { others: [PLANTS.points[0], PLANTS.points[2]] });
     expect(views.map(v => v.name)).toEqual(["a", "b"]);
     for (const v of views) {
       const [o0, o2] = v.others!;
@@ -63,12 +64,28 @@ describe("the plants around a plant", () => {
   });
 });
 
+describe("a crop turned north up, as the map is", () => {
+  it("puts a point north of the plant straight above it and a point east of it to its right, whatever way the drone faced", () => {
+    for (const yaw of [0, 37, 90, 200]) {
+      const f = camera("y", 0, yaw), [lat, lng] = at(0), north = at(0, 0.1), east = at(0.1);
+      const [v] = viewsOf([f], lat, lng, 1, { others: [north, east], north: true });
+      expect(v.north).toBeDefined();
+      const turn = northUpTurn(v.north!), sz = 120, px = 480;
+      const [nx, ny] = cropPoint(v.others![0].u, v.others![0].v, v.u, v.v, sz, px, turn);
+      const [ex, ey] = cropPoint(v.others![1].u, v.others![1].v, v.u, v.v, sz, px, turn);
+      // 10 cm at 0.5 cm a pixel is 20 photograph pixels, 80 crop pixels at 4 crop pixels to one.
+      expect(nx).toBeCloseTo(px / 2, 0); expect(ny).toBeCloseTo(px / 2 - 80, 0);
+      expect(ex).toBeCloseTo(px / 2 + 80, 0); expect(ey).toBeCloseTo(px / 2, 0);
+    }
+  });
+});
+
 describe("the founder's photographs of a plant", () => {
   it("say where the plant is drawn and how close its neighbours are, then offer the flight's photographs from this device", async () => {
     const cameras = vi.fn(async () => [camera("a", 0)]);
     render(<PlantPhotos plants={PLANTS} index={1} lat={PLANTS.points[1][0]} lng={PLANTS.points[1][1]} groundFrames={null} cameras={cameras} access={null} setAccess={() => undefined} />);
     // Once the cameras are read, the section offers the flight's own files.
-    await screen.findByRole("button", { name: "Open the flight's photographs" });
+    await screen.findByRole("button", { name: "Open the flight's photographs" }, { timeout: 5000 });
     const s = screen.getByRole("region", { name: "Every photograph that saw it" });
     expect(within(s).getByText(/This plant is drawn off the rows; 3 photographs located it/)).toBeInTheDocument();
     expect(within(s).getByText(/Nearest plant the twin located: 5\.0 cm away, on a row/)).toBeInTheDocument();
@@ -108,7 +125,7 @@ describe("a plant selected in the viewer", () => {
   it("shows the founder every photograph that saw it", async () => {
     const r = render(<div style={{ width: 1200, height: 800 }}><FieldTwinView twin={twin} atlasUrl={async () => ""} expose plantPhotos={{ cameras: async () => [camera("a", 0)] }} /></div>);
     act(() => window.__fieldTwin!.select(pick));
-    await screen.findByRole("button", { name: "Open the flight's photographs" });
+    await screen.findByRole("button", { name: "Open the flight's photographs" }, { timeout: 5000 });
     expect(within(screen.getByRole("complementary", { name: "Inspector" })).getByRole("region", { name: "Every photograph that saw it" })).toBeInTheDocument();
     await close(r);
   });

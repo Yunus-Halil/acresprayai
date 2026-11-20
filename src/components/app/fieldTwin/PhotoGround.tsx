@@ -68,13 +68,15 @@ export function PhotoGroundAbsent() {
 }
 
 /** The photographs behind a selected place: each photograph that saw it, nearest nadir first, the place marked. */
-export function PhotoEvidence({ frames, access, setAccess, lat, lng, what, windowM = 1.2, markM = 0.12, max = 4, px, others, intro, legend }: {
+export function PhotoEvidence({ frames, access, setAccess, lat, lng, what, windowM = 1.2, markM = 0.12, max = 4, px, others, intro, legend, northUp = false, scaleM, lead = false }: {
   /** The cameras as the build aligned them (photo ground's manifest, or a corn twin's analysis record). */
   frames: GeorefFrame[]; access: PhotoAccess | null; setAccess: (a: PhotoAccess) => void; lat: number; lng: number; what: string;
   /** Crop size and ring size, metres (the object's own size). */ windowM?: number; markM?: number;
   /** At most this many photographs, nearest nadir first; each crop this many pixels square. */ max?: number; px?: number;
   /** Further places ringed in each crop, in their own colours (evidenceViews). Must keep its identity while the place does. */ others?: { lat: number; lng: number; colour: string }[];
   /** Said above the crops; and what the rings are, said under them in place of the white ring's sentence. */ intro?: ReactNode; legend?: ReactNode;
+  /** Each crop turned north up, as the map is, with a scale bar this long (evidenceViews `northUp`, `scaleM`). */ northUp?: boolean; scaleM?: number;
+  /** One crop large across the panel with the key under it, the others two to a row; a small one clicked becomes the large one. */ lead?: boolean;
 }) {
   // The answer for one place at a time: until the views of THIS place are in, it says it is reading (never "none").
   const key = `${lat},${lng}`;
@@ -83,10 +85,13 @@ export function PhotoEvidence({ frames, access, setAccess, lat, lng, what, windo
   useEffect(() => {
     if (!access) return;
     let live = true;
-    evidenceViews(access, frames, lat, lng, { windowM, markM, max, ...(px ? { px } : {}), ...(others?.length ? { others } : {}) }).then(r => { if (live) setState({ key, ...r, error: null }); else r.views.forEach(v => URL.revokeObjectURL(v.url)); })
+    evidenceViews(access, frames, lat, lng, { windowM, markM, max, ...(px ? { px } : {}), ...(others?.length ? { others } : {}), ...(northUp ? { northUp, bold: true } : {}), ...(scaleM ? { scaleM } : {}) }).then(r => { if (live) setState({ key, ...r, error: null }); else r.views.forEach(v => URL.revokeObjectURL(v.url)); })
       .catch(e => { if (live) setState({ key, views: [], missing: [], error: (e as Error).message }); });
     return () => { live = false; };
-  }, [access, frames, lat, lng, key, windowM, markM, max, px, others]);
+  }, [access, frames, lat, lng, key, windowM, markM, max, px, others, northUp, scaleM]);
+  // The large crop (lead): the first, until another is clicked; back to the first for a new place.
+  const [leadAt, setLeadAt] = useState(0);
+  useEffect(() => { setLeadAt(0); }, [key]);
   const busy = !!access && state.key !== key;
   useEffect(() => () => { state.views.forEach(v => URL.revokeObjectURL(v.url)); }, [state.views]);
   return (
@@ -97,7 +102,26 @@ export function PhotoEvidence({ frames, access, setAccess, lat, lng, what, windo
       {busy && <p className="text-[11px] text-neutral-500">Reading the photographs…</p>}
       {access && !busy && state.error && <p className="text-[11px] text-red-300">Could not read the photographs: {state.error}</p>}
       {access && !busy && !state.error && !state.views.length && <p className="text-[11px] text-neutral-500">{state.missing.length ? `The photographs that saw it (${state.missing.join(", ")}) are not on this device.` : "No photograph's footprint holds this place."}</p>}
-      {!busy && state.views.length > 0 && <>
+      {!busy && state.views.length > 0 && lead && (() => {
+        const L = state.views[Math.min(leadAt, state.views.length - 1)];
+        return <>
+          <figure className="m-0">
+            <img src={L.url} alt={`${what} in ${L.name}`} className="block w-full rounded-sm border border-[#3a3f3a]" />
+            <figcaption className="mt-0.5 text-[10px] text-neutral-400">{L.name} · {L.nadirM.toFixed(1)} m from below the camera</figcaption>
+          </figure>
+          <p className="mt-1 text-[10px] leading-snug text-neutral-400">{northUp ? "North up, as on the map. " : ""}Each crop {+L.widthM.toFixed(2)} m across; white ring: {what}.{legend ? <> {legend}</> : null}</p>
+          {state.views.length > 1 && <div className="mt-2 grid grid-cols-2 gap-2">
+            {state.views.map((v, i) => (
+              <button key={v.name} type="button" className={`text-left ${i === leadAt ? "opacity-40" : ""}`} onClick={() => setLeadAt(i)} aria-label={`${what} in ${v.name}`} aria-pressed={i === leadAt}>
+                <img src={v.url} alt="" className="block w-full rounded-sm border border-[#3a3f3a]" />
+                <span className="mt-0.5 block truncate text-[10px] text-neutral-500">{v.name.replace(/^DJI_\d+_/, "")} · {v.nadirM.toFixed(1)} m</span>
+              </button>
+            ))}
+          </div>}
+          <p className="mt-1 text-[10px] leading-snug text-neutral-500">From the original files through the cameras the build aligned, nearest below the camera first. Click one to see it large.{state.missing.length ? ` Not on this device: ${state.missing.join(", ")}.` : ""}</p>
+        </>;
+      })()}
+      {!busy && state.views.length > 0 && !lead && <>
         <div className="flex flex-wrap gap-2">
           {state.views.map((v, i) => (
             <button key={v.name} type="button" className="text-left" onClick={() => setBig(big === i ? null : i)} aria-label={`${what} in ${v.name}`}>
