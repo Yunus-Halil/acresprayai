@@ -47,7 +47,7 @@ export const CORN_PRESET_SETTINGS: Record<CornPreset, CornPresetSettings> = {
     keepLook: true, flightGuard: true, ground: true,
     // On top of the frozen FINAL-3 setup (2026-11-19, his word): the "too far" dots tried again once every other is
     // placed, and the doubles told apart from the green that is not corn (plantsFirst.ts SEQUENCE.retryTooFar, doublesApart).
-    plants: { sequence: { ...SEQUENCE, ...F3.field.sequence, retryTooFar: true, doublesApart: true, secondLookAcrossMaxM: 0.05 }, placing: PLANTS_FIRST, layers: {} },
+    plants: { sequence: { ...SEQUENCE, ...F3.field.sequence, retryTooFar: true, doublesApart: true, secondLookAcrossMaxM: 0.05, runReachSeeds: 2 }, placing: PLANTS_FIRST, layers: {} },
   },
 };
 

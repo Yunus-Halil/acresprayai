@@ -152,8 +152,25 @@ export function judgeDots(dots: Dot[], L4: ObviousPlants, L5: RowProfile, o: Pla
   // Rows with their stretches: plants confirmed, or a gap of over `gapM` ("the row probably
   // continues here; plants not confirmed").
   const rows: SeqRow[] = [], rowOf = new Int32Array(n).fill(-1);
+  // q.runReachSeeds (plantsFirst.ts SEQUENCE): only the plants in a run stay on the row. Asked until nothing more goes.
+  const inRuns = (sorted: number[]): number[] => {
+    if (!(q.runReachSeeds > 0) || !spacingRules) return sorted;
+    const reach = q.runReachSeeds * seed + 1e-9;
+    let alive = sorted;
+    for (let changed = true; changed;) {
+      changed = false;
+      const next: number[] = [];
+      for (let k = 0; k < alive.length; k++) {
+        const i = alive[k], left = k > 0 && A[i] - A[alive[k - 1]] <= reach, right = k + 1 < alive.length && A[alive[k + 1]] - A[i] <= reach;
+        if (dots[i].photos <= 1 ? left && right : left || right) next.push(i);
+        else { settled[i] = SETTLED.notInARun; changed = true; }
+      }
+      alive = next;
+    }
+    return alive;
+  };
   const build = (kind: SeqRow["kind"], ds: number[], L: Line) => {
-    const all = [...new Set(ds)].sort((x, y) => A[x] - A[y]);
+    const all = inRuns([...new Set(ds)].sort((x, y) => A[x] - A[y]));
     // Cut where no plant stands for over maxBridgeM, and where a stretch with no plant confirmed would cross ground
     // judged scattered; each piece with 3 or more plants is a row of its own.
     const tooFar = (i0: number, i1: number) => A[i1] - A[i0] > q.maxBridgeM, unplanted = (i0: number, i1: number) => (!spacingRules || A[i1] - A[i0] > gapM) && overScattered(L, A[i0], A[i1]);

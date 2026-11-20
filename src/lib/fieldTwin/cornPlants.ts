@@ -88,8 +88,12 @@ export function cornPlantsOf(P: PlacedDots, rec: Reconstruction, F: CornFieldRes
   const ll = (e: number, n: number): [number, number] => { const p = fromEnu([e, n, 0], F.origin); return [Math.round(p.lat * 1e8) / 1e8, Math.round(p.lng * 1e8) / 1e8]; };
   const th = (G.directionDeg * Math.PI) / 180, ct = Math.cos(th), st = Math.sin(th);
   const stretches: CornStretch[] = [], fieldRows: CornFieldRow[] = [];
+  // With corn only in runs (SEQUENCE.runReachSeeds): a row is not drawn past its last plants. A stretch with no plant
+  // confirmed is kept only between two stretches drawn with plants (the plants beyond it can be too few to be drawn as
+  // a stretch: the grey line then led out to nothing).
+  const noGreyEnds = ((opts.sequence ?? SEQUENCE).runReachSeeds ?? 0) > 0;
   for (const r of rec.rows) {
-    const certain = r.dots.filter(i => rec.certainty[i] === 0).length;
+    const certain = r.dots.filter(i => rec.certainty[i] === 0).length, first = stretches.length;
     for (const g of r.segments) {
       const lineEN = stretchLine(r.line, g.a0, g.a1, ct, st);
       if (lineEN.length < 2) continue;
@@ -104,6 +108,7 @@ export function cornPlantsOf(P: PlacedDots, rec: Reconstruction, F: CornFieldRes
           : `The row probably continues here (row ${r.id}), but no plant was confirmed on this stretch.`,
       });
     }
+    if (noGreyEnds) { while (stretches.length > first && !stretches[stretches.length - 1].confirmed) stretches.pop(); while (stretches.length > first && !stretches[first].confirmed) stretches.splice(first, 1); }
     if (stretches.some(s => s.row === r.id)) fieldRows.push({ id: r.id, plants: r.dots.length, certain, perM: Math.round(r.perM * 100) / 100, kind: r.kind });
   }
   if (!stretches.some(s => s.confirmed)) return null;
