@@ -700,6 +700,25 @@ export const SEQUENCE = {
    * 78 -> 75); at 4 cm it takes labelled plants (4 of 10). It treats the symptom: the cause is the photographs'
    * registration, and this goes when that is mended. */
   secondLookAcrossMaxM: 0,
+  /** Off by default (2026-11-20, on in the app's preset): a row ends where the planting ends. Two tests on each piece
+   * a row's line is cut into, both with numbers the rows already answer to:
+   *   its ends   from each end, a plant is left off while the `rowEndWindowM` of row inward from it hold fewer than
+   *              `minRowDensityShare` of the piece's own plants a metre (a plant on the row's line out past the last
+   *              real ones: on the private seedling flight such tails held 0.1 to 1.7 plants a metre against 5 to 6);
+   *              and a group of plants at an end, more than `rowEndWindowM` beyond the rest and not long and full
+   *              enough to be a row by itself, is left off (weeds in a clump on the row's line, metres past its end:
+   *              on that flight 4 to 5 plants within about a metre, 3 to 4 m beyond the last plant of the row);
+   *   the piece  it is a row only when it is at least `minCertainRowM` long and at least `minRowDensityShare` as full
+   *              as the certain rows (what a row's line must be when it is first found: until now every piece of 3
+   *              plants or more was a row, so three weeds in a line past the rows' ends were one).
+   * All of it only past the planting: a plant with a row running beside it there (a long, full run of plants on a
+   * neighbouring row's line, abreast of it) is inside the planting and stays, however thin or short its own stretch
+   * (found on the photographs before this was kept: two of the three largest groups a first version took off were the
+   * ends of real rows, with the rows either side running on beside them).
+   * Why: ground with too few marks to judge is neither planted nor scattered, and was built on as if planted. On that
+   * flight: 14 rows of 3 to 8 plants over 0.3 to 3.3 m and one of 9 plants over 20.8 m, all on ground never judged,
+   * 12 with no row either side. A plant left off is on no row: green that is not corn, not counted. */
+  rowsEndWithPlanting: false, rowEndWindowM: 1.5,
 };
 /** The rules as they stood on 2026-11-16 at f23efc0, before the changes above them here: kept so that result can be run beside the present one. */
 export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: false, refuseScattered: false, alleyTest: "none", betweenOffLines: false, spacingRulesNeedASpacing: false, sweepLoneMarks: false };
@@ -711,7 +730,7 @@ export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: fal
  * `cutFromRow`: placed on a row, then left on no row when the row was built (a piece of under three plants, a stretch
  * longer than `maxBridgeM` with no plant, or a stretch over ground judged scattered: `build` in reconstruct).
  */
-export const SETTLED = { none: 0, certainRow: 1, scattered: 2, noRow: 3, noSpacing: 4, alley: 5, tooClose: 6, tooFar: 7, offSpacing: 8, placedAtSpacing: 9, placedOffSpacing: 10, freeAlley: 11, freeTooClose: 12, freePlaced: 13, alone: 14, geometryRow: 15, cutFromRow: 16, secondLook: 17, placedOnRetry: 18, offLine: 19 } as const;
+export const SETTLED = { none: 0, certainRow: 1, scattered: 2, noRow: 3, noSpacing: 4, alley: 5, tooClose: 6, tooFar: 7, offSpacing: 8, placedAtSpacing: 9, placedOffSpacing: 10, freeAlley: 11, freeTooClose: 12, freePlaced: 13, alone: 14, geometryRow: 15, cutFromRow: 16, secondLook: 17, placedOnRetry: 18, offLine: 19, pastRowEnd: 20, pieceNotARow: 21 } as const;
 export type GroundJudge = { state: (e: number, n: number) => 0 | 1 | 2; dotState?: Uint8Array | null };
 export type RowSegment = { a0: number; a1: number; confirmed: boolean };
 /** A row's course in the rows' frame: its across position at knots along it, from its first plant to its last, and the dots it was fitted through. */
