@@ -20,10 +20,10 @@ describe("the presets", () => {
     const F = CORN_PRESET_SETTINGS.final3;
     expect(F.read).toEqual({ rowSpans: true, rowCandidates: true, cores: true, coresReference: "marks", countGuard: true, lateGuard: true, learnedGreen: false, coresWhenTouching: true });
     expect(F.flightGuard).toBe(true); expect(F.ground).toBe(true);
-    expect(F.plants.sequence).toEqual({ ...SEQUENCE, placeOffSpacing: true, offSpacingStricterOnly: true, sweepLoneMarks: false, retryTooFar: true, doublesApart: true, secondLookAcrossMaxM: 0.05, rowsEndWithPlanting: true });
+    expect(F.plants.sequence).toEqual({ ...SEQUENCE, placeOffSpacing: true, offSpacingStricterOnly: true, sweepLoneMarks: false, retryTooFar: true, doublesApart: true, secondLookAcrossMaxM: 0.05 });
     // The frozen FINAL-3 setup, and on top of it (2026-11-19) the retry of the "too far" dots and the doubles told apart.
-    expect(F.plants.sequence).toEqual({ ...SEQUENCE, ...CORN_CANDIDATE_FINAL3.field.sequence, retryTooFar: true, doublesApart: true, secondLookAcrossMaxM: 0.05, rowsEndWithPlanting: true });
-    expect(SEQUENCE.retryTooFar).toBe(false); expect(SEQUENCE.doublesApart).toBe(false); expect(SEQUENCE_V1.retryTooFar).toBe(false); expect(SEQUENCE.secondLookAcrossMaxM).toBe(0); expect(SEQUENCE.rowsEndWithPlanting).toBe(false); expect(SEQUENCE_V1.rowsEndWithPlanting).toBe(false);
+    expect(F.plants.sequence).toEqual({ ...SEQUENCE, ...CORN_CANDIDATE_FINAL3.field.sequence, retryTooFar: true, doublesApart: true, secondLookAcrossMaxM: 0.05 });
+    expect(SEQUENCE.retryTooFar).toBe(false); expect(SEQUENCE.doublesApart).toBe(false); expect(SEQUENCE_V1.retryTooFar).toBe(false); expect(SEQUENCE.secondLookAcrossMaxM).toBe(0);
     expect(F.plants.placing).toBe(PLANTS_FIRST); expect(F.plants.layers).toEqual({});
   });
   it("SPEED-1: the cores' cut is halfway between the private seedling flight's ratio and 53.JPG's", () => {

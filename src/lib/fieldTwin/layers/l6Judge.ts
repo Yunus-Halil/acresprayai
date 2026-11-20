@@ -157,49 +157,7 @@ export function judgeDots(dots: Dot[], L4: ObviousPlants, L5: RowProfile, o: Pla
     // Cut where no plant stands for over maxBridgeM, and where a stretch with no plant confirmed would cross ground
     // judged scattered; each piece with 3 or more plants is a row of its own.
     const tooFar = (i0: number, i1: number) => A[i1] - A[i0] > q.maxBridgeM, unplanted = (i0: number, i1: number) => (!spacingRules || A[i1] - A[i0] > gapM) && overScattered(L, A[i0], A[i1]);
-    for (let s0 = 0; s0 < all.length;) { let e0 = s0; while (e0 + 1 < all.length && !tooFar(all[e0], all[e0 + 1]) && !unplanted(all[e0], all[e0 + 1])) e0++; if (e0 - s0 + 1 >= 3) { if (q.rowsEndWithPlanting) endsWithPlanting(kind, all.slice(s0, e0 + 1), L); else piece(kind, all.slice(s0, e0 + 1), L); } if (e0 + 1 < all.length) { if (tooFar(all[e0], all[e0 + 1])) { breaks.cutOverMaxBridge++; breaks.cutLengthM += A[all[e0 + 1]] - A[all[e0]]; } else breaks.cutOverScattered++; } s0 = e0 + 1; }
-  };
-  // q.rowsEndWithPlanting (plantsFirst.ts SEQUENCE): a row ends where the planting ends. A piece's thin ends, and a
-  // clump at an end standing apart from the rest, are left off it; what is left is a row only when it is long and
-  // full enough to have been found as one. All of it only PAST THE PLANTING: a plant with a row running beside it
-  // there (a long, full run of plants on a neighbouring row's line, abreast of it) is inside the planting and stays.
-  const W = q.rowEndWindowM;
-  const rowLike = (a: number[], i0: number, i1: number) => { const l = a[i1] - a[i0]; return l >= q.minCertainRowM && (!(geometry.perMMedian > 0) || (i1 - i0 + 1) / Math.max(1e-6, l) >= q.minRowDensityShare * geometry.perMMedian); };
-  // Per row line: the stretches along it that are row-like runs of its plants (no gap over the window inside a run).
-  const runs: [number, number][][] = q.rowsEndWithPlanting ? lines.map((L, ri) => {
-    const a = [...new Set([...L.dots, ...extra[ri]])].map(i => A[i]).sort((x, y) => x - y), out: [number, number][] = [];
-    for (let i0 = 0; i0 < a.length;) { let i1 = i0; while (i1 + 1 < a.length && a[i1 + 1] - a[i1] <= W) i1++; if (rowLike(a, i0, i1)) out.push([a[i0], a[i1]]); i0 = i1 + 1; }
-    return out;
-  }) : [];
-  /** Whether a row runs beside dot `i` (of line `L`): on another line within two and a half row spacings across, a row-like run abreast of it. */
-  const besideARow = (i: number, L: Line) => lines.some((o, j) => { if (o === L) return false; const d = Math.abs(at(o, A[i]) - C[i]); return d >= 0.5 * S && d <= 2.5 * S && runs[j].some(([a0, a1]) => A[i] >= a0 && A[i] <= a1); });
-  const endsWithPlanting = (kind: SeqRow["kind"], ds: number[], L: Line) => {
-    let s = 0, e = ds.length - 1;
-    const a = ds.map(i => A[i]), len = a[e] - a[0];
-    // Most of a stretch's plants with no row beside them: the stretch is past the planting.
-    const past = (i0: number, i1: number) => { let n = 0; for (let k = i0; k <= i1; k++) if (besideARow(ds[k], L)) n++; return 2 * n < i1 - i0 + 1; };
-    if (len > 0) {
-      // Plants the window inward from an end plant must hold: the share of the piece's own plants a metre.
-      const need = q.minRowDensityShare * (ds.length / len) * W;
-      const inward = (i: number, dir: 1 | -1) => { let c = 0; for (let j = i; j >= 0 && j < ds.length && Math.abs(a[j] - a[i]) <= W; j += dir) c++; return c; };
-      for (let changed = true; changed && e - s + 1 >= 3;) {
-        changed = false;
-        // Thin ends: a plant with too few plants in the window of row inward from it, and no row beside it.
-        while (e - s + 1 > 3 && inward(s, 1) < need && !besideARow(ds[s], L)) { settled[ds[s++]] = SETTLED.pastRowEnd; changed = true; }
-        while (e - s + 1 > 3 && inward(e, -1) < need && !besideARow(ds[e], L)) { settled[ds[e--]] = SETTLED.pastRowEnd; changed = true; }
-        // A group of plants at an end, more than the window beyond the rest of the row, not a row by itself and
-        // past the planting (a clump on the row's line beyond its last plants).
-        let g = s; while (g < e && a[g + 1] - a[g] <= W) g++;
-        if (g < e && !rowLike(a, s, g) && past(s, g)) { while (s <= g) settled[ds[s++]] = SETTLED.pastRowEnd; changed = true; }
-        g = e; while (g > s && a[g] - a[g - 1] <= W) g--;
-        if (g > s && !rowLike(a, g, e) && past(g, e)) { while (e >= g) settled[ds[e--]] = SETTLED.pastRowEnd; changed = true; }
-      }
-    }
-    if (e - s + 1 < 3) { for (let k = Math.max(0, s); k <= e; k++) settled[ds[k]] = SETTLED.pieceNotARow; return; }
-    const kept = s === 0 && e === ds.length - 1 ? ds : ds.slice(s, e + 1);
-    // What is left: a row when it is long and full enough to have been found as one, or stands inside the planting.
-    if (rowLike(a, s, e) || !past(s, e)) piece(kind, kept, L);
-    else for (const i of kept) settled[i] = SETTLED.pieceNotARow;
+    for (let s0 = 0; s0 < all.length;) { let e0 = s0; while (e0 + 1 < all.length && !tooFar(all[e0], all[e0 + 1]) && !unplanted(all[e0], all[e0 + 1])) e0++; if (e0 - s0 + 1 >= 3) piece(kind, all.slice(s0, e0 + 1), L); if (e0 + 1 < all.length) { if (tooFar(all[e0], all[e0 + 1])) { breaks.cutOverMaxBridge++; breaks.cutLengthM += A[all[e0 + 1]] - A[all[e0]]; } else breaks.cutOverScattered++; } s0 = e0 + 1; }
   };
   const piece = (kind: SeqRow["kind"], sorted: number[], L: Line) => {
     if (sorted.length < 2) return;
