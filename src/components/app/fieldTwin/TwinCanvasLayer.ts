@@ -115,6 +115,9 @@ export class TwinCanvasLayer extends L.Canvas {
   /** Corn twins: the view (cornRender.ts: Realistic, Simple, Geometry). Null draws the corn as it was drawn before the
    * views (rows and plant marks together), which the row editor always does. */
   private cornView: CornViewMode | null = null;
+  /** A sorted twin's doubles (class 7): not counted, and drawn in the views (blue, pickable) only with the founder's
+   * "All layers" tick (2026-11-20). In Realistic and Simple as the plants beside them; in Geometry as blue dots. */
+  private showDoubles = false;
   /** The corn twin's colours and plant size; the Realistic ground and each plant's tint, built when first drawn. */
   private look: CornLook | null = null;
   private soil: HTMLCanvasElement | null | undefined = undefined;
@@ -138,6 +141,10 @@ export class TwinCanvasLayer extends L.Canvas {
   }
   /** Corn twins: which view to draw (null: as before the views). */
   setCornView(view: CornViewMode | null) { if (view !== this.cornView) { this.cornView = view; this.requestRedraw(); } }
+  /** Corn twins: whether the views draw a sorted twin's doubles (the founder's "All layers"). */
+  setShowDoubles(show: boolean) { if (show !== this.showDoubles) { this.showDoubles = show; this.requestRedraw(); } }
+  /** Whether plant k is a double the views leave out now (a sorted twin, the tick off). */
+  private doubleHidden(k: number): boolean { const P = this.plants; return !this.showDoubles && !!P?.sorted && !!P.certainty && P.certainty[k] === 7; }
   /** The view in force: the row editor always works on the rows and plant marks. */
   private cornViewNow(): CornViewMode | null { return this.rowEdit.active ? null : this.cornView; }
   private firstDraw = true;
@@ -856,6 +863,14 @@ export class TwinCanvasLayer extends L.Canvas {
       ctx.strokeStyle = colour; ctx.lineWidth = st === S.gap.confirmed ? rowW + 3 : rowW + 1; ctx.setLineDash([...dash]); ctx.globalAlpha = 1; ctx.stroke();
     }
     if (sel?.kind === "cornGap") { const k = indexOfId(K.gaps.id, sel.id); if (k >= 0) { ctx.beginPath(); ctx.moveTo(X(K.gaps.x1[k]), Y(K.gaps.y1[k])); ctx.lineTo(X(K.gaps.x2[k]), Y(K.gaps.y2[k])); ctx.strokeStyle = C.selection; ctx.lineWidth = 2; ctx.setLineDash([]); ctx.stroke(); } }
+    // Geometry, with the founder's "All layers": a sorted twin's doubles as blue dots over the rows (no other plant drawn).
+    if (view === "geometry" && this.showDoubles && this.plants?.sorted && this.plants.certainty && pxPerM >= CORN_RENDER.geometryDoublesMinPxPerM) {
+      const P = this.plants, cert = P.certainty!, r = Math.max(1.5, Math.min(4, 0.03 * pxPerM));
+      ctx.beginPath(); let nd = 0;
+      for (const k of P.index.query(vx0, vy0, vx1, vy1, 0)) { if (cert[k] !== 7) continue; const x = X(P.x[k]), y = Y(P.y[k]); ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 2 * Math.PI); nd++; }
+      if (nd) { ctx.fillStyle = rgbCss(CORN_RENDER.offRow); ctx.globalAlpha = 0.95; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(20,22,20,0.8)"; ctx.stroke(); ctx.globalAlpha = 1; }
+      drawn.plants = nd;
+    }
     // Weed observations: a disc of their ground cover, at least a few pixels across so they read at the field level.
     const idx = K.weeds.index.query(vx0, vy0, vx1, vy1, K.weeds.maxRM / scene.mpu);
     let nw = 0;
@@ -920,8 +935,11 @@ export class TwinCanvasLayer extends L.Canvas {
       const dest = plantPx / 0.88, spritePx = spriteSizeFor(dest * 1.15 * dpr);
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
       const dotR = Math.max(1.5, (plantPx * R.notCornShare) / 2), notCornCss = rgbCss(R.notCorn);
+      let nd = 0;
       for (const k of idx) {
         const h = plantHash(k), kind = cert ? plantKind(cert[k], P.sorted) : "row";
+        if (kind === "double" && !this.showDoubles) continue;
+        nd++;
         if (kind === "notCorn") { ctx.fillStyle = notCornCss; ctx.beginPath(); ctx.arc(X(P.x[k]), Y(P.y[k]), dotR, 0, 2 * Math.PI); ctx.fill(); continue; }
         const colour = kind === "row" ? (T ? palette[T.plant[k]] : realistic ? look.corn : flat) : R.offRow;
         const sprite = this.sprites.get(spritePx, colour, sizeM, h % R.variants, (h >>> 8) % R.rotations, realistic);
@@ -929,7 +947,7 @@ export class TwinCanvasLayer extends L.Canvas {
         const d = dest * (0.85 + (((h >>> 16) % 101) / 100) * 0.3);
         ctx.drawImage(sprite, X(P.x[k]) - d / 2, Y(P.y[k]) - d / 2, d, d);
       }
-      drawn.plants = idx.length; drawn.plantsAsPlants = idx.length;
+      drawn.plants = nd; drawn.plantsAsPlants = nd;
       return;
     }
     // Stamped: one buffer the size of the canvas in CSS pixels, a square per plant.
@@ -953,6 +971,7 @@ export class TwinCanvasLayer extends L.Canvas {
       const px = Math.round(P.x[k] * scale + ox), py = Math.round(P.y[k] * scale + oy);
       if (px < 0 || py < 0 || px + size > w || py + size > h) return;
       const kind = cert ? plantKind(cert[k], P.sorted) : "row";
+      if (kind === "double" && !this.showDoubles) return;
       const v = kind === "notCorn" ? notCornPx : kind !== "row" ? offPx : tint ? tintPx[tint[k]] : flatPx;
       for (let dy = 0; dy < size; dy++) { const o = (py + dy) * w + px; for (let dx = 0; dx < size; dx++) u32[o + dx] = v; }
       n++;
@@ -1164,12 +1183,14 @@ export class TwinCanvasLayer extends L.Canvas {
       // In the plant views every plant is drawn, the ones off the rows too, and is picked within its own drawn size.
       const P = this.plants, view = this.cornViewNow(), plantView = view === "realistic" || view === "simple";
       const sizeM = this.look?.plantSizeM ?? CORN_RENDER.defaultPlantSizeM, pxPerM = scale / s.mpu;
-      if (P && (plantView ? sizeM * pxPerM >= CORN_RENDER.spriteMinPx : view === null && this.showPlants && pxPerM >= 12)) {
+      // Geometry draws only the doubles, and only with the founder's "All layers": only they are picked there.
+      const geometryDoubles = view === "geometry" && this.showDoubles && !!P?.sorted && pxPerM >= CORN_RENDER.geometryDoublesMinPxPerM;
+      if (P && (plantView ? sizeM * pxPerM >= CORN_RENDER.spriteMinPx : geometryDoubles || (view === null && this.showPlants && pxPerM >= 12))) {
         let pb = -1, pd = Infinity;
         const reach = plantView ? Math.max(tolU, (sizeM * 0.5) / s.mpu) : tolU;
         for (const k of P.index.query(x - reach, y - reach, x + reach, y + reach, 0)) {
           const c = P.certainty ? P.certainty[k] : 0;
-          if (!plantView && c >= 2 && !unc) continue;
+          if (geometryDoubles ? c !== 7 : plantView ? this.doubleHidden(k) : c >= 2 && !unc) continue;
           const dd = Math.hypot(P.x[k] - x, P.y[k] - y);
           if (dd <= reach && dd < pd) { pd = dd; pb = k; }
         }

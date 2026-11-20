@@ -34,6 +34,8 @@ import { type RowEdits, NO_ROW_EDITS, loadRowEdits, moveRowEnd, newUid, plantInd
 import { RowActionCard, RowEditPanel, RowUndoBar } from "./RowEditor";
 
 const NARROW_PX = 820;
+/** The row editor's line on a sorted corn twin's located plants (the note its build wrote says every one is counted). */
+const SORTED_PLANTS_NOTE = "One mark per plant two or more photographs located, placed where they saw it. Only the plants on the rows are counted: the doubles (a mark very close to a plant on its row) and the green off the rows are not. Located by the photographs, not identified as corn by its look.";
 const narrowNow = () => typeof window !== "undefined" && window.innerWidth < NARROW_PX;
 /** True below about a landscape tablet's width: the panels fold away and the inspector becomes a bottom sheet. */
 function useNarrow(): boolean {
@@ -446,7 +448,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
       <style>{`.twin-root .leaflet-top.leaflet-right, .twin-root .leaflet-bottom.leaflet-right { right: var(--twin-right, 0); transition: right .15s ease; } .twin-root .leaflet-control-scale-line { background: rgba(24,26,24,.85); color: #d9ddd6; border-color: #8a8f88; } .twin-root .leaflet-control-attribution { background: rgba(24,26,24,.85); color: #9aa09a; }`}</style>
       <TwinMap scene={scene} layers={effectiveLayers} selection={selection} units={units} onPick={onMapPick} onDetail={setDetail} onStats={setStats}
         onMove={c => setCentre(c)} onReady={h => { handle.current = h; setStats(h.layer.stats); }} reference={reference} onSwipe={setRefSwipe} findings={findings}
-        operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} rowEdits={rowEditsProp} plants={plantsProp} onRowEnd={onRowEnd} photoGround={photoGroundLayer} cornView={twin.corn && !photosUnder && !reference ? cornView : null} />
+        operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} rowEdits={rowEditsProp} plants={plantsProp} onRowEnd={onRowEnd} photoGround={photoGroundLayer} cornView={twin.corn && !photosUnder && !reference ? cornView : null} showDoubles={founderView && allLayers} />
 
       {/* A corn twin from a late flight: said over the map, closable (twin.corn.stage, from the build). */}
       {twin.corn?.stage?.verdict === "late" && !rowEditing && (
@@ -500,7 +502,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
         {twin.corn && <CornFieldPanel twin={twin} corn={twin.corn} layers={layers} setLayers={setLayers} units={units} view={cornView} technical={founderView && allLayers} onSelect={(p, lat, lng, across) => { setSelection(p); zoomTo(lat, lng, across); }} />}
         {twin.corn && founderView && <RowEditPanel edits={rowEdits} editing={rowEditing} onStart={startRowEditing} onDone={finishRowEditing}
           onClearAll={() => { commitRows(NO_ROW_EDITS, "All corrections cleared"); }} hideRows={hideRows} setHideRows={setHideRows}
-          plants={plants ? { count: plants.points.length, note: plants.note } : null} showPlants={showPlants} setShowPlants={setShowPlants} photographsOn={!!reference} />}
+          plants={plants ? { count: plants.points.length, note: plants.sorted ? SORTED_PLANTS_NOTE : plants.note } : null} showPlants={showPlants} setShowPlants={setShowPlants} photographsOn={!!reference} />}
         {!twin.corn && <FindingsControl query={query} onChange={q => { setQuery(q); setSelection(null); }} result={result} open={findOpen} onToggle={() => setFindOpen(o => !o)} compact={simple} />}
         {/* The field boundary: inferred from the rows and the photographs, correctable, never an operational limit until accepted. */}
         <div className={`w-[272px] px-3 py-2 text-xs ${panel}`} role="group" aria-label="Field boundary">
@@ -654,7 +656,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
         </div>
         <p className="mt-0.5 text-neutral-300">Review-only: these are observations for you to check, not treatment decisions.</p>
         {!local && <p className="mt-0.5 text-neutral-400">{placementText(twin)}</p>}
-        {twin.corn ? <><p className="mt-0.5 text-neutral-400">{cornView === "geometry" || rowEditing || photosUnder || !!reference ? "Click a row or a weed to inspect it." : "Zoom in to see each plant. Click a plant or a weed to inspect it."}</p><CornLegend corn={twin.corn} showPlants={!!plants && showPlants} uncertain={layers.cornUncertain} overPhotos={photosUnder} view={rowEditing || photosUnder || reference ? null : cornView} sampled={cornLook.sampled} /></> : <p className="mt-0.5 text-neutral-400">{detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>}
+        {twin.corn ? <><p className="mt-0.5 text-neutral-400">{cornView === "geometry" || rowEditing || photosUnder || !!reference ? "Click a row or a weed to inspect it." : "Zoom in to see each plant. Click a plant or a weed to inspect it."}</p><CornLegend corn={twin.corn} showPlants={!!plants && showPlants} uncertain={layers.cornUncertain} overPhotos={photosUnder} view={rowEditing || photosUnder || reference ? null : cornView} sampled={cornLook.sampled} doubles={founderView && allLayers} /></> : <p className="mt-0.5 text-neutral-400">{detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>}
         {local && <p className="mt-0.5 text-amber-300/90">Locally aligned test flight: positions relative to each other, scale estimated from the corn rows. Not on the map.</p>}
         {twin.stats.weedTier === "colour" && <p className="mt-0.5 text-amber-300/90">Weeds by colour rules, not a model: green against the soil around it, crowns left out, strips split at their plants. Yellowing plants and plants under 4 cm are missed; a green shoot at a crown's edge can be counted.</p>}
         {twin.stats.weedTier === "none" && !twin.corn && <p className="mt-0.5 text-neutral-500">No weed pass ran on this twin.</p>}

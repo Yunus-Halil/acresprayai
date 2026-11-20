@@ -14,11 +14,11 @@ describe("cornPlantCount", () => {
     const c = cornPlantCount(corn({ plants: plants([0, 0, 1, 4, 5, 2, 2, 3]) }));
     expect(c).toEqual({ total: 8, onRows: 5, offRows: 3, onNoRow: 2, betweenRows: 1, sorted: false, doubles: 0, notCorn: 0 });
   });
-  it("on a twin that sorted its plants off the rows, counts the plants on the rows and the doubles, not the green that is not corn", () => {
-    // 7 a double (counted); 2 on no row and 3 between rows: green that is not corn (not counted).
+  it("on a twin that sorted its plants off the rows, counts the plants on the rows only: not the doubles, not the green that is not corn", () => {
+    // 7 a double (not counted since 2026-11-20); 2 on no row and 3 between rows: green that is not corn (not counted).
     const P = plants([0, 0, 1, 4, 5, 7, 7, 2, 2, 3]);
     const c = cornPlantCount(corn({ plants: { ...P, summary: { ...P.summary, doubles: 2 } } }));
-    expect(c).toEqual({ total: 7, onRows: 5, offRows: 0, onNoRow: 2, betweenRows: 1, sorted: true, doubles: 2, notCorn: 3 });
+    expect(c).toEqual({ total: 5, onRows: 5, offRows: 0, onNoRow: 2, betweenRows: 1, sorted: true, doubles: 2, notCorn: 3 });
     expect([0, 1, 4, 7, 2, 3].map(k => plantKind(k, true))).toEqual(["row", "row", "row", "double", "notCorn", "notCorn"]);
     // A twin from before the sort: everything off the rows is counted, as it was.
     expect([7, 2, 3].map(k => plantKind(k, false))).toEqual(["double", "off", "off"]);

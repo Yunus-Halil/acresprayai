@@ -11,7 +11,7 @@ import { TWIN_COLOURS, type TwinLayers } from "@/lib/fieldTwin/style";
 import type { TwinBundle, TwinCorn, TwinCornGap, TwinCornRow, TwinCornWeed, TwinEvidence } from "@/lib/fieldTwin/types";
 import { localFrame } from "@/lib/fieldTwin/intelligence";
 import { CORN_WEED_LABEL, type CornFieldRowView, cornFieldRows, cornGapColour, cornRowColour, cornWeedColour, fieldRowOf, isLocalTwin } from "@/lib/fieldTwin/cornView";
-import { CORN_RENDER, type CornViewMode, cornLookOf, cornPlantCount, plantsSorted, rgbCss } from "@/lib/fieldTwin/cornRender";
+import { CORN_RENDER, type CornViewMode, cornLookOf, cornPlantCount, isOnRow, plantsSorted, rgbCss } from "@/lib/fieldTwin/cornRender";
 import { toWorld } from "@/lib/fieldTwin/scene";
 import EvidenceCrop from "./EvidenceCrop";
 import type { TwinPick } from "./TwinCanvasLayer";
@@ -29,7 +29,8 @@ type ListKey = "confirmedWeeds" | "otherWeeds" | "gaps" | "withheldGaps" | "rows
 /** The left-column panel for a corn twin. */
 export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, units, view, technical = false }: { twin: TwinBundle; corn: TwinCorn; layers: TwinLayers; setLayers: (f: (l: TwinLayers) => TwinLayers) => void; onSelect: (p: TwinPick, lat: number, lng: number, metresAcross: number) => void; units: UnitSystem; /** The view on the map (its colours are the swatches here). */ view: CornViewMode; /** The founder's "All layers": the finer breakdown and the whole-layer switch. */ technical?: boolean }) {
   const s = corn.summary;
-  // The count: every located plant, on the rows and off them (2026-11-19). The swatches are the colours on the map.
+  // The count (cornRender.ts cornPlantCount): on a sorted twin the plants on the rows (2026-11-20); before the sort every
+  // located plant. The swatches are the colours on the map.
   const count = useMemo(() => cornPlantCount(corn), [corn]);
   const look = useMemo(() => cornLookOf(corn, toWorld), [corn]);
   const onRowCss = view === "simple" ? rgbCss(CORN_RENDER.simpleCorn) : rgbCss(look.corn), offRowCss = rgbCss(CORN_RENDER.offRow), notCornCss = rgbCss(CORN_RENDER.notCorn);
@@ -76,10 +77,10 @@ export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, units,
             {count.sorted ? <>
               <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
                 <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: onRowCss }} />On the rows</dt><dd className="text-right tabular-nums text-neutral-100">{count.onRows.toLocaleString()}</dd>
-                <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: offRowCss }} />Doubles, to be checked</dt><dd className="text-right tabular-nums text-neutral-100">{count.doubles.toLocaleString()}</dd>
               </dl>
               <div className="mt-1 flex items-baseline justify-between border-t border-[#262a26] pt-1 text-[11px]"><span className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: notCornCss }} />Green, not corn (not counted)</span><span className="tabular-nums text-neutral-300">{count.notCorn.toLocaleString()}</span></div>
-              <p className="mt-1 text-[10px] leading-snug text-neutral-500">Counted: the plants on the rows, and the doubles (a plant on a row very close to another: one plant seen twice, or two plants; counted until the photographs decide). Green off the rows (between rows, past the rows' ends, beyond the outer rows) is not corn and is not counted{count.betweenRows ? `; ${count.betweenRows.toLocaleString()} of it stands between two rows` : ""}.</p>
+              {technical && <div className="mt-0.5 flex items-baseline justify-between text-[11px]"><span className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: offRowCss }} />Doubles (not counted)</span><span className="tabular-nums text-neutral-300">{count.doubles.toLocaleString()}</span></div>}
+              <p className="mt-1 text-[10px] leading-snug text-neutral-500">Counted: the plants on the rows. A mark on a row very close to a plant already counted there is left out (mostly the same plant seen twice){technical ? "; with All layers these doubles are drawn in blue" : ""}. Green off the rows (between rows, past the rows' ends, beyond the outer rows) is not corn and is not counted{count.betweenRows ? `; ${count.betweenRows.toLocaleString()} of it stands between two rows` : ""}.</p>
             </> : <>
               <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
                 <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: onRowCss }} />On the rows</dt><dd className="text-right tabular-nums text-neutral-100">{count.onRows.toLocaleString()}</dd>
@@ -146,7 +147,7 @@ function rowListDetail(v: CornFieldRowView, units: UnitSystem): string {
 }
 
 /** What each mark on a corn twin means, for everyone (the key): only what is drawn now. */
-export function CornLegend({ corn, showPlants, uncertain, overPhotos = false, view = null, sampled = false }: { corn: TwinCorn; showPlants: boolean; uncertain: boolean; overPhotos?: boolean; /** The view on the map; null: rows and plant marks together (the row editor, or over the photographs). */ view?: CornViewMode | null; /** Whether the Realistic colours are this field's own. */ sampled?: boolean }) {
+export function CornLegend({ corn, showPlants, uncertain, overPhotos = false, view = null, sampled = false, doubles = false }: { corn: TwinCorn; showPlants: boolean; uncertain: boolean; overPhotos?: boolean; /** The view on the map; null: rows and plant marks together (the row editor, or over the photographs). */ view?: CornViewMode | null; /** Whether the Realistic colours are this field's own. */ sampled?: boolean; /** The founder's "All layers": a sorted twin's doubles are drawn. */ doubles?: boolean }) {
   const plantsFirst = useMemo(() => cornFieldRows(corn).some(r => r.plantsFirst), [corn]);
   const look = useMemo(() => cornLookOf(corn, toWorld), [corn]);
   const item = (key: string, swatch: React.ReactNode, text: string) => <span key={key} className="flex items-center gap-1.5">{swatch}{text}</span>;
@@ -169,7 +170,7 @@ export function CornLegend({ corn, showPlants, uncertain, overPhotos = false, vi
     const cornCss = view === "simple" ? rgbCss(CORN_RENDER.simpleCorn) : rgbCss(look.corn), hasPlants = !!corn.plants, sorted = plantsSorted(corn.plants);
     return wrap([
       hasPlants ? item("corn", dot(cornCss, cornCss), "Corn plant, on a row") : item("band", line(cornCss, 4), "Corn row (plants not counted one by one)"),
-      hasPlants && item("off", dot(rgbCss(CORN_RENDER.offRow), rgbCss(CORN_RENDER.offRow)), sorted ? "Double: very close to a plant on its row (counted, to be checked)" : "Plant off the rows (counted)"),
+      hasPlants && (!sorted || doubles) && item("off", dot(rgbCss(CORN_RENDER.offRow), rgbCss(CORN_RENDER.offRow)), sorted ? "Double: very close to a plant on its row (not counted)" : "Plant off the rows (counted)"),
       hasPlants && sorted && item("notcorn", <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: rgbCss(CORN_RENDER.notCorn) }} />, "Green, not corn (not counted)"),
       !hasPlants && item("course", line(TWIN_COLOURS.cornRowCourse, 1), "Row, crop not confirmed"),
       ...weedItems,
@@ -182,6 +183,7 @@ export function CornLegend({ corn, showPlants, uncertain, overPhotos = false, vi
   if (view === "geometry") return wrap([
     item("row", line(TWIN_COLOURS.cornRow, 3), plantsFirst ? "Row, plants seen along it" : "Corn row"),
     item("course", line(TWIN_COLOURS.cornRowCourse, 1), plantsFirst ? "Row continues, no plant confirmed" : "Row, crop not confirmed"),
+    doubles && plantsSorted(corn.plants) && item("off", dot(rgbCss(CORN_RENDER.offRow), "#141614"), "Double: very close to a plant on its row (not counted; zoom in)"),
     ...weedItems,
     ...gapItems,
     unseen,
@@ -265,7 +267,7 @@ const PLANT_CLASS: Record<number, { title: string; text: string }> = {
   0: { title: "Plant on a row", text: "A plant two or more photographs located, on a row, seen by most of the photographs over it." },
   1: { title: "Plant on a row, probable", text: "A plant two or more photographs located, on a row at the field's plant spacing, but seen by fewer than most of the photographs over it." },
   2: { title: "Plant off the rows", text: "A plant two or more photographs located that stands on no row the twin drew: counted, and drawn in its own colour. Most are corn where no row was drawn (a headland, a row the twin missed); some may be weeds: the twin does not say which." },
-  7: { title: "Double: on a row, very close to a plant", text: "Two or more photographs located it on a row's line, closer than half the plant spacing to a plant already on that row: the same plant seen twice, or two plants close together. Counted, and drawn in its own colour, until the photographs decide which." },
+  7: { title: "Double: on a row, very close to a plant", text: "Two or more photographs located it on a row's line, closer than half the plant spacing to a plant already on that row: the same plant seen twice, or two plants close together (on photo 0025 mostly the same plant). Not counted; drawn in blue only with All layers, so its photographs can be checked." },
   3: { title: "Plant between two rows", text: "A plant two or more photographs located between two rows: counted, and drawn in the off-row colour. By where it stands it may not be the crop." },
   4: { title: "Plant on a row, second look", text: "Two or more photographs marked it on a second look along a row the plants found first made; at the field's plant spacing. Probable." },
   5: { title: "Plant on a row, second look, one sharp view", text: "One photograph marked it on a second look along a row, near the middle of its frame where it sees sharply; at the field's plant spacing. Probable." },
@@ -292,7 +294,7 @@ export function CornInspector({ twin, selection, atlasUrl, onClose, plants = nul
         <Section title="What the photographs said"><Rows lines={[
           ...(n != null ? [{ label: "Located in", value: `${n} photograph${n === 1 ? "" : "s"}` }] : []),
           { label: "Position", value: isLocalTwin(twin) ? "local (test flight)" : `${selection.lat.toFixed(7)}, ${selection.lng.toFixed(7)}` },
-        ]} /><p className="mt-1.5 text-[10px] text-neutral-500">Located by the photographs and counted in the field's plant count. Nothing in a photograph tells corn from another seedling by its look; a plant off the rows is counted like the rest and drawn in its own colour.</p></Section>
+        ]} /><p className="mt-1.5 text-[10px] text-neutral-500">{!plantsSorted(corn.plants) ? "Located by the photographs and counted in the field's plant count. Nothing in a photograph tells corn from another seedling by its look; a plant off the rows is counted like the rest and drawn in its own colour." : isOnRow(c) ? "Located by the photographs and counted in the field's plant count." : "Located by the photographs; not counted in the field's plant count."}</p></Section>
         <ReviewOnly />
       </div>
     );

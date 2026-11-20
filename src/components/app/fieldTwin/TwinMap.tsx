@@ -99,6 +99,8 @@ type Props = {
   photoGround?: PhotoGroundLayer | null;
   /** Corn twins: the view (Realistic, Simple, Geometry); null draws the corn as before the views. */
   cornView?: CornViewMode | null;
+  /** Corn twins: whether the views draw a sorted twin's doubles (the founder's "All layers"). */
+  showDoubles?: boolean;
 };
 
 const bar = "background:rgba(20,22,20,.86);border:1px solid #333;color:#d9ddd6;";
@@ -125,7 +127,7 @@ const LocateControl = L.Control.extend({
   },
 });
 
-export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null, operational = null, editing = null, onBoundaryEdit, rowEdits = null, plants = null, onRowEnd, photoGround = null, cornView = null }: Props) {
+export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null, operational = null, editing = null, onBoundaryEdit, rowEdits = null, plants = null, onRowEnd, photoGround = null, cornView = null, showDoubles = false }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const miniEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -238,6 +240,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
   useEffect(() => { layerRef.current?.setRowEdits(rowEdits?.edits ?? NO_ROW_EDITS, !!rowEdits?.active, !!rowEdits?.hideRows, rowEdits?.hover ?? null, rowEdits?.overrides ?? [], rowEdits?.handles ?? null); }, [rowEdits, scene]);
   useEffect(() => { layerRef.current?.setPlants(plants?.points ?? null, plants?.show ?? false, plants?.certainty ?? null, plants?.sorted ?? false); }, [plants, scene]);
   useEffect(() => { layerRef.current?.setCornView(cornView); }, [cornView, scene]);
+  useEffect(() => { layerRef.current?.setShowDoubles(showDoubles); }, [showDoubles, scene]);
 
   // The scale bar follows the account's units.
   useEffect(() => {
