@@ -85,6 +85,24 @@ describe("the corn stage over overlapping photographs", () => {
     // Rows the photographs all see are held by all three.
     expect(r.field.rows.some(x => x.seenBy === 3)).toBe(true);
   });
+
+  it("reads each photograph's soil and corn colours after its read, from the same pixels, and changes none of them", { timeout: 120_000 }, async () => {
+    const before = await Promise.all(photos.map(async p => (await p.decode(1)).rgba.slice()));
+    const r = await cornStage(photos, frames);
+    expect(r.colours.map(c => c.name)).toEqual(["p0", "p1", "p2"]);
+    for (const c of r.colours) {
+      expect(c.colours.soil).not.toBeNull();
+      expect(c.colours.corn).not.toBeNull();
+      // The corn colour is greener than the soil's (excess green, 2g - r - b).
+      const [sr, sg, sb] = c.colours.soil!, [cr, cg, cb] = c.colours.corn!;
+      expect(2 * cg - cr - cb).toBeGreaterThan(2 * sg - sr - sb + 10);
+    }
+    const after = await Promise.all(photos.map(async p => (await p.decode(1)).rgba));
+    const same = (a: Uint8ClampedArray, b: Uint8ClampedArray) => { if (a.length !== b.length) return false; for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) return false; return true; };
+    after.forEach((a, i) => expect(same(a, before[i])).toBe(true));
+    // The colours cost next to nothing beside the reads.
+    expect(r.colourMs).toBeLessThan(r.ms / 10);
+  });
 });
 
 const FLIGHT = "D:/swardus-research/cornflight/Day023_Corn1-n40";

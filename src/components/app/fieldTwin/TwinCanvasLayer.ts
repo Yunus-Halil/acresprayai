@@ -15,8 +15,10 @@ import { type HeatLevels, type HeatRaster, buildHeatLevels, pickHeatLevel } from
 import { EV, type EvidenceRaster } from "@/lib/fieldTwin/boundaryEvidence";
 import { CORN_STATUS, type Detail, GridIndex, PRESSURE_INDEX, ROW_STATUS, SUPPORT_ORDER, type Scene, WEED_STATUS, detailFor, metresPerPixel, toWorld } from "@/lib/fieldTwin/scene";
 import { type TwinLayers, TWIN_COLOURS as C, badgesAllowed } from "@/lib/fieldTwin/style";
-import type { LatLngPair } from "@/lib/fieldTwin/types";
+import type { LatLngPair, TwinRgb } from "@/lib/fieldTwin/types";
 import type { RowEdits } from "@/lib/fieldTwin/rowEdits";
+import { CORN_RENDER, type CornLook, type CornViewMode, blendGrid, cornLookOf, cornTints, gridCell, plantDrawMode, plantHash, plantKind, rgbCss, stampOf } from "@/lib/fieldTwin/cornRender";
+import { SpriteCache, soilCanvas, spriteSizeFor } from "./cornSprite";
 
 /** How far (screen pixels) a pointer may be from a boundary handle to take it. */
 const HANDLE_PX = 9;
@@ -108,8 +110,20 @@ export class TwinCanvasLayer extends L.Canvas {
   /** A click that ends a handle drag is not a tap on the ground. */
   private swallowClick = false;
   /** Plants located by the photographs (zoom-0 units), drawn at the plant level as small neutral dots; null for none. */
-  private plants: { n: number; x: Float64Array; y: Float64Array; index: GridIndex; certainty: Uint8Array | null; points: LatLngPair[] } | null = null;
+  private plants: { n: number; x: Float64Array; y: Float64Array; index: GridIndex; certainty: Uint8Array | null; points: LatLngPair[]; /** The twin sorted its plants off the rows (cornRender.ts plantsSorted). */ sorted: boolean } | null = null;
   private showPlants = true;
+  /** Corn twins: the view (cornRender.ts: Realistic, Simple, Geometry). Null draws the corn as it was drawn before the
+   * views (rows and plant marks together), which the row editor always does. */
+  private cornView: CornViewMode | null = null;
+  /** A sorted twin's doubles (class 7): not counted, and drawn in the views (blue, pickable) only with the founder's
+   * "All layers" tick (2026-11-20). In Realistic and Simple as the plants beside them; in Geometry as blue dots. */
+  private showDoubles = false;
+  /** The corn twin's colours and plant size; the Realistic ground and each plant's tint, built when first drawn. */
+  private look: CornLook | null = null;
+  private soil: HTMLCanvasElement | null | undefined = undefined;
+  private tints: { palette: TwinRgb[]; plant: Uint8Array } | null = null;
+  private sprites = new SpriteCache();
+  private stamp: { canvas: HTMLCanvasElement; g: Ctx; img: ImageData; u32: Uint32Array; w: number; h: number } | null = null;
 
   constructor(layers: TwinLayers, options: L.RendererOptions = {}) {
     super({ padding: 0.25, tolerance: 6, ...options });
@@ -121,8 +135,18 @@ export class TwinCanvasLayer extends L.Canvas {
     const t0 = performance.now();
     this.heat = scene ? buildHeatLevels(scene.intel, this.layers.heatScale) : null;
     try { performance.measure("twin:heatmap", { start: t0, end: performance.now() }); } catch { /* older browsers */ }
-    this.heatCanvas.clear(); this.evidenceCanvas = null; this.findings = null; this.firstDraw = true; this.requestRedraw();
+    this.heatCanvas.clear(); this.evidenceCanvas = null; this.findings = null; this.firstDraw = true;
+    this.look = scene?.corn ? cornLookOf(scene.twin.corn, toWorld) : null; this.soil = undefined; this.tints = null; this.sprites.clear();
+    this.requestRedraw();
   }
+  /** Corn twins: which view to draw (null: as before the views). */
+  setCornView(view: CornViewMode | null) { if (view !== this.cornView) { this.cornView = view; this.requestRedraw(); } }
+  /** Corn twins: whether the views draw a sorted twin's doubles (the founder's "All layers"). */
+  setShowDoubles(show: boolean) { if (show !== this.showDoubles) { this.showDoubles = show; this.requestRedraw(); } }
+  /** Whether plant k is a double the views leave out now (a sorted twin, the tick off). */
+  private doubleHidden(k: number): boolean { const P = this.plants; return !this.showDoubles && !!P?.sorted && !!P.certainty && P.certainty[k] === 7; }
+  /** The view in force: the row editor always works on the rows and plant marks. */
+  private cornViewNow(): CornViewMode | null { return this.rowEdit.active ? null : this.cornView; }
   private firstDraw = true;
   setLayers(layers: TwinLayers) {
     const rescale = layers.heatScale !== this.layers.heatScale || layers.beyondBoundary !== this.layers.beyondBoundary;
@@ -287,13 +311,14 @@ export class TwinCanvasLayer extends L.Canvas {
     if (me._map) { if (active) me._map.doubleClickZoom.disable(); else if (!this.editing) me._map.doubleClickZoom.enable(); }
     this.requestRedraw();
   }
-  /** What each plant is drawn as: 0 certain on a row, 1 probable, 2 on no row, 3 between rows (not the crop); absent: all 0. */
-  setPlants(points: LatLngPair[] | null, show: boolean, certainty: number[] | null = null) {
+  /** What each plant is drawn as: 0 certain on a row, 1 probable, 2 on no row, 3 between rows (not the crop), 7 a double; absent: all 0. `sorted`: cornRender.ts plantsSorted. */
+  setPlants(points: LatLngPair[] | null, show: boolean, certainty: number[] | null = null, sorted = false) {
     if (points) {
       const n = points.length, x = new Float64Array(n), y = new Float64Array(n);
       points.forEach(([lat, lng], i) => { const [wx, wy] = toWorld(lat, lng); x[i] = wx; y[i] = wy; });
-      this.plants = { n, x, y, index: new GridIndex(x, y, this.scene ? 2 / this.scene.mpu : 1e-7), certainty: certainty && certainty.length === n ? Uint8Array.from(certainty) : null, points };
+      this.plants = { n, x, y, index: new GridIndex(x, y, this.scene ? 2 / this.scene.mpu : 1e-7), certainty: certainty && certainty.length === n ? Uint8Array.from(certainty) : null, points, sorted };
     } else this.plants = null;
+    this.tints = null;
     this.showPlants = show;
     this.requestRedraw();
   }
@@ -423,6 +448,19 @@ export class TwinCanvasLayer extends L.Canvas {
         for (let k = 0; k + 1 < F.off.length; k++) { ctx.beginPath(); packed(ctx, F, k, X, Y); ctx.fill(); }
       }
       if (scene.block) { ctx.beginPath(); ring(ctx, scene.block, X, Y); ctx.fillStyle = C.soil; ctx.fill(); }
+      // Realistic (corn twins): the photographed ground in the field's own soil colour, one drawImage of the part in view.
+      if (scene.corn && L_.corn && this.cornViewNow() === "realistic") {
+        const soil = this.soilFor(scene), [sx0w, sy0w, sx1w, sy1w] = scene.bbox;
+        if (soil && sx1w > sx0w && sy1w > sy0w) {
+          const ax = Math.max(vx0, sx0w), ay = Math.max(vy0, sy0w), bx = Math.min(vx1, sx1w), by = Math.min(vy1, sy1w);
+          if (bx > ax && by > ay) {
+            const kx = soil.width / (sx1w - sx0w), ky = soil.height / (sy1w - sy0w);
+            ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+            ctx.drawImage(soil, (ax - sx0w) * kx, (ay - sy0w) * ky, (bx - ax) * kx, (by - ay) * ky, X(ax), Y(ay), X(bx) - X(ax), Y(by) - Y(ay));
+            drawn.soil = 1;
+          }
+        }
+      }
     }
 
     // 2. Weed pressure: the heatmap raster, one transformed drawImage. Full at the field level, lighter as the
@@ -507,10 +545,10 @@ export class TwinCanvasLayer extends L.Canvas {
         }
         ctx.setLineDash([]); ctx.globalAlpha = 1;
         drawn.boundary = 1;
-      } else if (scene.intel.blockSource !== "rows" || L_.ground || L_.rowsEdgeOverPhotos) {
+      } else if (scene.intel.blockSource !== "rows" || (L_.ground && !(scene.corn && this.cornViewNow() === "realistic")) || L_.rowsEdgeOverPhotos) {
         // The edge estimated from the rows (dashed) is left out over the photographs unless asked for in Diagnostics:
-        // there it crosses the soil and the plants and reads as something in the field. The operator's corrected edge
-        // is drawn always.
+        // there it crosses the soil and the plants and reads as something in the field (the Realistic view's drawn soil
+        // likewise). The operator's corrected edge is drawn always.
         ctx.beginPath(); ring(ctx, scene.block, X, Y); ctx.strokeStyle = C.blockEdge; ctx.lineWidth = 1.2; ctx.globalAlpha = 0.85; ctx.setLineDash(scene.intel.blockSource === "rows" ? [5, 3] : []); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
         drawn.boundary = 1;
       }
@@ -556,7 +594,7 @@ export class TwinCanvasLayer extends L.Canvas {
 
     // 6b. Corn (corn twins): the field's corn rows, stand gaps and weed observations, by state. Confirmed ones firm;
     //     the observations the photographs do not confirm dashed and grey or amber (kept for review, never findings).
-    if (scene.corn && L_.corn) this.drawCorn(ctx, scene, X, Y, pxPerM, vx0, vy0, vx1, vy1, drawn);
+    if (scene.corn && L_.corn) this.drawCorn(ctx, scene, X, Y, pxPerM, vx0, vy0, vx1, vy1, drawn, bx0, by0, bx1, by1);
 
     // 7. Trees: crowns at their measured radius, or points; inferred positions dashed. All crowns in one path.
     //    With the crowns layer off they still come in at the plant level, where they are the measurement.
@@ -695,21 +733,26 @@ export class TwinCanvasLayer extends L.Canvas {
     this.fire("twindraw");
   }
 
-  private drawCorn(ctx: Ctx, scene: Scene, X: (u: number) => number, Y: (u: number) => number, pxPerM: number, vx0: number, vy0: number, vx1: number, vy1: number, drawn: Record<string, number>) {
+  private drawCorn(ctx: Ctx, scene: Scene, X: (u: number) => number, Y: (u: number) => number, pxPerM: number, vx0: number, vy0: number, vx1: number, vy1: number, drawn: Record<string, number>, bx0: number, by0: number, bx1: number, by1: number) {
     const K = scene.corn!, S = CORN_STATUS, unc = this.layers.cornUncertain, sel = this.selection, RE = this.rowEdit, V = RE.verdicts;
+    // The view: Realistic and Simple draw every located plant as a plant and no rows; Geometry the rows and no plants.
+    // A twin with no located plants (its count withheld) has only its rows: the plant views draw them as green bands.
+    const view = this.cornViewNow(), plantView = view === "realistic" || view === "simple";
+    const rowsAs: "lines" | "bands" | "none" = RE.hideRows ? "none" : !plantView ? "lines" : this.plants ? "none" : "bands";
+    if (plantView && this.plants && this.look) this.drawPlantView(ctx, scene, X, Y, pxPerM, vx0, vy0, vx1, vy1, drawn, bx0, by0, bx1, by1, view === "realistic");
     // EXPERIMENT (photo ground): over the photographs, up close, the marks step back so the plants under them show:
     // rows thin and translucent, every plant a ring (nothing filled over a seedling).
     const overPhotos = !this.layers.ground && pxPerM >= 25;
     // Plants the photographs located: small neutral dots, never coloured as corn (nothing tells corn by its look).
-    if (this.plants && this.showPlants && pxPerM >= 12) {
+    if (view === null && this.plants && this.showPlants && pxPerM >= 12) {
       // Certain: filled; probable (the certain rows support it): a ring; uncertain: a small grey dot.
       const P = this.plants, r = Math.max(1.4, Math.min(4, 0.025 * pxPerM)), idx = P.index.query(vx0, vy0, vx1, vy1, 0);
       let np = 0;
       // Seen on no row and between the rows (not the crop) are review material: drawn only with the observations
       // the photographs do not confirm.
-      for (const kind of unc ? [3, 2, 5, 4, 1, 0] : [5, 4, 1, 0]) {
+      for (const kind of unc ? [3, 2, 7, 5, 4, 1, 0] : [5, 4, 1, 0]) {
         ctx.beginPath(); let any = false;
-        const rr = kind >= 4 ? r + 1 : kind >= 2 ? Math.max(1, r * 0.55) : kind === 1 ? r + 1 : r;
+        const rr = kind === 7 ? Math.max(1, r * 0.55) : kind >= 4 ? r + 1 : kind >= 2 ? Math.max(1, r * 0.55) : kind === 1 ? r + 1 : r;
         for (const k of idx) {
           if ((P.certainty ? P.certainty[k] : 0) !== kind) continue;
           const x = X(P.x[k]), y = Y(P.y[k]);
@@ -721,7 +764,7 @@ export class TwinCanvasLayer extends L.Canvas {
         if (!any) continue;
         if (kind === 3) { ctx.lineWidth = 1; ctx.strokeStyle = "#8c929a"; ctx.globalAlpha = 0.6; ctx.stroke(); ctx.globalAlpha = 1; continue; }
         // Found along a row at the lower bar: a ring in its own colour (two photographs, or one sharp view).
-        if (kind >= 4) { ctx.lineWidth = 1.8; ctx.strokeStyle = kind === 4 ? C.plantAlongRowTwo : C.plantAlongRowOne; ctx.globalAlpha = 0.95; ctx.stroke(); ctx.globalAlpha = 1; continue; }
+        if (kind >= 4 && kind <= 6) { ctx.lineWidth = 1.8; ctx.strokeStyle = kind === 4 ? C.plantAlongRowTwo : C.plantAlongRowOne; ctx.globalAlpha = 0.95; ctx.stroke(); ctx.globalAlpha = 1; continue; }
         if (kind === 0 && overPhotos) { ctx.lineWidth = 2; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 1; ctx.stroke(); }
         else if (kind === 1 && overPhotos) { ctx.lineWidth = 1; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 0.6; ctx.setLineDash([2, 2]); ctx.stroke(); ctx.setLineDash([]); }
         else if (kind === 0) { ctx.fillStyle = C.plantLocated; ctx.globalAlpha = 0.9; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(20,22,20,0.8)"; ctx.stroke(); }
@@ -742,15 +785,20 @@ export class TwinCanvasLayer extends L.Canvas {
     const OV = RE.overrides;
     const rowPath = (k: number) => { const ov = OV.get(K.rows.id[k]); if (ov) flatLine(ov); else packed(ctx, K.rows.lines, k, X, Y); };
     let nr = 0;
-    if (!RE.hideRows) {
+    // As bands: a row the photographs call corn in the corn colour, about a fifth of the row spacing wide.
+    const bands = rowsAs === "bands", spacingM = scene.twin.corn?.rowSpacingM ?? 0.76;
+    const bandW = Math.max(1.5, 0.22 * spacingM * pxPerM), cornCss = bands ? rgbCss(view === "realistic" && this.look ? this.look.corn : CORN_RENDER.simpleCorn) : C.cornRow;
+    // In a view without rows a row selected from the list is still shown, as its halo alone.
+    if (rowsAs === "none" && !RE.hideRows && sel?.kind === "cornRow") { const k = indexOfId(K.rows.id, sel.id); if (k >= 0) { const g = K.rows.group[k]; ctx.strokeStyle = C.selection; ctx.lineWidth = 3; ctx.globalAlpha = 0.7; ctx.setLineDash([]); ctx.beginPath(); for (let j = 0; j < K.rows.n; j++) if (j === k || (g >= 0 && K.rows.group[j] === g)) rowPath(j); ctx.stroke(); ctx.globalAlpha = 1; } }
+    if (rowsAs !== "none") {
       if (sel?.kind === "cornRow") { const k = indexOfId(K.rows.id, sel.id); if (k >= 0) { const g = K.rows.group[k]; ctx.strokeStyle = C.selection; ctx.lineWidth = rowW + 6; ctx.globalAlpha = 0.55; ctx.setLineDash([]); ctx.beginPath(); for (let j = 0; j < K.rows.n; j++) if (j === k || (g >= 0 && K.rows.group[j] === g)) rowPath(j); ctx.stroke(); ctx.globalAlpha = 1; } }
       if (sel?.kind === "addedRow") { const a = RE.added.find(x => x.uid === sel.uid); if (a) { ctx.beginPath(); flatLine(a.xy); ctx.strokeStyle = C.selection; ctx.lineWidth = rowW + 8; ctx.globalAlpha = 0.45; ctx.setLineDash([]); ctx.stroke(); ctx.globalAlpha = 1; } }
       // The machine's rows by state; a row the operator kept is drawn solid in its machine colour, one they removed
       // thin grey dots with cross ticks (still there, still selectable: their word, not a deletion).
       ctx.setLineDash([]);
-      for (const [st, colour] of [[S.row.unconfirmed, C.cornRowCourse], [S.row.corn, C.cornRow]] as const) {
+      for (const [st, colour] of [[S.row.unconfirmed, C.cornRowCourse], [S.row.corn, cornCss]] as const) {
         for (const kept of [false, true]) {
-          ctx.strokeStyle = colour; ctx.lineWidth = overPhotos ? Math.max(1.2, (st === S.row.corn || kept ? rowW : courseW) * 0.45) : st === S.row.corn || kept ? rowW : courseW; ctx.globalAlpha = overPhotos ? 0.55 : st === S.row.corn ? 0.9 : 0.7;
+          ctx.strokeStyle = colour; ctx.lineWidth = bands && (st === S.row.corn || kept) ? bandW : overPhotos ? Math.max(1.2, (st === S.row.corn || kept ? rowW : courseW) * 0.45) : st === S.row.corn || kept ? rowW : courseW; ctx.globalAlpha = overPhotos && !bands ? 0.55 : st === S.row.corn ? 0.9 : 0.7;
           ctx.beginPath();
           for (let k = 0; k < K.rows.n; k++) { if (K.rows.status[k] !== st || !inView(k)) continue; const v = V[String(K.rows.id[k])]; if (v === "remove" || (v === "keep") !== kept) continue; rowPath(k); nr++; }
           ctx.stroke();
@@ -815,6 +863,14 @@ export class TwinCanvasLayer extends L.Canvas {
       ctx.strokeStyle = colour; ctx.lineWidth = st === S.gap.confirmed ? rowW + 3 : rowW + 1; ctx.setLineDash([...dash]); ctx.globalAlpha = 1; ctx.stroke();
     }
     if (sel?.kind === "cornGap") { const k = indexOfId(K.gaps.id, sel.id); if (k >= 0) { ctx.beginPath(); ctx.moveTo(X(K.gaps.x1[k]), Y(K.gaps.y1[k])); ctx.lineTo(X(K.gaps.x2[k]), Y(K.gaps.y2[k])); ctx.strokeStyle = C.selection; ctx.lineWidth = 2; ctx.setLineDash([]); ctx.stroke(); } }
+    // Geometry, with the founder's "All layers": a sorted twin's doubles as blue dots over the rows (no other plant drawn).
+    if (view === "geometry" && this.showDoubles && this.plants?.sorted && this.plants.certainty && pxPerM >= CORN_RENDER.geometryDoublesMinPxPerM) {
+      const P = this.plants, cert = P.certainty!, r = Math.max(1.5, Math.min(4, 0.03 * pxPerM));
+      ctx.beginPath(); let nd = 0;
+      for (const k of P.index.query(vx0, vy0, vx1, vy1, 0)) { if (cert[k] !== 7) continue; const x = X(P.x[k]), y = Y(P.y[k]); ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 2 * Math.PI); nd++; }
+      if (nd) { ctx.fillStyle = rgbCss(CORN_RENDER.offRow); ctx.globalAlpha = 0.95; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(20,22,20,0.8)"; ctx.stroke(); ctx.globalAlpha = 1; }
+      drawn.plants = nd;
+    }
     // Weed observations: a disc of their ground cover, at least a few pixels across so they read at the field level.
     const idx = K.weeds.index.query(vx0, vy0, vx1, vy1, K.weeds.maxRM / scene.mpu);
     let nw = 0;
@@ -829,6 +885,102 @@ export class TwinCanvasLayer extends L.Canvas {
     }
     ctx.setLineDash([]); ctx.globalAlpha = 1;
     drawn.cornRows = nr; drawn.cornGaps = ng; drawn.cornWeeds = nw;
+  }
+
+  /** The Realistic view's ground for this twin, built once: the soil colours blended over the twin's box, kept only
+   * where a photograph saw the ground (each footprint filled by itself, so overlapping rings never cancel). */
+  private soilFor(scene: Scene): HTMLCanvasElement | null {
+    if (this.soil !== undefined) return this.soil;
+    const look = this.look;
+    if (!look) return (this.soil = null);
+    const t0 = performance.now(), [x0, y0, x1, y1] = scene.bbox;
+    const grid = blendGrid(look.samples.filter(q => q.soil).map(q => ({ x: q.x, y: q.y, c: q.soil! })), look.soil, scene.bbox);
+    let seed = 7; for (let i = 0; i < scene.twin.id.length; i++) seed = (Math.imul(seed, 31) + scene.twin.id.charCodeAt(i)) | 0;
+    this.soil = soilCanvas(grid, 1024, seed, (g, W, H) => {
+      const fx = (u: number) => ((u - x0) / (x1 - x0)) * W, fy = (u: number) => ((u - y0) / (y1 - y0)) * H, F = scene.footprints;
+      if (F.off.length > 1) for (let k = 0; k + 1 < F.off.length; k++) { g.beginPath(); packed(g, F, k, fx, fy); g.fill(); }
+      else { g.beginPath(); ring(g, scene.imagery, fx, fy); g.fill(); }
+    });
+    try { performance.measure("twin:soil", { start: t0, end: performance.now() }); } catch { /* older browsers */ }
+    return this.soil;
+  }
+
+  /** Each plant's tint of the corn colour (its place in the field's corn colours), built once per twin and plant set. */
+  private tintsFor(scene: Scene): { palette: TwinRgb[]; plant: Uint8Array } | null {
+    if (this.tints) return this.tints;
+    const P = this.plants, look = this.look;
+    if (!P || !look) return null;
+    const grid = blendGrid(look.samples.filter(q => q.corn).map(q => ({ x: q.x, y: q.y, c: q.corn! })), look.corn, scene.bbox);
+    const { palette, cellTint } = cornTints(grid), plant = new Uint8Array(P.n);
+    for (let k = 0; k < P.n; k++) plant[k] = cellTint[gridCell(grid, P.x[k], P.y[k])];
+    return (this.tints = { palette, plant });
+  }
+
+  /**
+   * Realistic and Simple: every located plant. Up close each is a drawn corn plant (a cached sprite per colour, shape
+   * and direction: one drawImage a plant). Smaller than a few pixels, or more in view than a frame should draw one by
+   * one, they are stamped as dots into one image written pixel by pixel, which costs the same for a thousand plants or
+   * a million. On a row: the corn colour (the field's own, tinted by place, in Realistic; one flat green in Simple).
+   * Off the rows (a twin from before the sort) and the doubles: their own colour in both. Green that is not corn (a
+   * sorted twin's other plants off the rows): a plain dot in its own colour, never a corn plant.
+   */
+  private drawPlantView(ctx: Ctx, scene: Scene, X: (u: number) => number, Y: (u: number) => number, pxPerM: number, vx0: number, vy0: number, vx1: number, vy1: number, drawn: Record<string, number>, bx0: number, by0: number, bx1: number, by1: number, realistic: boolean) {
+    const P = this.plants!, look = this.look!, R = CORN_RENDER, T = realistic ? this.tintsFor(scene) : null;
+    const sizeM = look.plantSizeM, plantPx = sizeM * pxPerM, pad = sizeM / scene.mpu, cert = P.certainty;
+    const flat = R.simpleCorn, palette = T?.palette ?? [look.corn];
+    const idx = plantPx >= R.spriteMinPx ? P.index.query(vx0, vy0, vx1, vy1, pad) : null;
+    if (idx && plantDrawMode(plantPx, idx.length) === "sprite") {
+      const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+      // The plant spans 0.88 of its sprite; sizes vary a little plant to plant (0.85 to 1.15), by the plant's own number.
+      const dest = plantPx / 0.88, spritePx = spriteSizeFor(dest * 1.15 * dpr);
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+      const dotR = Math.max(1.5, (plantPx * R.notCornShare) / 2), notCornCss = rgbCss(R.notCorn);
+      let nd = 0;
+      for (const k of idx) {
+        const h = plantHash(k), kind = cert ? plantKind(cert[k], P.sorted) : "row";
+        if (kind === "double" && !this.showDoubles) continue;
+        nd++;
+        if (kind === "notCorn") { ctx.fillStyle = notCornCss; ctx.beginPath(); ctx.arc(X(P.x[k]), Y(P.y[k]), dotR, 0, 2 * Math.PI); ctx.fill(); continue; }
+        const colour = kind === "row" ? (T ? palette[T.plant[k]] : realistic ? look.corn : flat) : R.offRow;
+        const sprite = this.sprites.get(spritePx, colour, sizeM, h % R.variants, (h >>> 8) % R.rotations, realistic);
+        if (!sprite) continue;
+        const d = dest * (0.85 + (((h >>> 16) % 101) / 100) * 0.3);
+        ctx.drawImage(sprite, X(P.x[k]) - d / 2, Y(P.y[k]) - d / 2, d, d);
+      }
+      drawn.plants = nd; drawn.plantsAsPlants = nd;
+      return;
+    }
+    // Stamped: one buffer the size of the canvas in CSS pixels, a square per plant.
+    const w = Math.max(1, Math.ceil(bx1 - bx0)), h = Math.max(1, Math.ceil(by1 - by0));
+    let St = this.stamp;
+    if (!St || St.w !== w || St.h !== h) {
+      try {
+        const canvas = document.createElement("canvas"); canvas.width = w; canvas.height = h;
+        const g = canvas.getContext("2d"); if (!g) return;
+        const img = g.createImageData(w, h);
+        St = this.stamp = { canvas, g, img, u32: new Uint32Array(img.data.buffer), w, h };
+      } catch { return; }
+    } else St.u32.fill(0);
+    const { size, alpha } = stampOf(plantPx), a = Math.round(alpha * 255), half = size / 2, u32 = St.u32;
+    // Packed as the image's bytes lie in memory (r, g, b, a on every platform a browser runs on).
+    const pack = (c: ArrayLike<number>) => ((a << 24) | (c[2] << 16) | (c[1] << 8) | c[0]) >>> 0;
+    const tintPx = palette.map(pack), flatPx = pack(realistic ? look.corn : flat), offPx = pack(R.offRow), notCornPx = pack(R.notCorn), tint = T?.plant ?? null;
+    const scale = X(1) - X(0), ox = X(0) - bx0 - half, oy = Y(0) - by0 - half;
+    let n = 0;
+    P.index.each(vx0 - pad, vy0 - pad, vx1 + pad, vy1 + pad, k => {
+      const px = Math.round(P.x[k] * scale + ox), py = Math.round(P.y[k] * scale + oy);
+      if (px < 0 || py < 0 || px + size > w || py + size > h) return;
+      const kind = cert ? plantKind(cert[k], P.sorted) : "row";
+      if (kind === "double" && !this.showDoubles) return;
+      const v = kind === "notCorn" ? notCornPx : kind !== "row" ? offPx : tint ? tintPx[tint[k]] : flatPx;
+      for (let dy = 0; dy < size; dy++) { const o = (py + dy) * w + px; for (let dx = 0; dx < size; dx++) u32[o + dx] = v; }
+      n++;
+    });
+    St.g.putImageData(St.img, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(St.canvas, bx0, by0, w, h);
+    ctx.imageSmoothingEnabled = true;
+    drawn.plants = n; drawn.plantsStamped = n;
   }
 
   private heatCanvasFor(raster: HeatRaster): HTMLCanvasElement | null {
@@ -971,7 +1123,7 @@ export class TwinCanvasLayer extends L.Canvas {
     if (p.kind === "vegetation") { const k = indexOfId(s.vegetation.id, p.id); return k < 0 ? null : [s.vegetation.x[k], s.vegetation.y[k], s.vegetation.rM[k], reach(s.vegetation.rings, k, s.vegetation.x[k], s.vegetation.y[k])]; }
     if (p.kind === "cluster") return [s.clusters.x[p.index], s.clusters.y[p.index], s.clusters.rM[p.index], 0];
     // A plant: its own dot, ringed a little wider than a seedling.
-    if (p.kind === "plant") { const P = this.plants; return P && p.index >= 0 && p.index < P.n ? [P.x[p.index], P.y[p.index], 0.08, 0] : null; }
+    if (p.kind === "plant") { const P = this.plants; return P && p.index >= 0 && p.index < P.n ? [P.x[p.index], P.y[p.index], Math.max(0.08, (this.look?.plantSizeM ?? 0.1) * 0.6), 0] : null; }
     if (p.kind === "cornWeed" && s.corn) { const k = indexOfId(s.corn.weeds.id, p.id); return k < 0 ? null : [s.corn.weeds.x[k], s.corn.weeds.y[k], s.corn.weeds.rM[k], 0]; }
     return null;
   }
@@ -1028,19 +1180,25 @@ export class TwinCanvasLayer extends L.Canvas {
       for (let k = 0; k < K.gaps.n; k++) { if (K.gaps.status[k] !== S.gap.confirmed && !unc) continue; const dd = segD(K.gaps.x1[k], K.gaps.y1[k], K.gaps.x2[k], K.gaps.y2[k]); if (dd <= tolU && dd < gd) { gd = dd; gBest = k; } }
       if (gBest >= 0) return { kind: "cornGap", id: K.gaps.id[gBest] };
       // A plant, where plants are drawn (as close as they are drawn, never the classes hidden).
-      const P = this.plants;
-      if (P && this.showPlants && scale / s.mpu >= 12) {
+      // In the plant views every plant is drawn, the ones off the rows too, and is picked within its own drawn size.
+      const P = this.plants, view = this.cornViewNow(), plantView = view === "realistic" || view === "simple";
+      const sizeM = this.look?.plantSizeM ?? CORN_RENDER.defaultPlantSizeM, pxPerM = scale / s.mpu;
+      // Geometry draws only the doubles, and only with the founder's "All layers": only they are picked there.
+      const geometryDoubles = view === "geometry" && this.showDoubles && !!P?.sorted && pxPerM >= CORN_RENDER.geometryDoublesMinPxPerM;
+      if (P && (plantView ? sizeM * pxPerM >= CORN_RENDER.spriteMinPx : geometryDoubles || (view === null && this.showPlants && pxPerM >= 12))) {
         let pb = -1, pd = Infinity;
-        for (const k of P.index.query(x - tolU, y - tolU, x + tolU, y + tolU, 0)) {
+        const reach = plantView ? Math.max(tolU, (sizeM * 0.5) / s.mpu) : tolU;
+        for (const k of P.index.query(x - reach, y - reach, x + reach, y + reach, 0)) {
           const c = P.certainty ? P.certainty[k] : 0;
-          if (c >= 2 && !unc) continue;
+          if (geometryDoubles ? c !== 7 : plantView ? this.doubleHidden(k) : c >= 2 && !unc) continue;
           const dd = Math.hypot(P.x[k] - x, P.y[k] - y);
-          if (dd <= tolU && dd < pd) { pd = dd; pb = k; }
+          if (dd <= reach && dd < pd) { pd = dd; pb = k; }
         }
         if (pb >= 0) return { kind: "plant", index: pb, lat: P.points[pb][0], lng: P.points[pb][1] };
       }
       let rBest = -1, rd = Infinity;
-      for (let k = 0; k < K.rows.n; k++) {
+      // Rows are picked where rows are drawn: not in a plant view of a twin with plants.
+      if (!(plantView && P)) for (let k = 0; k < K.rows.n; k++) {
         const o = K.rows.lines.off[k], e = K.rows.lines.off[k + 1], xy = K.rows.lines.xy;
         for (let i = o; i + 3 < e; i += 2) { const dd = segD(xy[i], xy[i + 1], xy[i + 2], xy[i + 3]); if (dd <= tolU && dd < rd) { rd = dd; rBest = k; } }
       }

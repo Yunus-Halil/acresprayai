@@ -10,7 +10,7 @@ import { join } from "node:path";
 
 const [A, B] = process.argv.slice(2).filter(a => !a.startsWith("--"));
 const MAX = process.argv.includes("--max") ? Number(process.argv[process.argv.indexOf("--max") + 1]) : 20;
-const CLOCK = new Set(["builtAt", "timings", "totalMs", "elapsedMs", "ms", "msPerPhoto", "sampledMs", "classifyMs", "tieMsPerHelper", "concurrency"]);
+const CLOCK = new Set(["builtAt", "timings", "totalMs", "elapsedMs", "ms", "msPerPhoto", "colourMs", "sampledMs", "classifyMs", "tieMsPerHelper", "concurrency"]);
 const load = (d, f) => (existsSync(join(d, f)) ? JSON.parse(readFileSync(join(d, f), "utf8")) : null);
 
 const diffs = [];

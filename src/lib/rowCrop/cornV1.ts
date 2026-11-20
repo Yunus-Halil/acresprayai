@@ -33,6 +33,7 @@
 //   - a stand gap is reported only where both reads see nothing: a gap in a green row the plant read agrees with (or a
 //     corn row the green holds alone), with no plant position on the row's line inside it; every other gap is withheld.
 // Decision support only: nothing here decides a treatment.
+import { LATE_STAGE, isLatePhoto, lateShareOf } from "../fieldTwin/lateStage";
 import { CORN_CORES, coresAsked, photoViews } from "../fieldTwin/layers/l1Views";
 import { findMarks } from "../fieldTwin/layers/l2Find";
 import { type LearnedRecord, learnedGreenView } from "../fieldTwin/layers/l1Learned";
@@ -212,7 +213,10 @@ export type CornV1Read = {
   gaps: CornV1Gap[];
   /** The emergence guard, when it ran (CORN_COUNT_GUARD): the share of the rows' length with green on it, the cut,
    * and whether the plant count is withheld (then `plants.points` is empty, no candidates are made, and a note says so). */
-  count?: { rowGreenShare: number | null; cut: number; withheld: boolean; /** The row spacing the measure was read with, photo pixels (cornV1RowCover). */ rowSpacingPx?: number | null };
+  count?: { rowGreenShare: number | null; cut: number; withheld: boolean; /** The row spacing the measure was read with, photo pixels (cornV1RowCover). */ rowSpacingPx?: number | null;
+    /** With the late guard: the share of the assessment's cells in canopy or closed, and whether it (not the rows'
+     * green) withheld the count. */
+    lateShare?: number; late?: boolean };
   /** Whether "corn" could be said at all, and why not. */
   identity: { entered: string | null; spacingChecked: boolean; spacingFits: boolean | null; spacingImpossible: boolean; spacingM: number | null; mainPitchPx: number | null };
   summary: {
@@ -245,6 +249,9 @@ export type CornV1Options = RowCropOptions & {
   coresSizePx?: number | "self" | null;
   /** The emergence guard (CORN_COUNT_GUARD): true or false for this read, whatever CORN_COUNT_GUARD.on says. */
   countGuard?: boolean;
+  /** The late guard (2026-11-19, fieldTwin/lateStage.ts): with the count guard on, a photograph whose assessment
+   * holds at least LATE_STAGE.photoCut of its cells in canopy or closed also withholds its plant count. Off: as before. */
+  lateGuard?: boolean;
   /** The learned green view (L1, LAYERS.learnedGreen when not given): L2 reads its mask in place of the fixed one. */
   learnedGreen?: boolean;
   /** SPEED-1 (the FINAL-3 preset): with the cores asked, run them only where the photograph's plants are big enough to
@@ -524,11 +531,16 @@ export function readCornV1(px: PhotoPixels, params: RowCropParams, opts: CornV1O
   if (found) { v.plants.look = found.look; v.plants.typicalPx = found.typicalPx; v.plants.plantMask = learned ? "learned" : views!.plant === seedlings ? "seedlings" : "v1"; if (fixedCache && !opts.baselineSeedlings && (opts.learnedGreen ?? LAYERS.learnedGreen)) v.plants.learned = learned?.record ?? null; v.plants.coresRef = found.coresInfo && views?.cores ? { reference: found.coresInfo.reference, strongest: found.coresInfo.strongest, medianOnMarks: found.coresInfo.medianOnMarks ?? null, onMarks: found.coresInfo.onMarks ?? null, threshold: found.coresInfo.threshold, finePx: views.cores.asked.finePx, widePx: views.cores.asked.widePx } : null; }
   // The emergence guard: past the cut the plant count is withheld; the rows, gaps and weed candidates above stand.
   if (opts.baselineSeedlings ? false : opts.countGuard ?? CORN_COUNT_GUARD.on) {
-    const c = cornV1RowCover(px, v, seedlings), withheld = c.share != null && c.share > CORN_COUNT_GUARD.cut;
-    v.count = { rowGreenShare: c.share, cut: CORN_COUNT_GUARD.cut, withheld, rowSpacingPx: c.pitchPx };
+    const c = cornV1RowCover(px, v, seedlings), green = c.share != null && c.share > CORN_COUNT_GUARD.cut;
+    // The late guard: the canopy, read from the assessment the read already made (no second pass over the pixels).
+    const lateShare = opts.lateGuard ? lateShareOf(ad.assessment) : null, late = !green && isLatePhoto(lateShare);
+    const withheld = green || late;
+    v.count = { rowGreenShare: c.share, cut: CORN_COUNT_GUARD.cut, withheld, rowSpacingPx: c.pitchPx, ...(lateShare != null ? { lateShare, late } : {}) };
     if (withheld) {
       v.plants.points = []; for (const r of v.rows) r.plants = null;
-      v.notes.unshift(`Plant count withheld: ${CORN_COUNT_GUARD.message}. Green stands on ${Math.round(c.share! * 100)} % of the rows' length; plants are counted one by one up to ${Math.round(CORN_COUNT_GUARD.cut * 100)} %. Rows, gaps and weed candidates are reported as before.`);
+      v.notes.unshift(late
+        ? `Plant count withheld: ${LATE_STAGE.message}. ${Math.round(lateShare! * 100)} % of the photograph reads as a canopy (plants are counted one by one under ${Math.round(LATE_STAGE.photoCut * 100)} %). Rows, gaps and weed candidates are reported as before.`
+        : `Plant count withheld: ${CORN_COUNT_GUARD.message}. Green stands on ${Math.round(c.share! * 100)} % of the rows' length; plants are counted one by one up to ${Math.round(CORN_COUNT_GUARD.cut * 100)} %. Rows, gaps and weed candidates are reported as before.`);
       return v;
     }
   }

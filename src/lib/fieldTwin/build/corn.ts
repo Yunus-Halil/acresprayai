@@ -16,6 +16,7 @@ import { type CornPlants, cornPlantsOf, placeDots, readRows } from "../cornPlant
 import type { CornPlantsOptions, PlacedDots } from "../layers/l3Place";
 import type { Reconstruction } from "../plantsFirst";
 import { type CornPreset, cornPresetSettings } from "../cornPreset";
+import { type PhotoColours, samplePhotoColours } from "../cornColours";
 import type { Pool } from "./pool";
 import { type BuildHooks, type CornVariant, type PhotoSource, checkCancelled } from "./types";
 
@@ -49,6 +50,9 @@ export type CornStageResult = {
    * made no certain row (the twin keeps the field's rows) or on a comparison build. */
   plants?: CornPlants | null;
   reads: CornPhotoRead[];
+  /** Each read photograph's soil and corn colours, by name (cornColours.ts): for the twin's Realistic view, read after
+   * the corn read from the same decoded pixels. `colourMs`: what sampling them cost over the whole flight. */
+  colours: { name: string; colours: PhotoColours }[]; colourMs: number;
   failed: { name: string; reason: string }[];
   /** Photographs whose read holds any row. */
   withRows: number;
@@ -60,8 +64,8 @@ export type CornStageResult = {
 export async function cornStage(photos: PhotoSource[], frames: Map<string, GeorefFrame>, hooks: BuildHooks = {}, pool: Pool | null = null, files?: Map<string, Blob>, variant?: CornVariant, maxParallel: number = CORN_STAGE.maxParallel, preset: CornPreset | null = null): Promise<CornStageResult> {
   const t0 = Date.now(), baseline = variant === "corn-v1.0";
   const list = photos.filter(p => frames.has(p.name));
-  const reads: CornPhotoRead[] = [], failed: { name: string; reason: string }[] = [];
-  let done = 0, readMs = 0;
+  const reads: CornPhotoRead[] = [], failed: { name: string; reason: string }[] = [], colours: { name: string; colours: PhotoColours }[] = [];
+  let done = 0, readMs = 0, colourMs = 0;
   const gsdOf = (name: string) => { const f = frames.get(name)!; return groundSampleAt(f, f.intrinsics.cx, f.intrinsics.cy); };
   const report = (name: string) => hooks.onProgress?.({ stage: "corn", done, total: list.length, message: `${name}: read by Corn V1`, elapsedMs: Date.now() - t0 });
   const one = async (p: PhotoSource): Promise<void> => {
@@ -72,10 +76,13 @@ export async function cornStage(photos: PhotoSource[], frames: Map<string, Geore
         const r = await pool.run({ kind: "corn", name: p.name, file, gsdM: gsdOf(p.name), baseline, preset });
         if (r.kind !== "corn") throw new Error("the helper answered another task");
         reads.push(r.read); readMs += r.ms;
+        colours.push({ name: p.name, colours: r.colours }); colourMs += r.colourMs;
       } else {
         const t = Date.now();
         const px = await p.decode(1);
-        reads.push(cornPhotoRead(p.name, px, gsdOf(p.name), baseline, null, preset)); readMs += Date.now() - t;
+        const read = cornPhotoRead(p.name, px, gsdOf(p.name), baseline, null, preset);
+        reads.push(read); readMs += Date.now() - t;
+        const tc = performance.now(); colours.push({ name: p.name, colours: samplePhotoColours(px, read.plants) }); colourMs += performance.now() - tc;
       }
       const last = reads[reads.length - 1];
       hooks.log?.(`${p.name}: ${last.rows.filter(r => r.identity === "corn").length} corn rows, ${last.rows.length} rows, ${last.patches.filter(q => q.verdict === "weed candidate").length} weed candidates, ${last.gaps.filter(g => g.verdict === "stand gap").length} gaps${last.countWithheld ? "; plant count withheld (too late for a per-plant count)" : ""}`);
@@ -94,9 +101,11 @@ export async function cornStage(photos: PhotoSource[], frames: Map<string, Geore
   // Reads arrive in completion order; the field does not depend on it, the report and the twin should not either.
   reads.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   failed.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  colours.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  hooks.log?.(`soil and corn colours: ${colours.filter(c => c.colours.soil).length} photographs with a soil colour, ${colours.filter(c => c.colours.corn).length} with a corn colour, ${colourMs.toFixed(0)} ms in all`);
   const C = cornCombine(reads, frames, preset, variant, hooks.log, () => hooks.onProgress?.({ stage: "corn", done: list.length, total: list.length, message: "placing the plants, then the rows through them", elapsedMs: Date.now() - t0 }));
   if (C.reads !== reads) { reads.length = 0; reads.push(...C.reads); }
-  return { variant, field: C.field, plants: C.plants, reads, failed, withRows: reads.filter(r => r.rows.length).length, msPerPhoto: reads.length ? Math.round(readMs / reads.length) : 0, ms: Date.now() - t0 };
+  return { variant, field: C.field, plants: C.plants, reads, colours, colourMs: Math.round(colourMs), failed, withRows: reads.filter(r => r.rows.length).length, msPerPhoto: reads.length ? Math.round(readMs / reads.length) : 0, ms: Date.now() - t0 };
 }
 
 /**

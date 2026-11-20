@@ -67,7 +67,7 @@ let nextId = 0;
 
 /** A single photograph has no flight, so the preset's read options only (the flight's guard and plants first do not
  * apply). The candidates for a field's rows are never drawn here, so they are not made. */
-const cornPresetRead = (p: "today" | "final3") => { const r = cornPresetSettings(p).read; return { cores: r.cores, coresReference: r.coresReference, countGuard: r.countGuard, learnedGreen: r.learnedGreen, coresWhenTouching: r.coresWhenTouching, rowCandidates: false }; };
+const cornPresetRead = (p: "today" | "final3") => { const r = cornPresetSettings(p).read; return { cores: r.cores, coresReference: r.coresReference, countGuard: r.countGuard, lateGuard: r.lateGuard, learnedGreen: r.learnedGreen, coresWhenTouching: r.coresWhenTouching, rowCandidates: false }; };
 /** A development build only: the corn read's own marks, for the benchmark script (cornPhotoScoutScore.mjs). */
 function exposeCornRead(name: string, preset: string, v: CornV1Read): CornV1Read {
   if (import.meta.env.DEV) { const w = window as unknown as { __photoScout?: Record<string, unknown> }; w.__photoScout = { ...(w.__photoScout ?? {}), [name]: { preset, marks: v.plants.points.map(q => [q.x, q.y]), withheld: !!v.count?.withheld, rows: v.rows.length, width: v.green.width, height: v.green.height } }; }

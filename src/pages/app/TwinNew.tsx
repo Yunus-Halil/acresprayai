@@ -14,6 +14,8 @@ import { usePhotoGround } from "@/lib/fieldTwin/photoGroundFlag";
 import { defaultCornPreset } from "@/lib/fieldTwin/cornFinal3Flag";
 import { stoppedBuildText, unfinishedTrace } from "@/lib/fieldTwin/buildTrace";
 import { type CheckCrop, type CheckFinding, type PhotoCheck, assessPhotographs, readForCheck } from "@/lib/fieldTwin/preflight";
+import { type StageSample, lateFlightWarning, sampleFlightStage } from "@/lib/fieldTwin/stageSample";
+import { browserPhoto } from "@/lib/fieldTwin/build/browserPhotos";
 import { type BuildSessionState, cancelBuild, clearBuildSession, discardBuildSession, retrySave, sessionBusy, startBuildSession, useBuildSession } from "@/lib/fieldTwin/buildSession";
 import { type BuildStage, stagesFor } from "@/lib/fieldTwin/build/types";
 import { useAnalysisAllowed } from "@/lib/fieldTwin/analysisAccess";
@@ -173,6 +175,24 @@ export default function TwinNew() {
   }, [session, nav]);
 
   const check: PhotoCheck | null = useMemo(() => (checked ? assessPhotographs(checked.inputs, crop, founder ? "founder" : "participant", checked.otherFiles) : null), [checked, crop, founder]);
+  // Corn: how late the flight is, from a sample of its photographs (stageSample.ts). A warning, never a stop.
+  const [stage, setStage] = useState<{ files: File[]; result: StageSample | null; progress: { done: number; total: number } | null } | null>(null);
+  // Once per set of photographs: a result for another set (picked meanwhile) is dropped by the files check.
+  const stageFor = useRef<File[] | null>(null);
+  useEffect(() => {
+    if (crop !== "corn" || !check || !check.usable.length || stageFor.current === files) return;
+    const keep = new Set(check.usable), jpegs = files.filter(f => keep.has(f.name) && /\.jpe?g$/i.test(f.name));
+    if (!jpegs.length) return;
+    stageFor.current = files;
+    const mine = (s: { files: File[] } | null) => !!s && s.files === files;
+    setStage({ files, result: null, progress: { done: 0, total: 0 } });
+    void sampleFlightStage(jpegs.map(f => { const p = browserPhoto(f, f.name); return { name: f.name, decode: (d: number) => p.decode(d) }; }), check.gsdCm != null ? check.gsdCm / 100 : null,
+      (done, total) => setStage(s => (mine(s) ? { ...s!, progress: { done, total } } : s)))
+      .then(result => setStage(s => (mine(s) ? { files, result, progress: null } : s)))
+      .catch(() => setStage(s => (mine(s) ? { files, result: null, progress: null } : s)));
+  }, [crop, check, files]);
+  const lateWarning = crop === "corn" && stage?.files === files && stage.result?.verdict === "late" ? stage.result : null;
+  const stageRunning = crop === "corn" && stage?.files === files && !!stage.progress;
   useEffect(() => {
     if (!check) return;
     track("twin_check_done", { counts: { files: check.totalFiles, usable: check.usable.length, stops: check.findings.filter(f => f.level === "stop").length, warnings: check.findings.filter(f => f.level === "warning").length }, detail: { crop: crop ?? "", camera: check.camera ?? "" } });
@@ -181,7 +201,7 @@ export default function TwinNew() {
   const pick = async (list: FileList | File[] | null) => {
     const picked = list ? [...list] : [];
     if (!picked.length) return;
-    setFiles(picked); setChecked(null);
+    setFiles(picked); setChecked(null); setStage(null); stageFor.current = null;
     if (!name) {
       const folder = (picked[0] as File & { webkitRelativePath?: string }).webkitRelativePath?.split("/")[0];
       if (folder) setName(folder);
@@ -279,12 +299,22 @@ export default function TwinNew() {
               </dl>
             )}
             {check.findings.length > 0 && <ul className="space-y-2">{check.findings.map(f => <FindingLine key={f.text} f={f} />)}</ul>}
+            {stageRunning && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Looking at how far along the corn is{stage?.progress?.total ? `: ${stage.progress.done} of ${stage.progress.total} photographs` : ""}</p>}
+            {lateWarning && (
+              <div className="space-y-2 rounded-md border border-amber-400 bg-amber-50 p-3 text-sm text-amber-900" role="status" aria-label="Late flight">
+                <p className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{lateFlightWarning(lateWarning, check.gsdCm)}</span></p>
+                <div className="flex flex-wrap gap-2 pl-6">
+                  <Button type="button" size="sm" variant="outline" onClick={() => folderInput.current?.click()}><FolderOpen className="h-4 w-4" />Choose other photographs</Button>
+                  <span className="self-center text-xs text-amber-800">or build anyway below.</span>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </section>
 
       <div className="space-y-2">
-        <Button size="lg" onClick={build} disabled={!!blocker || !check || !check.canBuild || !crop || !!reading || sessionBusy(session)}>Build the Field Twin</Button>
+        <Button size="lg" onClick={build} disabled={!!blocker || !check || !check.canBuild || !crop || !!reading || sessionBusy(session)}>{lateWarning ? "Build anyway" : "Build the Field Twin"}</Button>
         <p className="text-xs text-muted-foreground">
           {!crop ? "Choose the crop first." : !check ? "Choose the photographs first." : stops.length ? "This set cannot be built: see above." : `Building takes a few minutes${crop === "corn" ? ", several seconds per photograph for corn" : ""}. Keep this tab open until it says the twin is saved.`}
         </p>

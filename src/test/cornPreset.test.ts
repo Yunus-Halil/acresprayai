@@ -12,16 +12,18 @@ import { CORES_WHEN_TOUCHING } from "@/lib/rowCrop/cornV1";
 describe("the presets", () => {
   it("today: the app as it was", () => {
     const T = CORN_PRESET_SETTINGS.today;
-    expect(T.read).toEqual({ rowSpans: false, rowCandidates: false, cores: false, coresReference: "marks", countGuard: false, learnedGreen: false, coresWhenTouching: false });
+    expect(T.read).toEqual({ rowSpans: false, rowCandidates: false, cores: false, coresReference: "marks", countGuard: false, lateGuard: false, learnedGreen: false, coresWhenTouching: false });
     expect(T.flightGuard).toBe(false); expect(T.ground).toBe(false); expect(T.keepLook).toBe(false);
     expect(T.plants.sequence).toBe(SEQUENCE_V1); expect(T.plants.placing).toBe(PLANTS_FIRST_V1);
   });
   it("final3: the frozen setup, layers all off", () => {
     const F = CORN_PRESET_SETTINGS.final3;
-    expect(F.read).toEqual({ rowSpans: true, rowCandidates: true, cores: true, coresReference: "marks", countGuard: true, learnedGreen: false, coresWhenTouching: true });
+    expect(F.read).toEqual({ rowSpans: true, rowCandidates: true, cores: true, coresReference: "marks", countGuard: true, lateGuard: true, learnedGreen: false, coresWhenTouching: true });
     expect(F.flightGuard).toBe(true); expect(F.ground).toBe(true);
-    expect(F.plants.sequence).toEqual({ ...SEQUENCE, placeOffSpacing: true, offSpacingStricterOnly: true, sweepLoneMarks: false });
-    expect(F.plants.sequence).toEqual({ ...SEQUENCE, ...CORN_CANDIDATE_FINAL3.field.sequence });
+    expect(F.plants.sequence).toEqual({ ...SEQUENCE, placeOffSpacing: true, offSpacingStricterOnly: true, sweepLoneMarks: false, retryTooFar: true, doublesApart: true });
+    // The frozen FINAL-3 setup, and on top of it (2026-11-19) the retry of the "too far" dots and the doubles told apart.
+    expect(F.plants.sequence).toEqual({ ...SEQUENCE, ...CORN_CANDIDATE_FINAL3.field.sequence, retryTooFar: true, doublesApart: true });
+    expect(SEQUENCE.retryTooFar).toBe(false); expect(SEQUENCE.doublesApart).toBe(false); expect(SEQUENCE_V1.retryTooFar).toBe(false);
     expect(F.plants.placing).toBe(PLANTS_FIRST); expect(F.plants.layers).toEqual({});
   });
   it("SPEED-1: the cores' cut is halfway between the private seedling flight's ratio and 53.JPG's", () => {

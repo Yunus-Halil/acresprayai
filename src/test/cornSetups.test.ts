@@ -5,7 +5,11 @@ import { CORN_CORES, CORN_COUNT_GUARD } from "@/lib/rowCrop/cornV1";
 
 describe("the candidate frozen for FINAL-3", () => {
   it("resolves, with the code as it is, to every value it was frozen with", () => {
-    expect(resolveSetup(CORN_CANDIDATE_FINAL3)).toEqual(CORN_CANDIDATE_FINAL3_FROZEN);
+    // Switches added to SEQUENCE since the freeze (2026-11-19: retryTooFar, doublesApart) resolve OFF in the frozen
+    // setup, so it still means what it meant; named here one by one, everything else compared exactly.
+    const r = resolveSetup(CORN_CANDIDATE_FINAL3), seq = r.SEQUENCE as Record<string, unknown>;
+    for (const k of ["retryTooFar", "doublesApart"]) { expect(seq[k]).toBe(false); delete seq[k]; }
+    expect(r).toEqual(CORN_CANDIDATE_FINAL3_FROZEN);
   });
   it("is the cores (new reference), variant A, the guard with its misread check, the sweep off", () => {
     const r = resolveSetup(CORN_CANDIDATE_FINAL3);

@@ -159,6 +159,11 @@ export type TwinCorn = {
   plants?: TwinCornPlants;
   /** Plants-first twins (2026-11-14 on): the field rows the stretches in `rows` belong to. */
   fieldRows?: TwinCornFieldRow[];
+  /** The field's soil and corn colours from its photographs (2026-11-19 on), for the Realistic view. */
+  look?: TwinCornLook | null;
+  /** How late the flight is (2026-11-19 on, lateStage.ts): the photographs read, how many read as a closed canopy,
+   * the cut, and the verdict the viewer's banner follows. Absent in older twins (no banner). */
+  stage?: TwinCornStage | null;
   summary: {
     cornRows: number; unconfirmedRows: number; cornRowLengthM: number; offLatticeDropped: number;
     weeds: { confirmed: number; unconfirmed: number; contested: number };
@@ -168,16 +173,40 @@ export type TwinCorn = {
   notes: string[];
 };
 
+/**
+ * What the field looks like, for the Realistic view (2026-11-19 on; absent in older twins): per photograph, the soil
+ * colour and the corn colour read from its pixels (cornColours.ts), placed where the photograph's centre sees the
+ * ground. Colours only: no part of a photograph is kept here. The viewer blends them over the ground.
+ */
+export type TwinRgb = [number, number, number];
+export type TwinCornLook = {
+  version: 1;
+  /** One entry per photograph that gave a colour (either may be null). */
+  samples: { lat: number; lng: number; soil: TwinRgb | null; corn: TwinRgb | null }[];
+  /** The field's own soil and corn colour: the median over its photographs (null when none gave one). */
+  soil: TwinRgb | null; corn: TwinRgb | null;
+  /** A typical plant's span on the ground, metres, from the green piece the photographs measured as typical (null when
+   * they measured none). Every drawn plant takes this size: single plants are not sized. */
+  plantSizeM: number | null;
+  note: string;
+};
+
+export type TwinCornStage = { version: 1; looked: number; late: number; photoCut: number; verdict: "late" | "ok" };
+
 export type TwinCornPlants = {
   /** Per plant: latitude, longitude. */
   points: LatLngPair[];
   /** Per plant: 0 a certain plant on a row, 1 a probable one, 2 seen on no row, 3 between two rows (not the crop);
-   * found along a row at the lower bar (2026-11-16 on, probable): 4 by two or more photographs, 5 by one sharp view. */
+   * found along a row at the lower bar (2026-11-16 on, probable): 4 by two or more photographs, 5 by one sharp view;
+   * 7 a double (2026-11-19 on): on a row's line, closer than half a plant spacing to a plant on it. A twin whose summary
+   * carries `doubles` sorted its plants that way: 2 and 3 are then green that is not corn, not counted. */
   certainty: number[];
   /** Per plant: photographs that located it. */
   photos: number[];
   note: string;
-  summary: { plants: number; certain: number; probable: number; onNoRow: number; betweenRows: number; confirmedM: number; notConfirmedM: number; alongRowsTwo?: number; alongRowsOne?: number };
+  summary: { plants: number; certain: number; probable: number; onNoRow: number; betweenRows: number; confirmedM: number; notConfirmedM: number; alongRowsTwo?: number; alongRowsOne?: number;
+    /** The doubles (class 7). Present: the twin's plants off the rows were sorted (doubles counted, the rest not corn). */
+    doubles?: number };
 };
 
 export type TwinVegetation = { id: number; lat: number; lng: number; areaM2: number; seenBy: number; ring: LatLngPair[] };
@@ -244,6 +273,16 @@ function checkCorn(c: unknown, atlases: number): string | null {
   if (k.fieldRows != null) {
     if (!isArr(k.fieldRows)) return "field rows are not a list";
     for (const f of k.fieldRows) if (!isNum(f.id) || !isNum(f.plants) || !isNum(f.certain) || !isNum(f.perM) || (f.kind !== "certain" && f.kind !== "geometry")) return `field row ${f.id} is incomplete`;
+  }
+  if (k.look != null) {
+    const L = k.look as Partial<TwinCornLook>;
+    const rgb = (c: unknown) => c === null || (isArr(c) && c.length === 3 && c.every(v => isNum(v) && v >= 0 && v <= 255));
+    if (L.version !== 1 || !isArr(L.samples) || !rgb(L.soil) || !rgb(L.corn) || (L.plantSizeM != null && !(isNum(L.plantSizeM) && L.plantSizeM > 0))) return "the field's colours are not a version 1 record";
+    for (const q of L.samples) if (!q || !isNum(q.lat) || !isNum(q.lng) || !rgb(q.soil) || !rgb(q.corn)) return "a colour sample has no position or a broken colour";
+  }
+  if (k.stage != null) {
+    const g = k.stage as Partial<TwinCornStage>;
+    if (g.version !== 1 || !isNum(g.looked) || !isNum(g.late) || !isNum(g.photoCut) || (g.verdict !== "late" && g.verdict !== "ok") || g.late > g.looked) return "the flight's stage is not a version 1 record";
   }
   for (const w of k.weeds) {
     if (!["confirmed", "unconfirmed", "contested"].includes(w.status as string)) return `weed ${w.id} has an unknown status`;

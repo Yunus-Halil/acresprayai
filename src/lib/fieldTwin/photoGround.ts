@@ -482,10 +482,17 @@ export function parseGroundManifest(json: unknown): GroundManifest | null {
 
 // ---- The photographs that saw a point (the evidence).
 
-export type PhotoView = { name: string; u: number; v: number; nadirM: number; pixelM: number };
+export type PhotoView = { name: string; u: number; v: number; nadirM: number; pixelM: number;
+  /** Where the `others` handed in fall in this photograph, by their index there (only those inside its frame). */
+  others?: { i: number; u: number; v: number }[];
+  /** Which way north runs in this photograph at the point: a unit step in pixels (asked with `north`). */
+  north?: [number, number] };
 
-/** A ground point in each photograph whose footprint holds it, nearest nadir first: name, pixel, nadir distance. */
-export function viewsOf(frames: GeorefFrame[], lat: number, lng: number, max = 4): PhotoView[] {
+/** A ground point in each photograph whose footprint holds it, nearest nadir first: name, pixel, nadir distance.
+ * `extra.others` (latitude, longitude): further points put into each of those photographs through the same camera;
+ * `extra.north`: which way north runs in each photograph there. */
+export function viewsOf(frames: GeorefFrame[], lat: number, lng: number, max = 4, extra: { others?: [number, number][]; north?: boolean } = {}): PhotoView[] {
+  const others = extra.others;
   const { cams, origin } = groundCams(new Map(frames.map(f => [f.name, f])));
   const L = localOf(origin[0], origin[1]), e = L.e(lng), n = L.n(lat);
   const out: PhotoView[] = [];
@@ -493,7 +500,17 @@ export function viewsOf(frames: GeorefFrame[], lat: number, lng: number, max = 4
     if (lat < c.box[0] || lat > c.box[2] || lng < c.box[1] || lng > c.box[3] || !inRingEN(c, e, n)) continue;
     const h = groundToPixel(c.f, lat, lng, c.alt);
     if (!h || h.u < 0 || h.v < 0 || h.u > c.f.intrinsics.width - 1 || h.v > c.f.intrinsics.height - 1) continue;
-    out.push({ name: c.name, u: h.u, v: h.v, nadirM: Math.hypot(c.ne - e, c.nn - n), pixelM: groundSampleAt(c.f, h.u, h.v) ?? 0 });
+    const view: PhotoView = { name: c.name, u: h.u, v: h.v, nadirM: Math.hypot(c.ne - e, c.nn - n), pixelM: groundSampleAt(c.f, h.u, h.v) ?? 0 };
+    if (others?.length) {
+      view.others = [];
+      others.forEach(([la, ln], i) => { const q = groundToPixel(c.f, la, ln, c.alt); if (q && q.u >= 0 && q.v >= 0 && q.u <= c.f.intrinsics.width - 1 && q.v <= c.f.intrinsics.height - 1) view.others!.push({ i, u: q.u, v: q.v }); });
+    }
+    if (extra.north) {
+      // 10 cm north of the point, through the same camera.
+      const q = groundToPixel(c.f, lat + 0.1 / 111_320, lng, c.alt);
+      if (q) { const du = q.u - h.u, dv = q.v - h.v, len = Math.hypot(du, dv); if (len > 1e-9) view.north = [du / len, dv / len]; }
+    }
+    out.push(view);
   }
   return out.sort((a, b) => a.nadirM - b.nadirM).slice(0, max);
 }

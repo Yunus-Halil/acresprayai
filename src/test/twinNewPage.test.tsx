@@ -34,6 +34,13 @@ vi.mock("@/lib/fieldTwin/preflight", async orig => {
   };
 });
 
+// The stage check before a corn build (stageSample.ts) decodes photographs, which jsdom cannot: its verdict is set here.
+let stageVerdict: "late" | "ok" = "ok";
+vi.mock("@/lib/fieldTwin/stageSample", async orig => {
+  const real = await orig<typeof import("@/lib/fieldTwin/stageSample")>();
+  return { ...real, sampleFlightStage: async () => (stageVerdict === "late" ? { looked: 8, late: 6, verdict: "late", shares: [], down: 4, ms: 1 } : { looked: 8, late: 0, verdict: "ok", shares: [], down: 4, ms: 1 }) };
+});
+
 import TwinNew from "@/pages/app/TwinNew";
 
 const pickFiles = async (names: string[]) => {
@@ -44,13 +51,44 @@ const pickFiles = async (names: string[]) => {
 };
 
 beforeEach(() => {
-  who = "participant"; agreedTo = "pilot-2026-11-v1";
+  who = "participant"; agreedTo = "pilot-2026-11-v1"; stageVerdict = "ok";
   startBuildSession.mockClear();
   headers = {};
   for (let k = 1; k <= 12; k++) headers[`DJI_${String(k).padStart(4, "0")}.JPG`] = meta({ lat: 38.9 + k * 0.0001, lng: -76.9 + (k % 4) * 0.0002 });
   headers["DJI_0013.JPG"] = meta({ lat: null, lng: null });
   // Browsers without these cannot build; jsdom has none of them.
   Object.assign(globalThis, { Worker: class {}, OffscreenCanvas: class {}, CompressionStream: class {}, createImageBitmap: () => undefined });
+});
+
+describe("a late corn flight", () => {
+  it("is warned about in plain words, offers other photographs, and still builds: a participant is told, never blocked", async () => {
+    stageVerdict = "late";
+    render(<MemoryRouter><TwinNew /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("radio", { name: /Corn/ }));
+    await pickFiles(Object.keys(headers));
+    const warning = await screen.findByRole("status", { name: "Late flight" });
+    expect(warning).toHaveTextContent(/This looks like a late flight\. In 6 of the 8 photographs looked at, the corn canopy has closed/);
+    expect(warning).toHaveTextContent(/Support for later flights is coming in an update/);
+    expect(screen.getByRole("button", { name: /Choose other photographs/ })).toBeInTheDocument();
+    const build = screen.getByRole("button", { name: "Build anyway" });
+    expect(build).toBeEnabled();
+    fireEvent.click(build);
+    expect(startBuildSession).toHaveBeenCalledOnce();
+  });
+
+  it("says nothing for a flight that is not late, or for an orchard", async () => {
+    render(<MemoryRouter><TwinNew /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("radio", { name: /Corn/ }));
+    await pickFiles(Object.keys(headers));
+    await screen.findByLabelText("Photograph check");
+    await act(async () => { await new Promise(r => setTimeout(r, 20)); });
+    expect(screen.queryByRole("status", { name: "Late flight" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Build the Field Twin" })).toBeEnabled();
+    stageVerdict = "late";
+    fireEvent.click(screen.getByRole("radio", { name: /Orchard/ }));
+    await act(async () => { await new Promise(r => setTimeout(r, 20)); });
+    expect(screen.queryByRole("status", { name: "Late flight" })).toBeNull();
+  });
 });
 
 describe("New Field Twin", () => {

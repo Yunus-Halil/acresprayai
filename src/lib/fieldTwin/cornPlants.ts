@@ -11,7 +11,7 @@ import { type GeorefFrame, pixelToGround } from "@/lib/directGeoref/projection";
 import { ROW_POINTS } from "@/lib/rowCrop/greenPoints";
 import { type LatLngAlt, fromEnu, toEnu } from "@/lib/sourceFrames/odm";
 import type { CornFieldResult, CornPhotoRead, FieldGround } from "./cornField";
-import { PLANTS_FIRST, type Reconstruction, SEQUENCE } from "./plantsFirst";
+import { PLANTS_FIRST, type Reconstruction, SEQUENCE, SETTLED } from "./plantsFirst";
 
 export type CornStretch = {
   /** The field row it belongs to, and whether plants were seen along it. */
@@ -31,7 +31,9 @@ export type CornPlants = {
   points: [number, number][];
   /** Per plant: 0 a certain plant on a row, 1 a probable one, 2 seen on no row, 3 between two rows (not the crop);
    * found along a row at the lower bar (2026-11-16, probable): 4 by two or more photographs, 5 by one photograph's sharp view;
-   * 6 a plant the second look added (L7, LAYERS.secondLook, development only). */
+   * 6 a plant the second look added (L7, LAYERS.secondLook, development only);
+   * 7 a double (SEQUENCE.doublesApart): on a row's line, refused only as closer than the too-close limit to a plant on it.
+   * With doublesApart, 2 and 3 are green that is not corn (not counted). */
   shown: number[];
   /** Per plant: photographs that located it. */
   photos: number[];
@@ -45,7 +47,9 @@ export type CornPlants = {
     /** Of the plants on rows, those there only by the loosened placement (development, `free`). */
     loosened?: number;
     /** Of the plants on rows, those the second look put there (L7, development). */
-    secondLook?: number };
+    secondLook?: number;
+    /** The doubles (shown 7), with SEQUENCE.doublesApart: its presence says 2 and 3 are not counted. */
+    doubles?: number };
   /** Per plant: 1 when it is on its row only by the loosened placement (development, `free`). */
   loose?: number[];
 };
@@ -105,14 +109,16 @@ export function cornPlantsOf(P: PlacedDots, rec: Reconstruction, F: CornFieldRes
   if (!stretches.some(s => s.confirmed)) return null;
   // Every dot of the stricter marks, as before; a candidate only when it stands on a row.
   const kept: number[] = []; for (let i = 0; i < all.length; i++) if (i < strict || rec.rowOf[i] >= 0) kept.push(i);
-  const shown = kept.map(i => (i >= strict ? (rec.secondLook?.[i] ? 6 : tier![i] === 1 ? 4 : 5) : rec.rowOf[i] >= 0 ? (rec.certainty[i] === 0 ? 0 : 1) : rec.between[i] ? 3 : 2));
-  const cnt = [0, 0, 0, 0, 0, 0, 0]; for (const v of shown) cnt[v]++;
+  // A double (q.doublesApart): on a row's line, refused only as too close to a plant on that row.
+  const apart = (opts.sequence ?? SEQUENCE).doublesApart;
+  const shown = kept.map(i => (i >= strict ? (rec.secondLook?.[i] ? 6 : tier![i] === 1 ? 4 : 5) : rec.rowOf[i] >= 0 ? (rec.certainty[i] === 0 ? 0 : 1) : apart && rec.settled[i] === SETTLED.tooClose ? 7 : rec.between[i] ? 3 : 2));
+  const cnt = [0, 0, 0, 0, 0, 0, 0, 0]; for (const v of shown) cnt[v]++;
   const sumM = (ok: boolean) => Math.round(stretches.filter(s => s.confirmed === ok).reduce((t, s) => t + s.lengthM, 0) * 10) / 10;
   return {
     points: kept.map(i => ll(all[i].e, all[i].n)), shown, photos: kept.map(i => all[i].photos), stretches, rows: fieldRows,
     ...(opts.free ? { loose: kept.map(i => (rec.rowOf[i] >= 0 && (rec.loose[i] || tier?.[i] === 3) ? 1 : 0)) } : {}),
     geometry: { spacingM: G.spacingM, directionDeg: G.directionDeg, seedM: G.seedM, certainRows: G.certainRows, certainDots: G.certainDots },
-    summary: { plants: kept.length, certain: cnt[0], probable: cnt[1], onNoRow: cnt[2], betweenRows: cnt[3], rows: rec.rows.length, confirmedM: sumM(true), notConfirmedM: sumM(false), ...(tier ? { alongRowsTwo: cnt[4], alongRowsOne: cnt[5] } : {}), ...(opts.free ? { loosened: kept.filter(i => rec.rowOf[i] >= 0 && (rec.loose[i] || tier?.[i] === 3)).length } : {}), ...(rec.secondLook ? { secondLook: kept.filter(i => rec.secondLook![i]).length } : {}) },
+    summary: { plants: kept.length, certain: cnt[0], probable: cnt[1], onNoRow: cnt[2], betweenRows: cnt[3], rows: rec.rows.length, confirmedM: sumM(true), notConfirmedM: sumM(false), ...(tier ? { alongRowsTwo: cnt[4], alongRowsOne: cnt[5] } : {}), ...(opts.free ? { loosened: kept.filter(i => rec.rowOf[i] >= 0 && (rec.loose[i] || tier?.[i] === 3)).length } : {}), ...(rec.secondLook ? { secondLook: kept.filter(i => rec.secondLook![i]).length } : {}), ...(apart ? { doubles: cnt[7] } : {}) },
   };
 }
 

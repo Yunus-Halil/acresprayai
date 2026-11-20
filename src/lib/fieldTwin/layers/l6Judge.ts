@@ -65,6 +65,24 @@ export function judgeDots(dots: Dot[], L4: ObviousPlants, L5: RowProfile, o: Pla
     if (certainty[i] === 2) certainty[i] = 1;
     along[ri].push(A[i]); extra[ri].push(i); onCertain[i] = 1; settled[i] = offSpacing[i] ? SETTLED.placedOffSpacing : SETTLED.placedAtSpacing;
   }
+  // Again (q.retryTooFar): the stricter marks' dots refused as too far, now that the plants around them are placed;
+  // strongest first, until nothing more joins, by the main pass's own tests. One now as close as a double to a plant
+  // placed since is a double. A candidate of the second look is not tried again (it is kept only on a row, so a retry
+  // would add plants never drawn or counted before, not put back ones that were).
+  if (q.retryTooFar && spacingRules) for (let changed = true; changed;) {
+    changed = false;
+    for (const i of order) {
+      if (onCertain[i] || settled[i] !== SETTLED.tooFar || tier?.[i]) continue;
+      const ri = nearestRow(i, lines); if (ri < 0) continue;
+      let nearest = Infinity; for (const a of along[ri]) nearest = Math.min(nearest, Math.abs(a - A[i]));
+      if (nearest < tooClose) { why[i] = 2; settled[i] = SETTLED.tooClose; continue; }
+      const k = Math.round(nearest / seed);
+      if (k > q.maxGapSeeds) continue;
+      if (k < 1 || Math.abs(nearest - k * seed) > q.probableTol * seed) { if (!q.placeOffSpacing) { why[i] = 3; settled[i] = SETTLED.offSpacing; continue; } offSpacing[i] = 1; }
+      if (certainty[i] === 2) certainty[i] = 1;
+      along[ri].push(A[i]); extra[ri].push(i); onCertain[i] = 1; why[i] = 0; settled[i] = SETTLED.placedOnRetry; changed = true;
+    }
+  }
   // Loosened (q.free): what the spacing left out, again, strongest first and until nothing more joins: on a row's
   // course (tighter across than above), not a double, within reach of a plant on it. No distance to its neighbours is asked.
   const loose = new Uint8Array(n);
@@ -143,7 +161,7 @@ export function judgeDots(dots: Dot[], L4: ObviousPlants, L5: RowProfile, o: Pla
   // A probable dot that ended on no row is uncertain again.
   for (let i = 0; i < n; i++) if (certainty[i] === 1 && rowOf[i] < 0) certainty[i] = 2;
   // (Read only.) A dot placed on a row that `build` above left on no row.
-  for (let i = 0; i < n; i++) if (rowOf[i] < 0 && (settled[i] === SETTLED.certainRow || settled[i] === SETTLED.placedAtSpacing || settled[i] === SETTLED.placedOffSpacing || settled[i] === SETTLED.freePlaced || settled[i] === SETTLED.geometryRow)) settled[i] = SETTLED.cutFromRow;
+  for (let i = 0; i < n; i++) if (rowOf[i] < 0 && (settled[i] === SETTLED.certainRow || settled[i] === SETTLED.placedAtSpacing || settled[i] === SETTLED.placedOffSpacing || settled[i] === SETTLED.freePlaced || settled[i] === SETTLED.geometryRow || settled[i] === SETTLED.placedOnRetry)) settled[i] = SETTLED.cutFromRow;
   // Between the rows: a dot on no row, with a row on either side of it within a spacing, is not the crop. A dot that
   // stands on a row's line (within the band a row's plants are taken in) is not between two rows: that row is the one
   // it stands on, and why it was left off it is already said (q.betweenOffLines).
