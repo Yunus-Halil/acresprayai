@@ -169,12 +169,15 @@ export function judgeDots(dots: Dot[], L4: ObviousPlants, L5: RowProfile, o: Pla
     }
     return alive;
   };
+  // q.rowNeedsNeighbour (plantsFirst.ts SEQUENCE): every piece is held until all are cut, then only those long enough
+  // with a row beside them become rows (decided below, before any row is numbered).
+  const pending: { kind: SeqRow["kind"]; sorted: number[]; L: Line }[] | null = q.rowNeedsNeighbour ? [] : null;
   const build = (kind: SeqRow["kind"], ds: number[], L: Line) => {
     const all = inRuns([...new Set(ds)].sort((x, y) => A[x] - A[y]));
     // Cut where no plant stands for over maxBridgeM, and where a stretch with no plant confirmed would cross ground
     // judged scattered; each piece with 3 or more plants is a row of its own.
     const tooFar = (i0: number, i1: number) => A[i1] - A[i0] > q.maxBridgeM, unplanted = (i0: number, i1: number) => (!spacingRules || A[i1] - A[i0] > gapM) && overScattered(L, A[i0], A[i1]);
-    for (let s0 = 0; s0 < all.length;) { let e0 = s0; while (e0 + 1 < all.length && !tooFar(all[e0], all[e0 + 1]) && !unplanted(all[e0], all[e0 + 1])) e0++; if (e0 - s0 + 1 >= 3) piece(kind, all.slice(s0, e0 + 1), L); if (e0 + 1 < all.length) { if (tooFar(all[e0], all[e0 + 1])) { breaks.cutOverMaxBridge++; breaks.cutLengthM += A[all[e0 + 1]] - A[all[e0]]; } else breaks.cutOverScattered++; } s0 = e0 + 1; }
+    for (let s0 = 0; s0 < all.length;) { let e0 = s0; while (e0 + 1 < all.length && !tooFar(all[e0], all[e0 + 1]) && !unplanted(all[e0], all[e0 + 1])) e0++; if (e0 - s0 + 1 >= 3) { if (pending) pending.push({ kind, sorted: all.slice(s0, e0 + 1), L }); else piece(kind, all.slice(s0, e0 + 1), L); } if (e0 + 1 < all.length) { if (tooFar(all[e0], all[e0 + 1])) { breaks.cutOverMaxBridge++; breaks.cutLengthM += A[all[e0 + 1]] - A[all[e0]]; } else breaks.cutOverScattered++; } s0 = e0 + 1; }
   };
   const piece = (kind: SeqRow["kind"], sorted: number[], L: Line) => {
     if (sorted.length < 2) return;
@@ -191,6 +194,44 @@ export function judgeDots(dots: Dot[], L4: ObviousPlants, L5: RowProfile, o: Pla
   };
   lines.forEach((L, ri) => build("certain", [...L.dots, ...extra[ri]], L));
   for (const L of geomLines) { for (const i of L.dots) { if (certainty[i] === 2) certainty[i] = 1; settled[i] = SETTLED.geometryRow; } build("geometry", L.dots, L); }
+  if (pending) {
+    // A piece is a row when it is at least minCertainRowM long and another such piece runs beside it: its plants
+    // across from this one's by half to one and a half row spacings, abreast over half this piece's length or 1.5 m.
+    const med = (v: number[]) => { const s = [...v].sort((x, y) => x - y); return s[s.length >> 1]; };
+    const P = pending.map(p => ({ ...p, a0: A[p.sorted[0]], a1: A[p.sorted[p.sorted.length - 1]] }));
+    const long = P.map(p => p.a1 - p.a0 >= q.minCertainRowM);
+    const beside = (k: number) => P.some((o, j) => {
+      if (j === k || !long[j]) return false;
+      const p = P[k], lo = Math.max(p.a0, o.a0), hi = Math.min(p.a1, o.a1);
+      if (hi - lo < Math.min(1.5, 0.5 * (p.a1 - p.a0))) return false;
+      const mine = p.sorted.filter(i => A[i] >= lo && A[i] <= hi), theirs = o.sorted.filter(i => A[i] >= lo && A[i] <= hi);
+      if (!mine.length || !theirs.length) return false;
+      const d = Math.abs(med(theirs.map(i => C[i])) - med(mine.map(i => C[i])));
+      return d >= 0.5 * S && d <= 1.5 * S;
+    });
+    // The same test for each end stretch of a row (its plants between gaps of over gapM): a stretch at a row's end with
+    // no long piece abreast of it on a neighbouring line (a clump past the planting) is not part of the row.
+    const abreast = (k: number, part: number[]) => {
+      const mid = (A[part[0]] + A[part[part.length - 1]]) / 2, mine = med(part.map(i => C[i]));
+      return P.some((o, j) => {
+        if (j === k || !long[j] || mid < o.a0 || mid > o.a1) return false;
+        const theirs = o.sorted.filter(i => Math.abs(A[i] - mid) <= 1.5);
+        if (!theirs.length) return false;
+        const d = Math.abs(med(theirs.map(i => C[i])) - mine);
+        return d >= 0.5 * S && d <= 1.5 * S;
+      });
+    };
+    P.forEach((p, k) => {
+      if (!(long[k] && beside(k))) { for (const i of p.sorted) settled[i] = SETTLED.notARow; return; }
+      const parts: number[][] = [];
+      for (const i of p.sorted) { const last = parts[parts.length - 1]; if (last && A[i] - A[last[last.length - 1]] <= gapM) last.push(i); else parts.push([i]); }
+      while (parts.length > 1 && !abreast(k, parts[0])) for (const i of parts.shift()!) settled[i] = SETTLED.notARow;
+      while (parts.length > 1 && !abreast(k, parts[parts.length - 1])) for (const i of parts.pop()!) settled[i] = SETTLED.notARow;
+      const kept = parts.flat();
+      if (A[kept[kept.length - 1]] - A[kept[0]] >= q.minCertainRowM && kept.length >= 3) piece(p.kind, kept, p.L);
+      else for (const i of kept) settled[i] = SETTLED.notARow;
+    });
+  }
   // A probable dot that ended on no row is uncertain again.
   for (let i = 0; i < n; i++) if (certainty[i] === 1 && rowOf[i] < 0) certainty[i] = 2;
   // (Read only.) A dot placed on a row that `build` above left on no row.

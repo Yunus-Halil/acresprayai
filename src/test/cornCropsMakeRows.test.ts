@@ -778,3 +778,44 @@ describe("a row is not drawn past its last plants (with corn only in runs)", () 
     expect(P.stretches.filter(s => !s.confirmed)).toHaveLength(1);
   });
 });
+
+describe("a row counts only when it is 3 m long with a row beside it (rowNeedsNeighbour, off by default)", () => {
+  // Six full rows from 0 to 24 m, at the row spacing S.
+  const base: Dot[] = []; for (let r = 0; r < 6; r++) for (let k = 0; k * SEED <= 24 + 1e-9; k++) base.push(dot(k * SEED, r * S));
+  const clump = (a0: number, c: number) => [0, 1, 2, 3].map(k => dot(a0 + k * SEED, c));
+  const on = { ...SEQUENCE, runReachSeeds: 2, rowNeedsNeighbour: true }, runsOnly = { ...SEQUENCE, runReachSeeds: 2 };
+  const onRow = (R: ReturnType<typeof read>, i: number) => R.rowOf[i] >= 0;
+
+  it("a short piece of a row's line, cut from the rest by over 8 m with no row abreast of it, is not a row", () => {
+    // On row 3's line, 12 m past its end: a clump of four, a row of its own as it stands.
+    const dots = [...base, ...clump(36, 3 * S)], n = base.length, was = read(dots, runsOnly), now = read(dots, on);
+    expect(was.rows.length).toBe(7); expect(now.rows.length).toBe(6);
+    for (let k = 0; k < 4; k++) { expect(onRow(was, n + k)).toBe(true); expect(onRow(now, n + k)).toBe(false); expect(now.settled[n + k]).toBe(SETTLED.notARow); }
+    for (let i = 0; i < n; i++) expect(onRow(now, i)).toBe(true);
+  });
+
+  it("a clump on a row's line, metres past its end where no row runs beside it, is not part of the row", () => {
+    const dots = [...base, ...clump(27, 3 * S)], n = base.length, was = read(dots, runsOnly), now = read(dots, on);
+    for (let k = 0; k < 4; k++) { expect(onRow(was, n + k)).toBe(true); expect(onRow(now, n + k)).toBe(false); }
+    for (let i = 0; i < n; i++) expect(onRow(now, i)).toBe(true);
+  });
+
+  it("a gap inside the planting, with the rows either side running beside it, keeps both sides of the row", () => {
+    // Row 3 lacks its plants from 10 to 13 m; a short stretch of four plants stands at its start, 0 to 0.45 m.
+    const dots = base.filter(d => !(Math.abs(d.n - 3 * S) < 1e-6 && ((d.e > 10.05 && d.e < 12.95) || (d.e > 0.5 && d.e < 2))));
+    const now = read(dots, on);
+    for (let i = 0; i < dots.length; i++) expect(onRow(now, i)).toBe(true);
+  });
+
+  it("a long line of plants with no row beside it is not a row", () => {
+    // One long lone line, far from the rows (ten row spacings).
+    const dots = [...base, ...Array.from({ length: 40 }, (_, k) => dot(2 + k * SEED, 15 * S))], n = base.length, now = read(dots, on);
+    for (let k = 0; k < 40; k++) expect(onRow(now, n + k)).toBe(false);
+  });
+
+  it("full rows are untouched, and it is off by default and in the rules as they stood", () => {
+    const was = read(base), now = read(base, on);
+    expect(Array.from(now.rowOf)).toEqual(Array.from(was.rowOf)); expect(Array.from(now.settled)).toEqual(Array.from(was.settled));
+    expect(SEQUENCE.rowNeedsNeighbour).toBe(false); expect(SEQUENCE_V1.rowNeedsNeighbour).toBe(false);
+  });
+});
