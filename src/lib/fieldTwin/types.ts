@@ -207,6 +207,10 @@ export type TwinCornPlants = {
   summary: { plants: number; certain: number; probable: number; onNoRow: number; betweenRows: number; confirmedM: number; notConfirmedM: number; alongRowsTwo?: number; alongRowsOne?: number;
     /** The doubles (class 7). Present: the twin's plants off the rows were sorted (doubles counted, the rest not corn). */
     doubles?: number };
+  /** Each plant's own look, a plant each in `points`' order (2026-11-20, cornPlantLook.ts PackedLooks): the compass
+   * direction of its leaf line, its length and its green, from the photographs that marked it. Numbers only: no part of
+   * a photograph. Absent on a twin built before, and for a plant the photographs did not agree on: drawn as before. */
+  look?: { version: 1; dir: string; size: string; colour: string };
 };
 
 export type TwinVegetation = { id: number; lat: number; lng: number; areaM2: number; seenBy: number; ring: LatLngPair[] };
@@ -273,6 +277,10 @@ function checkCorn(c: unknown, atlases: number): string | null {
   if (k.fieldRows != null) {
     if (!isArr(k.fieldRows)) return "field rows are not a list";
     for (const f of k.fieldRows) if (!isNum(f.id) || !isNum(f.plants) || !isNum(f.certain) || !isNum(f.perM) || (f.kind !== "certain" && f.kind !== "geometry")) return `field row ${f.id} is incomplete`;
+  }
+  if (k.plants?.look != null) {
+    const q = k.plants.look as Partial<NonNullable<TwinCornPlants["look"]>>;
+    if (q.version !== 1 || typeof q.dir !== "string" || typeof q.size !== "string" || typeof q.colour !== "string") return "the plants' own looks are not a version 1 record";
   }
   if (k.look != null) {
     const L = k.look as Partial<TwinCornLook>;

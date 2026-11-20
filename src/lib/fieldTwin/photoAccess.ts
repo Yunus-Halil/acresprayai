@@ -25,7 +25,10 @@ export const photosMatched = (access: PhotoAccess, frames: GeorefFrame[]) => fra
 
 export type EvidenceView = PhotoView & { url: string; widthM: number; markerPx: number; px: number; /** The crop was turned this far (radians) to put north up. */ turned?: number;
   /** Asked to align (`marks`): on how many of this photograph's own marks it was aligned and how far it moved, metres; null: not aligned (too few marks around). */
-  aligned?: { on: number; movedM: number } | null };
+  aligned?: { on: number; movedM: number } | null;
+  /** Asked which photographs marked the place (`own`): this one did, and its own mark (the crop's centre) is this far
+   * from where the place falls in it through the camera, metres; null: it saw the place and did not mark it. */
+  marked?: { movedM: number } | null };
 
 /**
  * Where a pixel of the photograph lands in a crop `px` square centred on (cu, cv), `sz` photograph pixels across,
@@ -61,6 +64,9 @@ export function alignOnMarks(v: PhotoView, marks: [number, number][], withinM = 
   return { du: med(du), dv: med(dv), on: du.length };
 }
 
+/** The views with the photographs that marked the place first (each group nearest nadir first, as given), at most `max`. */
+export const markedFirst = <V extends { name: string }>(all: V[], own: { has(name: string): boolean }, max: number): V[] => [...all.filter(v => own.has(v.name)), ...all.filter(v => !own.has(v.name))].slice(0, max);
+
 /**
  * The photographs that saw a place (nearest nadir first, at most `max`), each cropped around it from the original file
  * at its full resolution, `windowM` metres across, with the place marked by a ring `markM` across. Only photographs on
@@ -68,17 +74,26 @@ export function alignOnMarks(v: PhotoView, marks: [number, number][], withinM = 
  * in its own colour (a plant's neighbours as the twin located them). `northUp`: each crop turned so north is up, as
  * the map is; `scaleM`: a bar that long drawn in the corner; `bold`: thicker rings.
  */
-export async function evidenceViews(access: PhotoAccess, frames: GeorefFrame[], lat: number, lng: number, opts: { windowM?: number; markM?: number; px?: number; max?: number; others?: { lat: number; lng: number; colour: string }[]; northUp?: boolean; scaleM?: number; bold?: boolean; /** Per photograph its own marks, in its pixels: each crop aligned on them (alignOnMarks). */ marks?: Map<string, [number, number][]> } = {}): Promise<{ views: EvidenceView[]; missing: string[] }> {
+export async function evidenceViews(access: PhotoAccess, frames: GeorefFrame[], lat: number, lng: number, opts: { windowM?: number; markM?: number; px?: number; max?: number; others?: { lat: number; lng: number; colour: string }[]; northUp?: boolean; scaleM?: number; bold?: boolean; /** Per photograph its own marks, in its pixels: each crop aligned on them (alignOnMarks). */ marks?: Map<string, [number, number][]>;
+  /** The photographs that marked the place, each with its own mark's pixel (plantMarks.ts): they come first, each
+   * centred on its own mark (the one sure thing a photograph says about a plant); the others follow, as before. */ own?: { photo: string; u: number; v: number }[] } = {}): Promise<{ views: EvidenceView[]; missing: string[] }> {
   const windowM = opts.windowM ?? 1.2, markM = opts.markM ?? 0.12, px = opts.px ?? 240, others = opts.others ?? [], w = opts.bold ? 2 : 1;
-  const views = viewsOf(frames, lat, lng, opts.max ?? 4, { ...(others.length ? { others: others.map(o => [o.lat, o.lng] as [number, number]) } : {}), ...(opts.northUp ? { north: true } : {}) }), out: EvidenceView[] = [], missing: string[] = [];
+  const ownOf = opts.own ? new Map(opts.own.map(o => [o.photo, o])) : null, max = opts.max ?? 4;
+  // Every photograph whose footprint holds the place when the markers are asked for (they may not be the nearest).
+  const all = viewsOf(frames, lat, lng, ownOf ? Math.max(max, frames.length) : max, { ...(others.length ? { others: others.map(o => [o.lat, o.lng] as [number, number]) } : {}), ...(opts.northUp ? { north: true } : {}) });
+  const views = ownOf ? markedFirst(all, ownOf, max) : all, out: EvidenceView[] = [], missing: string[] = [];
   const intr = new Map(frames.map(f => [f.name, f.intrinsics]));
   for (const v0 of views) {
     const file = access.byName.get(v0.name);
     if (!file) { missing.push(v0.name); continue; }
     // Aligned on the photograph's own marks of the places around it, when asked: the place and the others move together.
     const al = opts.marks ? alignOnMarks(v0, opts.marks.get(v0.name) ?? []) : null;
-    const v: PhotoView = al ? { ...v0, u: v0.u + al.du, v: v0.v + al.dv, others: v0.others?.map(o => ({ ...o, u: o.u + al.du, v: o.v + al.dv })) } : v0;
+    // A photograph that marked the place: the crop is centred on its own mark; the places around it are aligned on
+    // its marks of them as before, or, with too few, moved as the place itself was.
+    const mine = ownOf?.get(v0.name) ?? null, step = al ?? (mine ? { du: mine.u - v0.u, dv: mine.v - v0.v } : null);
+    const v: PhotoView = step || mine ? { ...v0, u: mine ? mine.u : v0.u + step!.du, v: mine ? mine.v : v0.v + step!.dv, others: step ? v0.others?.map(o => ({ ...o, u: o.u + step.du, v: o.v + step.dv })) : v0.others } : v0;
     const aligned = opts.marks ? (al ? { on: al.on, movedM: Math.hypot(al.du, al.dv) * v0.pixelM } : null) : undefined;
+    const marked = ownOf ? (mine ? { movedM: Math.hypot(mine.u - v0.u, mine.v - v0.v) * v0.pixelM } : null) : undefined;
     const bmp = await createImageBitmap(file);
     try {
       const k = bmp.width / intr.get(v.name)!.width, sz = Math.max(16, (windowM / Math.max(1e-4, v.pixelM)) * k);
@@ -112,7 +127,7 @@ export async function evidenceViews(access: PhotoAccess, frames: GeorefFrame[], 
         g.fillStyle = "#fff"; g.font = "11px sans-serif"; g.fillText(`${Math.round(opts.scaleM * 100)} cm`, x0 + L + 6, y0 + 1);
       }
       const blob = await c.convertToBlob({ type: "image/jpeg", quality: 0.88 });
-      out.push({ ...v, url: URL.createObjectURL(blob), widthM: windowM, markerPx, px, ...(turn ? { turned: turn } : {}), ...(aligned !== undefined ? { aligned } : {}) });
+      out.push({ ...v, url: URL.createObjectURL(blob), widthM: windowM, markerPx, px, ...(turn ? { turned: turn } : {}), ...(aligned !== undefined ? { aligned } : {}), ...(marked !== undefined ? { marked } : {}) });
     } finally { bmp.close(); }
   }
   return { views: out, missing };

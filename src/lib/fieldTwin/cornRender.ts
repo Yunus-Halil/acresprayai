@@ -47,6 +47,10 @@ export const CORN_RENDER = {
   spriteCap: 8_000,
   /** Leaf directions a plant may take, and the drawn shapes per size class. */
   rotations: 12, variants: 4,
+  /** A plant with its own look (cornPlantLook.ts): its leaf line is drawn at the measured compass direction, to the
+   * nearest of this many steps over a half turn (15 degrees); its own green is one of this many tints of the plants'
+   * measured colours; it is drawn at its own length, between these shares of the field's typical plant. */
+  lookRotations: 12, lookTints: 8, lookSizeShare: [0.55, 1.6] as [number, number],
   /** Cells of the colour grids at most (the colours change slowly: a sample per photograph), and at most this many
    * cell x sample sums, so a flight of thousands of photographs costs the same as a small one. */
   maxCells: 16_384, maxWork: 6_000_000,
@@ -210,6 +214,41 @@ export function leavesFor(sizeM: number, variant: number): Leaf[] {
     leaves.push({ angle: pair * (Math.PI / 2 + turn) * 0.62 + side * Math.PI + (side ? 0.12 * (v - 1.5) : 0), length, width: 0.15 + 0.02 * ((v + k) % 3), curl: (side ? -1 : 1) * (0.1 + 0.05 * ((v + pair) % 3)) });
   }
   return leaves;
+}
+
+/**
+ * The drawn leaves of a plant whose leaf line was measured (cornPlantLook.ts), along +x: a corn seedling's leaves
+ * stand in two opposite ranks, so from above it is a line. `shape` 0, a clear line: two opposed leaves and, past a
+ * small seedling, a short third close to the line. 1, fuller: a second pair turned from the line. `flip`: which end
+ * carries the longer leaf (not measured: by the plant's number). The direction, length and colour are measured; the
+ * leaves' outlines are an illustration.
+ */
+export function lineLeaves(sizeM: number, shape: 0 | 1, flip: boolean): Leaf[] {
+  const a = flip ? Math.PI : 0, b = flip ? 0 : Math.PI;
+  const leaves: Leaf[] = [{ angle: a, length: 1, width: 0.15, curl: 0.1 }, { angle: b, length: 0.86, width: 0.15, curl: -0.12 }];
+  if (shape === 1) leaves.push({ angle: a + 0.95, length: 0.62, width: 0.14, curl: 0.08 }, { angle: b + 0.85, length: 0.52, width: 0.13, curl: -0.08 });
+  else if (sizeM >= 0.08) leaves.push({ angle: a + 0.38, length: 0.58, width: 0.13, curl: 0.14 });
+  return leaves;
+}
+
+/**
+ * The plants' own greens as a handful of tints: the plants `use` picks (those with a measured colour), sorted by
+ * brightness and cut into `tints` equal groups, each group's mean colour; per plant the tint it takes (255: none).
+ */
+export function plantOwnTints(colour: Uint16Array, rgbOf: (v: number) => ArrayLike<number>, use: (k: number) => boolean, tints = CORN_RENDER.lookTints): { palette: TwinRgb[]; plant: Uint8Array } {
+  const n = colour.length, plant = new Uint8Array(n).fill(255), idx: number[] = [], l = new Float32Array(n);
+  const rgb = new Uint8Array(3 * n);
+  for (let k = 0; k < n; k++) { if (!colour[k] || !use(k)) continue; const c = rgbOf(colour[k]); rgb[3 * k] = c[0]; rgb[3 * k + 1] = c[1]; rgb[3 * k + 2] = c[2]; idx.push(k); l[k] = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]; }
+  idx.sort((a, b) => l[a] - l[b]);
+  const m = idx.length, K = Math.max(1, Math.min(tints, m)), palette: TwinRgb[] = [];
+  if (!m) return { palette, plant };
+  for (let t = 0; t < K; t++) {
+    const a = Math.floor((t * m) / K), b = Math.floor(((t + 1) * m) / K);
+    let r = 0, g = 0, bl = 0;
+    for (let q = a; q < b; q++) { const k = idx[q]; r += rgb[3 * k]; g += rgb[3 * k + 1]; bl += rgb[3 * k + 2]; plant[k] = t; }
+    const c = Math.max(1, b - a); palette.push([Math.round(r / c), Math.round(g / c), Math.round(bl / c)]);
+  }
+  return { palette, plant };
 }
 
 export const rgbCss = (c: ArrayLike<number>, a = 1) => (a >= 1 ? `rgb(${c[0]},${c[1]},${c[2]})` : `rgba(${c[0]},${c[1]},${c[2]},${a})`);

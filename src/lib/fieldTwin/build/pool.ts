@@ -13,6 +13,7 @@ import { cornPhotoRead } from "./corn";
 import type { CornPhotoRead } from "../cornField";
 import type { CornPreset } from "../cornPreset";
 import { type PhotoColours, samplePhotoColours } from "../cornColours";
+import { measureMarkLooks } from "../cornPlantLook";
 
 export type PoolTask =
   /** Keep a photograph's grey raster for later tie tasks. */
@@ -33,7 +34,7 @@ export type PoolResult =
   | { kind: "ties"; ties: SoilTie[]; rejected: Record<string, number>; pairsWithTies: number; /** The task's own time (the camera report's per-helper work). */ ms: number }
   | { kind: "colour"; name: string; observations: Observation[] }
   | { kind: "crops"; name: string; cells: Uint8ClampedArray[] }
-  | { kind: "corn"; name: string; read: CornPhotoRead; ms: number; /** The photograph's soil and corn colours (cornColours.ts), read after the corn read from the same pixels, and what that cost. */ colours: PhotoColours; colourMs: number }
+  | { kind: "corn"; name: string; read: CornPhotoRead; ms: number; /** The photograph's soil and corn colours (cornColours.ts), read after the corn read from the same pixels, and what that cost. */ colours: PhotoColours; colourMs: number; /** The look of the green under each of the read's stricter marks (cornPlantLook.ts measureMarkLooks), from the same pixels; null without a pixel size. */ looks: Uint8Array | null; lookMs: number }
   | { kind: "release"; rasters: number };
 
 export type Pool = {
@@ -92,8 +93,10 @@ export async function handleTask(task: PoolTask, ctx: TaskContext): Promise<{ re
       const px = await ctx.photo(task.file, task.name).decode(1);
       const read = cornPhotoRead(task.name, px, task.gsdM, task.baseline ?? false, null, task.preset ?? null), ms = Date.now() - t;
       // The colours for the Realistic view: after the read, from the pixels it has just read (no second decode).
-      const tc = performance.now(), colours = samplePhotoColours(px, read.plants);
-      return { result: { kind: "corn", name: task.name, read, ms, colours, colourMs: performance.now() - tc }, transfer: [] };
+      const tc = performance.now(), colours = samplePhotoColours(px, read.plants), colourMs = performance.now() - tc;
+      // Each plant's own look, for the views: the green under each stricter mark, from the same pixels.
+      const tl = performance.now(), looks = task.gsdM ? measureMarkLooks(px, read.plants, task.gsdM * read.scale) : null;
+      return { result: { kind: "corn", name: task.name, read, ms, colours, colourMs, looks, lookMs: performance.now() - tl }, transfer: looks ? [looks.buffer as ArrayBuffer] : [] };
     }
     case "crops": {
       const cells = await ctx.photo(task.file, task.name).crops(task.reqs);

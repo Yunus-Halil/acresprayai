@@ -3,6 +3,7 @@
 // mini-map, a scale bar in the account's units and a north mark. Optionally, a developer-only reference
 // orthomosaic in a pane BELOW the canvas, with its own opacity and a swipe divider. Neither underlay is ever read:
 // the scene's coordinates come from the photographs alone.
+import type { PackedLooks } from "@/lib/fieldTwin/cornPlantLook";
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -94,7 +95,7 @@ type Props = {
   /** The row editor: an end handle let go at (lat, lng) (0 the first of the handles). */
   onRowEnd?: (which: 0 | 1, lat: number, lng: number) => void;
   /** Plants the photographs located, drawn at the plant level, and whether they are shown. */
-  plants?: { points: LatLngPair[]; show: boolean; certainty?: number[] | null; /** cornRender.ts plantsSorted. */ sorted?: boolean } | null;
+  plants?: { points: LatLngPair[]; show: boolean; certainty?: number[] | null; /** cornRender.ts plantsSorted. */ sorted?: boolean; /** Each plant's own look (cornPlantLook.ts PackedLooks). */ look?: PackedLooks | null } | null;
   /** Photo ground under the twin (behind its flag), or null. */
   photoGround?: PhotoGroundLayer | null;
   /** Corn twins: the view (Realistic, Simple, Geometry); null draws the corn as before the views. */
@@ -238,7 +239,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
   useEffect(() => { layerRef.current?.setOperational(operational); }, [operational, scene]);
   useEffect(() => { layerRef.current?.setEditing(editing); }, [editing, scene]);
   useEffect(() => { layerRef.current?.setRowEdits(rowEdits?.edits ?? NO_ROW_EDITS, !!rowEdits?.active, !!rowEdits?.hideRows, rowEdits?.hover ?? null, rowEdits?.overrides ?? [], rowEdits?.handles ?? null); }, [rowEdits, scene]);
-  useEffect(() => { layerRef.current?.setPlants(plants?.points ?? null, plants?.show ?? false, plants?.certainty ?? null, plants?.sorted ?? false); }, [plants, scene]);
+  useEffect(() => { layerRef.current?.setPlants(plants?.points ?? null, plants?.show ?? false, plants?.certainty ?? null, plants?.sorted ?? false, plants?.look ?? null); }, [plants, scene]);
   useEffect(() => { layerRef.current?.setCornView(cornView); }, [cornView, scene]);
   useEffect(() => { layerRef.current?.setShowDoubles(showDoubles); }, [showDoubles, scene]);
 

@@ -18,6 +18,7 @@ const arg = (k, d) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i
 const ID = arg("id", ""), SYN = Number(arg("synthetic", 0)), BASE = arg("base", "http://localhost:8097"), OUT = resolve(arg("out", "corn-view-bench"));
 const SHOTS = arg("shots", "1") !== "0", AUDIENCE = arg("audience", "founder"), DPR = Number(arg("dpr", 1));
 const VIEWS = (arg("views", "realistic,simple,geometry")).split(",");
+const AT = arg("at", "") ? arg("at", "").split(",").map(Number) : null;
 mkdirSync(OUT, { recursive: true });
 const CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 
@@ -35,14 +36,16 @@ for (const view of VIEWS) {
   await page.waitForFunction(() => window.__fieldTwin?.ready === true, null, { timeout: 300000 });
   const openMs = Date.now() - t0;
   await page.waitForTimeout(800);
-  const info = await page.evaluate(() => {
+  const info = await page.evaluate(AT => {
     const t = window.__fieldTwin.scene.twin, P = t.corn?.plants ?? null;
     // A plant near the middle of the list's on-row plants: a place with plants around it.
     let at = null;
     if (P) { const k = Math.floor(P.points.length * 0.37); at = P.points[k]; }
+    // --at lat,lng: the same place on two twins of one field (their plant lists differ, so the list's own pick moves).
+    if (AT) at = AT;
     const b = t.bounds;
     return { plants: P ? P.points.length : 0, at: at ?? [(b[0][0] + b[1][0]) / 2, (b[0][1] + b[1][1]) / 2], lat: t.origin.lat, look: t.corn?.look ? { soil: t.corn.look.soil, corn: t.corn.look.corn, plantSizeM: t.corn.look.plantSizeM, samples: t.corn.look.samples.length } : null };
-  });
+  }, AT);
   const fitZoom = await page.evaluate(() => window.__fieldTwin.map.getZoom());
   // Stops by pixels a metre: the whole field, then 8, 40, 60 (a 10 cm plant has just become a drawn plant: the most
   // drawn plants a view holds), 150 and 400 px/m.

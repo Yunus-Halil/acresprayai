@@ -13,6 +13,9 @@ export type PlantCameras = {
   frames: GeorefFrame[];
   /** Per photograph, the plants it marked itself (its stricter marks and its candidates), in its own pixels. */
   marks: Map<string, [number, number][]>;
+  /** The marks plant `index` of the twin was made from: the photograph and its own mark's pixel (plantMarks.ts).
+   * Null on a record made before 2026-11-20, which does not say. */
+  marked?: ((index: number) => { photo: string; u: number; v: number }[]) | null;
 };
 
 /** The record's cameras and marks, or null when it is not a record this version reads (no camera, no crops). */
@@ -23,7 +26,8 @@ export async function camerasFromAnalysisJson(json: unknown): Promise<PlantCamer
   if (!a.ok) return null;
   const marks = new Map<string, [number, number][]>();
   for (const r of a.analysis.reads) marks.set(r.name, [...r.plants, ...(r.low ?? [])].map(([x, y]) => [x * r.scale, y * r.scale] as [number, number]));
-  return { frames: [...framesFromAnalysis(a.analysis).values()], marks };
+  const { plantMarksReader } = await import("./plantMarks");
+  return { frames: [...framesFromAnalysis(a.analysis).values()], marks, marked: plantMarksReader(a.analysis.plantMarks) };
 }
 
 /** One read per twin: the first call reads, later calls share its answer; a read that failed is tried again next time. */

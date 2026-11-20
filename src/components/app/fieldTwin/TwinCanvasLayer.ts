@@ -17,8 +17,9 @@ import { CORN_STATUS, type Detail, GridIndex, PRESSURE_INDEX, ROW_STATUS, SUPPOR
 import { type TwinLayers, TWIN_COLOURS as C, badgesAllowed } from "@/lib/fieldTwin/style";
 import type { LatLngPair, TwinRgb } from "@/lib/fieldTwin/types";
 import type { RowEdits } from "@/lib/fieldTwin/rowEdits";
-import { CORN_RENDER, type CornLook, type CornViewMode, blendGrid, cornLookOf, cornTints, gridCell, plantDrawMode, plantHash, plantKind, rgbCss, stampOf } from "@/lib/fieldTwin/cornRender";
-import { SpriteCache, soilCanvas, spriteSizeFor } from "./cornSprite";
+import { CORN_RENDER, type CornLook, type CornViewMode, blendGrid, cornLookOf, cornTints, gridCell, plantDrawMode, plantHash, plantKind, plantOwnTints, rgbCss, stampOf } from "@/lib/fieldTwin/cornRender";
+import { type PackedLooks, lookRgb, unpackLooks } from "@/lib/fieldTwin/cornPlantLook";
+import { SpriteSheet, soilCanvas, spriteSizeFor } from "./cornSprite";
 
 /** How far (screen pixels) a pointer may be from a boundary handle to take it. */
 const HANDLE_PX = 9;
@@ -110,7 +111,7 @@ export class TwinCanvasLayer extends L.Canvas {
   /** A click that ends a handle drag is not a tap on the ground. */
   private swallowClick = false;
   /** Plants located by the photographs (zoom-0 units), drawn at the plant level as small neutral dots; null for none. */
-  private plants: { n: number; x: Float64Array; y: Float64Array; index: GridIndex; certainty: Uint8Array | null; points: LatLngPair[]; /** The twin sorted its plants off the rows (cornRender.ts plantsSorted). */ sorted: boolean } | null = null;
+  private plants: { n: number; x: Float64Array; y: Float64Array; index: GridIndex; certainty: Uint8Array | null; points: LatLngPair[]; /** The twin sorted its plants off the rows (cornRender.ts plantsSorted). */ sorted: boolean; /** Each plant's own look (cornPlantLook.ts), where the twin carries it. */ look: ReturnType<typeof unpackLooks> } | null = null;
   private showPlants = true;
   /** Corn twins: the view (cornRender.ts: Realistic, Simple, Geometry). Null draws the corn as it was drawn before the
    * views (rows and plant marks together), which the row editor always does. */
@@ -122,7 +123,7 @@ export class TwinCanvasLayer extends L.Canvas {
   private look: CornLook | null = null;
   private soil: HTMLCanvasElement | null | undefined = undefined;
   private tints: { palette: TwinRgb[]; plant: Uint8Array } | null = null;
-  private sprites = new SpriteCache();
+  private sprites = new SpriteSheet();
   private stamp: { canvas: HTMLCanvasElement; g: Ctx; img: ImageData; u32: Uint32Array; w: number; h: number } | null = null;
 
   constructor(layers: TwinLayers, options: L.RendererOptions = {}) {
@@ -312,11 +313,11 @@ export class TwinCanvasLayer extends L.Canvas {
     this.requestRedraw();
   }
   /** What each plant is drawn as: 0 certain on a row, 1 probable, 2 on no row, 3 between rows (not the crop), 7 a double; absent: all 0. `sorted`: cornRender.ts plantsSorted. */
-  setPlants(points: LatLngPair[] | null, show: boolean, certainty: number[] | null = null, sorted = false) {
+  setPlants(points: LatLngPair[] | null, show: boolean, certainty: number[] | null = null, sorted = false, look: PackedLooks | null = null) {
     if (points) {
       const n = points.length, x = new Float64Array(n), y = new Float64Array(n);
       points.forEach(([lat, lng], i) => { const [wx, wy] = toWorld(lat, lng); x[i] = wx; y[i] = wy; });
-      this.plants = { n, x, y, index: new GridIndex(x, y, this.scene ? 2 / this.scene.mpu : 1e-7), certainty: certainty && certainty.length === n ? Uint8Array.from(certainty) : null, points, sorted };
+      this.plants = { n, x, y, index: new GridIndex(x, y, this.scene ? 2 / this.scene.mpu : 1e-7), certainty: certainty && certainty.length === n ? Uint8Array.from(certainty) : null, points, sorted, look: unpackLooks(look, n) };
     } else this.plants = null;
     this.tints = null;
     this.showPlants = show;
@@ -913,6 +914,12 @@ export class TwinCanvasLayer extends L.Canvas {
     const grid = blendGrid(look.samples.filter(q => q.corn).map(q => ({ x: q.x, y: q.y, c: q.corn! })), look.corn, scene.bbox);
     const { palette, cellTint } = cornTints(grid), plant = new Uint8Array(P.n);
     for (let k = 0; k < P.n; k++) plant[k] = cellTint[gridCell(grid, P.x[k], P.y[k])];
+    // A plant with its own measured green takes that (one of a few tints of the plants' own colours), after the
+    // tints by place in the palette; the others keep the tint of their place.
+    if (P.look) {
+      const own = plantOwnTints(P.look.colour, lookRgb, k => !P.certainty || plantKind(P.certainty[k], P.sorted) === "row"), base = palette.length;
+      if (own.palette.length) { palette.push(...own.palette); for (let k = 0; k < P.n; k++) if (own.plant[k] !== 255) plant[k] = base + own.plant[k]; }
+    }
     return (this.tints = { palette, plant });
   }
 
@@ -932,21 +939,33 @@ export class TwinCanvasLayer extends L.Canvas {
     if (idx && plantDrawMode(plantPx, idx.length) === "sprite") {
       const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
       // The plant spans 0.88 of its sprite; sizes vary a little plant to plant (0.85 to 1.15), by the plant's own number.
-      const dest = plantPx / 0.88, spritePx = spriteSizeFor(dest * 1.15 * dpr);
+      // A plant with its own measured length is drawn at it (within lookSizeShare of the typical plant), so the sprite is
+      // made for the largest.
+      const own = P.look, [sLo, sHi] = R.lookSizeShare;
+      const dest = plantPx / 0.88, spritePx = spriteSizeFor(dest * (own ? sHi : 1.15) * dpr);
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
       const dotR = Math.max(1.5, (plantPx * R.notCornShare) / 2), notCornCss = rgbCss(R.notCorn);
-      let nd = 0;
+      let nd = 0, anyDot = false;
+      const dots: number[] = [];
       for (const k of idx) {
         const h = plantHash(k), kind = cert ? plantKind(cert[k], P.sorted) : "row";
         if (kind === "double" && !this.showDoubles) continue;
         nd++;
-        if (kind === "notCorn") { ctx.fillStyle = notCornCss; ctx.beginPath(); ctx.arc(X(P.x[k]), Y(P.y[k]), dotR, 0, 2 * Math.PI); ctx.fill(); continue; }
+        // The green that is not corn: every dot in one path, filled once after the plants (a fill a dot costs several
+        // times a stamped plant: 8.7 ms a frame against 3.7 ms where the scattered ground is in view).
+        if (kind === "notCorn") { dots.push(X(P.x[k]), Y(P.y[k])); anyDot = true; continue; }
         const colour = kind === "row" ? (T ? palette[T.plant[k]] : realistic ? look.corn : flat) : R.offRow;
-        const sprite = this.sprites.get(spritePx, colour, sizeM, h % R.variants, (h >>> 8) % R.rotations, realistic);
+        // Its own look, where measured: the leaf line at its compass direction, at its own length. Else as before:
+        // a direction and a small size variation by the plant's number.
+        const dir = own ? own.dir[k] : 255, len = own ? own.size[k] : 0;
+        const sprite = dir !== 255
+          ? this.sprites.get(spritePx, colour, sizeM, 0, Math.round(((dir % 90) * 2) / (180 / R.lookRotations)) % R.lookRotations, realistic, { shape: dir >= 90 ? 1 : 0, flip: (h & 1) === 1 })
+          : this.sprites.get(spritePx, colour, sizeM, h % R.variants, (h >>> 8) % R.rotations, realistic);
         if (!sprite) continue;
-        const d = dest * (0.85 + (((h >>> 16) % 101) / 100) * 0.3);
-        ctx.drawImage(sprite, X(P.x[k]) - d / 2, Y(P.y[k]) - d / 2, d, d);
+        const d = dest * (len ? Math.min(sHi, Math.max(sLo, len / 200 / sizeM)) : 0.85 + (((h >>> 16) % 101) / 100) * 0.3);
+        ctx.drawImage(sprite.sheet, sprite.x, sprite.y, sprite.s, sprite.s, X(P.x[k]) - d / 2, Y(P.y[k]) - d / 2, d, d);
       }
+      if (anyDot) { ctx.beginPath(); for (let q = 0; q < dots.length; q += 2) { ctx.moveTo(dots[q] + dotR, dots[q + 1]); ctx.arc(dots[q], dots[q + 1], dotR, 0, 2 * Math.PI); } ctx.fillStyle = notCornCss; ctx.fill(); }
       drawn.plants = nd; drawn.plantsAsPlants = nd;
       return;
     }

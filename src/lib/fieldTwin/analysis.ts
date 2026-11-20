@@ -19,6 +19,7 @@
 // What it allows later, none of it built here: reproducing the field's combination exactly (reproduceCornField, used
 // by the tests and scripts only), combining again with an operator's corrections, and cutting new crops at a known
 // place once the operator selects the original photographs again.
+import { type PackedPlantMarks, packPlantMarks } from "./plantMarks";
 import type { GeorefFrame, Intrinsics, CameraPose } from "../directGeoref/projection";
 import { CORN_V1_VERSION } from "../rowCrop/cornV1";
 import { CORN_FIELD_VERSION, FIELD, type CornFieldResult, type CornPhotoRead, type FieldGap, type FieldWeed, cornField, cornFieldAndGround } from "./cornField";
@@ -50,6 +51,9 @@ export type TwinAnalysis = {
   /** Where each finding of the twin lies in each photograph that reported it (original-frame pixels), by the twin's own ids. */
   sightings: { weeds: { id: number; sightings: FieldWeed["sightings"] }[]; gaps: { id: number; sightings: FieldGap["sightings"] }[] };
   crops: AnalysisCrop[];
+  /** Which photographs marked each plant of the twin, and where in each (plantMarks.ts; 2026-11-20 on), a plant each in
+   * the twin's plants' order. Absent in a record made before, and where the plants and their marks did not match. */
+  plantMarks?: PackedPlantMarks;
   /** Anything left out, with the reason. */
   notes: string[];
 };
@@ -62,6 +66,8 @@ export type AnalysisInputs = {
   crops: AnalysisCrop[];
   /** Each photograph's file size and capture time, where known. */
   photographs: Map<string, { bytes: number | null; capturedAt: string | null }>;
+  /** For each plant of the twin, in its order, the marks it was made from (cornPlants.ts plantSightings). */
+  plantMarks?: { photo: string; u: number; v: number }[][] | null;
 };
 
 /**
@@ -98,7 +104,9 @@ export function buildTwinAnalysis(inp: AnalysisInputs): TwinAnalysis | null {
       weeds: weedsMatch ? fieldWeeds.map((w, i) => ({ id: twin.corn!.weeds[i].id, sightings: w.sightings })) : [],
       gaps: gapsMatch ? field.gaps.map(g => ({ id: g.id, sightings: g.sightings })) : [],
     },
-    crops: inp.crops, notes,
+    crops: inp.crops,
+    ...(inp.plantMarks && twin.corn.plants && inp.plantMarks.length === twin.corn.plants.points.length ? { plantMarks: packPlantMarks(inp.plantMarks) } : {}),
+    notes,
   };
 }
 
