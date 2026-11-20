@@ -68,7 +68,7 @@ export function PhotoGroundAbsent() {
 }
 
 /** The photographs behind a selected place: each photograph that saw it, nearest nadir first, the place marked. */
-export function PhotoEvidence({ frames, access, setAccess, lat, lng, what, windowM = 1.2, markM = 0.12, max = 4, px, others, intro, legend, northUp = false, scaleM, lead = false }: {
+export function PhotoEvidence({ frames, access, setAccess, lat, lng, what, windowM = 1.2, markM = 0.12, max = 4, px, others, intro, legend, northUp = false, scaleM, lead = false, marks }: {
   /** The cameras as the build aligned them (photo ground's manifest, or a corn twin's analysis record). */
   frames: GeorefFrame[]; access: PhotoAccess | null; setAccess: (a: PhotoAccess) => void; lat: number; lng: number; what: string;
   /** Crop size and ring size, metres (the object's own size). */ windowM?: number; markM?: number;
@@ -77,6 +77,7 @@ export function PhotoEvidence({ frames, access, setAccess, lat, lng, what, windo
   /** Said above the crops; and what the rings are, said under them in place of the white ring's sentence. */ intro?: ReactNode; legend?: ReactNode;
   /** Each crop turned north up, as the map is, with a scale bar this long (evidenceViews `northUp`, `scaleM`). */ northUp?: boolean; scaleM?: number;
   /** One crop large across the panel with the key under it, the others two to a row; a small one clicked becomes the large one. */ lead?: boolean;
+  /** Per photograph its own marks: each crop aligned on them (evidenceViews `marks`). Must keep its identity. */ marks?: Map<string, [number, number][]> | null;
 }) {
   // The answer for one place at a time: until the views of THIS place are in, it says it is reading (never "none").
   const key = `${lat},${lng}`;
@@ -85,10 +86,10 @@ export function PhotoEvidence({ frames, access, setAccess, lat, lng, what, windo
   useEffect(() => {
     if (!access) return;
     let live = true;
-    evidenceViews(access, frames, lat, lng, { windowM, markM, max, ...(px ? { px } : {}), ...(others?.length ? { others } : {}), ...(northUp ? { northUp, bold: true } : {}), ...(scaleM ? { scaleM } : {}) }).then(r => { if (live) setState({ key, ...r, error: null }); else r.views.forEach(v => URL.revokeObjectURL(v.url)); })
+    evidenceViews(access, frames, lat, lng, { windowM, markM, max, ...(px ? { px } : {}), ...(others?.length ? { others } : {}), ...(northUp ? { northUp, bold: true } : {}), ...(scaleM ? { scaleM } : {}), ...(marks ? { marks } : {}) }).then(r => { if (live) setState({ key, ...r, error: null }); else r.views.forEach(v => URL.revokeObjectURL(v.url)); })
       .catch(e => { if (live) setState({ key, views: [], missing: [], error: (e as Error).message }); });
     return () => { live = false; };
-  }, [access, frames, lat, lng, key, windowM, markM, max, px, others, northUp, scaleM]);
+  }, [access, frames, lat, lng, key, windowM, markM, max, px, others, northUp, scaleM, marks]);
   // The large crop (lead): the first, until another is clicked; back to the first for a new place.
   const [leadAt, setLeadAt] = useState(0);
   useEffect(() => { setLeadAt(0); }, [key]);
@@ -107,7 +108,7 @@ export function PhotoEvidence({ frames, access, setAccess, lat, lng, what, windo
         return <>
           <figure className="m-0">
             <img src={L.url} alt={`${what} in ${L.name}`} className="block w-full rounded-sm border border-[#3a3f3a]" />
-            <figcaption className="mt-0.5 text-[10px] text-neutral-400">{L.name} · {L.nadirM.toFixed(1)} m from below the camera</figcaption>
+            <figcaption className="mt-0.5 text-[10px] text-neutral-400">{L.name} · {L.nadirM.toFixed(1)} m from below the camera{L.aligned !== undefined ? (L.aligned ? ` · aligned on ${L.aligned.on} plants this photograph marked (moved ${(L.aligned.movedM * 100).toFixed(1)} cm)` : " · not aligned: this photograph marked too few plants around it") : ""}</figcaption>
           </figure>
           <p className="mt-1 text-[10px] leading-snug text-neutral-400">{northUp ? "North up, as on the map. " : ""}Each crop {+L.widthM.toFixed(2)} m across; white ring: {what}.{legend ? <> {legend}</> : null}</p>
           {state.views.length > 1 && <div className="mt-2 grid grid-cols-2 gap-2">

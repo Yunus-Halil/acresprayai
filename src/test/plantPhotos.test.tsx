@@ -8,7 +8,7 @@ import FieldTwinView from "@/components/app/fieldTwin/FieldTwinView";
 import PlantPhotos, { PLANT_PHOTOS, plantNeighbours } from "@/components/app/fieldTwin/PlantPhotos";
 import { cameraSource } from "@/lib/fieldTwin/plantCameras";
 import { viewsOf } from "@/lib/fieldTwin/photoGround";
-import { cropPoint, northUpTurn } from "@/lib/fieldTwin/photoAccess";
+import { alignOnMarks, cropPoint, northUpTurn } from "@/lib/fieldTwin/photoAccess";
 import { IDENTITY, enuFromCamera, mulM, type GeorefFrame, type M3 } from "@/lib/directGeoref/projection";
 import { CORN_TWIN } from "./fixtures/cornTwin";
 
@@ -80,9 +80,26 @@ describe("a crop turned north up, as the map is", () => {
   });
 });
 
+describe("a crop aligned on the photograph's own marks", () => {
+  // 0.5 cm a pixel; the photograph marked each neighbour 4 px right and 2 px down of where the camera draws it.
+  const view = { name: "a", u: 1000, v: 1000, nadirM: 1, pixelM: 0.005, others: [{ i: 0, u: 980, v: 1000 }, { i: 1, u: 1020, v: 1000 }, { i: 2, u: 1000, v: 1030 }, { i: 3, u: 1040, v: 980 }] };
+  it("moves the view by the median step from the neighbours to the photograph's marks of them, the plant itself not asked", () => {
+    const marks: [number, number][] = [...view.others.map(o => [o.u + 4, o.v + 2] as [number, number]), [1000, 1000], [1500, 1500]];
+    expect(alignOnMarks(view, marks)).toEqual({ du: 4, dv: 2, on: 4 });
+    // One neighbour paired with a mark well off (6.7 cm, still within reach: a wrong pairing) does not move the median.
+    marks[0] = [980 + 12, 1000 - 6];
+    expect(alignOnMarks(view, marks)).toEqual({ du: 4, dv: 2, on: 4 });
+  });
+  it("is not aligned with fewer than three neighbours the photograph marked within 8 cm", () => {
+    expect(alignOnMarks(view, [[984, 1002], [1024, 1002]])).toBeNull();
+    expect(alignOnMarks(view, view.others.map(o => [o.u + 20, o.v] as [number, number]))).toBeNull();
+    expect(alignOnMarks({ ...view, others: [] }, [[1, 1]])).toBeNull();
+  });
+});
+
 describe("the founder's photographs of a plant", () => {
   it("say where the plant is drawn and how close its neighbours are, then offer the flight's photographs from this device", async () => {
-    const cameras = vi.fn(async () => [camera("a", 0)]);
+    const cameras = vi.fn(async () => ({ frames: [camera("a", 0)], marks: new Map<string, [number, number][]>() }));
     render(<PlantPhotos plants={PLANTS} index={1} lat={PLANTS.points[1][0]} lng={PLANTS.points[1][1]} groundFrames={null} cameras={cameras} access={null} setAccess={() => undefined} />);
     // Once the cameras are read, the section offers the flight's own files.
     await screen.findByRole("button", { name: "Open the flight's photographs" }, { timeout: 5000 });
@@ -123,7 +140,7 @@ describe("a plant selected in the viewer", () => {
   const close = async (r: { unmount: () => void }) => { await new Promise(f => setTimeout(f, 100)); r.unmount(); await new Promise(f => setTimeout(f, 50)); };
 
   it("shows the founder every photograph that saw it", async () => {
-    const r = render(<div style={{ width: 1200, height: 800 }}><FieldTwinView twin={twin} atlasUrl={async () => ""} expose plantPhotos={{ cameras: async () => [camera("a", 0)] }} /></div>);
+    const r = render(<div style={{ width: 1200, height: 800 }}><FieldTwinView twin={twin} atlasUrl={async () => ""} expose plantPhotos={{ cameras: async () => ({ frames: [camera("a", 0)], marks: new Map<string, [number, number][]>() }) }} /></div>);
     act(() => window.__fieldTwin!.select(pick));
     await screen.findByRole("button", { name: "Open the flight's photographs" }, { timeout: 5000 });
     expect(within(screen.getByRole("complementary", { name: "Inspector" })).getByRole("region", { name: "Every photograph that saw it" })).toBeInTheDocument();

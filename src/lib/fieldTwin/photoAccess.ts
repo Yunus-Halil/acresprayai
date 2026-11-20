@@ -23,7 +23,9 @@ export function photoAccessFrom(files: File[] | FileList, source: PhotoAccess["s
 /** How many of the twin's photographs these files hold. */
 export const photosMatched = (access: PhotoAccess, frames: GeorefFrame[]) => frames.filter(f => access.byName.has(f.name)).length;
 
-export type EvidenceView = PhotoView & { url: string; widthM: number; markerPx: number; px: number; /** The crop was turned this far (radians) to put north up. */ turned?: number };
+export type EvidenceView = PhotoView & { url: string; widthM: number; markerPx: number; px: number; /** The crop was turned this far (radians) to put north up. */ turned?: number;
+  /** Asked to align (`marks`): on how many of this photograph's own marks it was aligned and how far it moved, metres; null: not aligned (too few marks around). */
+  aligned?: { on: number; movedM: number } | null };
 
 /**
  * Where a pixel of the photograph lands in a crop `px` square centred on (cu, cv), `sz` photograph pixels across,
@@ -38,19 +40,45 @@ export function cropPoint(u: number, v: number, cu: number, cv: number, sz: numb
 export const northUpTurn = (north: [number, number]) => -Math.PI / 2 - Math.atan2(north[1], north[0]);
 
 /**
+ * How far to move a view so the places around it (`others`, as drawn through the camera) sit on this photograph's own
+ * marks of them: each place paired with the photograph's nearest mark within `withinM`, the median of the pairs' steps,
+ * in the photograph's pixels. Null with fewer than `minPairs` pairs (the view stays as the camera draws it).
+ */
+export function alignOnMarks(v: PhotoView, marks: [number, number][], withinM = 0.08, minPairs = 3): { du: number; dv: number; on: number } | null {
+  const o = v.others ?? [], within = withinM / Math.max(1e-6, v.pixelM);
+  if (o.length < minPairs || !marks.length) return null;
+  // Only the marks near the view (the others lie within a metre or so of it).
+  const reach = within + Math.max(...o.map(p => Math.hypot(p.u - v.u, p.v - v.v)));
+  const near = marks.filter(([x, y]) => Math.abs(x - v.u) <= reach && Math.abs(y - v.v) <= reach);
+  const du: number[] = [], dv: number[] = [];
+  for (const p of o) {
+    let best = within, bx = 0, by = 0, hit = false;
+    for (const [x, y] of near) { const d = Math.hypot(x - p.u, y - p.v); if (d <= best) { best = d; bx = x; by = y; hit = true; } }
+    if (hit) { du.push(bx - p.u); dv.push(by - p.v); }
+  }
+  if (du.length < minPairs) return null;
+  const med = (x: number[]) => { const s = [...x].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  return { du: med(du), dv: med(dv), on: du.length };
+}
+
+/**
  * The photographs that saw a place (nearest nadir first, at most `max`), each cropped around it from the original file
  * at its full resolution, `windowM` metres across, with the place marked by a ring `markM` across. Only photographs on
  * this device; the rest are named and skipped. `others`: further places marked in each crop, each by a smaller ring
  * in its own colour (a plant's neighbours as the twin located them). `northUp`: each crop turned so north is up, as
  * the map is; `scaleM`: a bar that long drawn in the corner; `bold`: thicker rings.
  */
-export async function evidenceViews(access: PhotoAccess, frames: GeorefFrame[], lat: number, lng: number, opts: { windowM?: number; markM?: number; px?: number; max?: number; others?: { lat: number; lng: number; colour: string }[]; northUp?: boolean; scaleM?: number; bold?: boolean } = {}): Promise<{ views: EvidenceView[]; missing: string[] }> {
+export async function evidenceViews(access: PhotoAccess, frames: GeorefFrame[], lat: number, lng: number, opts: { windowM?: number; markM?: number; px?: number; max?: number; others?: { lat: number; lng: number; colour: string }[]; northUp?: boolean; scaleM?: number; bold?: boolean; /** Per photograph its own marks, in its pixels: each crop aligned on them (alignOnMarks). */ marks?: Map<string, [number, number][]> } = {}): Promise<{ views: EvidenceView[]; missing: string[] }> {
   const windowM = opts.windowM ?? 1.2, markM = opts.markM ?? 0.12, px = opts.px ?? 240, others = opts.others ?? [], w = opts.bold ? 2 : 1;
   const views = viewsOf(frames, lat, lng, opts.max ?? 4, { ...(others.length ? { others: others.map(o => [o.lat, o.lng] as [number, number]) } : {}), ...(opts.northUp ? { north: true } : {}) }), out: EvidenceView[] = [], missing: string[] = [];
   const intr = new Map(frames.map(f => [f.name, f.intrinsics]));
-  for (const v of views) {
-    const file = access.byName.get(v.name);
-    if (!file) { missing.push(v.name); continue; }
+  for (const v0 of views) {
+    const file = access.byName.get(v0.name);
+    if (!file) { missing.push(v0.name); continue; }
+    // Aligned on the photograph's own marks of the places around it, when asked: the place and the others move together.
+    const al = opts.marks ? alignOnMarks(v0, opts.marks.get(v0.name) ?? []) : null;
+    const v: PhotoView = al ? { ...v0, u: v0.u + al.du, v: v0.v + al.dv, others: v0.others?.map(o => ({ ...o, u: o.u + al.du, v: o.v + al.dv })) } : v0;
+    const aligned = opts.marks ? (al ? { on: al.on, movedM: Math.hypot(al.du, al.dv) * v0.pixelM } : null) : undefined;
     const bmp = await createImageBitmap(file);
     try {
       const k = bmp.width / intr.get(v.name)!.width, sz = Math.max(16, (windowM / Math.max(1e-4, v.pixelM)) * k);
@@ -84,7 +112,7 @@ export async function evidenceViews(access: PhotoAccess, frames: GeorefFrame[], 
         g.fillStyle = "#fff"; g.font = "11px sans-serif"; g.fillText(`${Math.round(opts.scaleM * 100)} cm`, x0 + L + 6, y0 + 1);
       }
       const blob = await c.convertToBlob({ type: "image/jpeg", quality: 0.88 });
-      out.push({ ...v, url: URL.createObjectURL(blob), widthM: windowM, markerPx, px, ...(turn ? { turned: turn } : {}) });
+      out.push({ ...v, url: URL.createObjectURL(blob), widthM: windowM, markerPx, px, ...(turn ? { turned: turn } : {}), ...(aligned !== undefined ? { aligned } : {}) });
     } finally { bmp.close(); }
   }
   return { views: out, missing };
