@@ -700,6 +700,22 @@ export const SEQUENCE = {
    * 78 -> 75); at 4 cm it takes labelled plants (4 of 10). It treats the symptom: the cause is the photographs'
    * registration, and this goes when that is mended. */
   secondLookAcrossMaxM: 0,
+  /** His rule of 2026-11-20 (0 = off, the default; 2 in the app's preset): a plant counts as corn only when it is part
+   * of a run: another plant of its row stands within this many plant spacings of it along the row, on at least one
+   * side; a plant only one photograph made needs one on both sides. Asked again whenever a plant goes (a neighbour that
+   * was itself left out is no neighbour), until nothing more goes. A plant left out is on no row: green that is not
+   * corn, not counted (a second-look candidate is then not kept at all, as any candidate off a row). A row then
+   * runs from its first plant in a run to its last. Needs the plant spacing: where it is not measured nothing is asked.
+   * In place of trimming rows' ends (tried and taken out the same day). */
+  runReachSeeds: 0,
+  /** His rule of 2026-11-20 with the runs (off by default, on in the app's preset): a row counts only when it is at
+   * least `minCertainRowM` (3 m) long and another such row runs beside it at the field's row spacing (its plants
+   * across from this row's by half to one and a half row spacings, abreast of it over at least half its length or
+   * 1.5 m). A short clump on a row's line past the planting, or a row with no row beside it, is not a row: its plants
+   * are green that is not corn, not counted. The same neighbour test for each stretch at a row's end (its plants
+   * between gaps of over the field's gap length): a clump on the row's line past the planting, with no row abreast of
+   * it, is not part of the row. Off, every piece of 3 plants or more is a row, as before. */
+  rowNeedsNeighbour: false,
 };
 /** The rules as they stood on 2026-11-16 at f23efc0, before the changes above them here: kept so that result can be run beside the present one. */
 export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: false, refuseScattered: false, alleyTest: "none", betweenOffLines: false, spacingRulesNeedASpacing: false, sweepLoneMarks: false };
@@ -711,7 +727,7 @@ export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: fal
  * `cutFromRow`: placed on a row, then left on no row when the row was built (a piece of under three plants, a stretch
  * longer than `maxBridgeM` with no plant, or a stretch over ground judged scattered: `build` in reconstruct).
  */
-export const SETTLED = { none: 0, certainRow: 1, scattered: 2, noRow: 3, noSpacing: 4, alley: 5, tooClose: 6, tooFar: 7, offSpacing: 8, placedAtSpacing: 9, placedOffSpacing: 10, freeAlley: 11, freeTooClose: 12, freePlaced: 13, alone: 14, geometryRow: 15, cutFromRow: 16, secondLook: 17, placedOnRetry: 18, offLine: 19 } as const;
+export const SETTLED = { none: 0, certainRow: 1, scattered: 2, noRow: 3, noSpacing: 4, alley: 5, tooClose: 6, tooFar: 7, offSpacing: 8, placedAtSpacing: 9, placedOffSpacing: 10, freeAlley: 11, freeTooClose: 12, freePlaced: 13, alone: 14, geometryRow: 15, cutFromRow: 16, secondLook: 17, placedOnRetry: 18, offLine: 19, notInARun: 20, notARow: 21 } as const;
 export type GroundJudge = { state: (e: number, n: number) => 0 | 1 | 2; dotState?: Uint8Array | null };
 export type RowSegment = { a0: number; a1: number; confirmed: boolean };
 /** A row's course in the rows' frame: its across position at knots along it, from its first plant to its last, and the dots it was fitted through. */

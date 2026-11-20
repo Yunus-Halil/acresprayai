@@ -11,6 +11,9 @@ describe("the candidate frozen for FINAL-3", () => {
     for (const k of ["retryTooFar", "doublesApart"]) { expect(seq[k]).toBe(false); delete seq[k]; }
     // 2026-11-20: the temporary patch for second-look plants beside their row, off (0) in the frozen setup.
     expect(seq.secondLookAcrossMaxM).toBe(0); delete seq.secondLookAcrossMaxM;
+    // 2026-11-20: corn only in runs, off (0) in the frozen setup.
+    expect(seq.runReachSeeds).toBe(0); delete seq.runReachSeeds;
+    expect(seq.rowNeedsNeighbour).toBe(false); delete seq.rowNeedsNeighbour;
     expect(r).toEqual(CORN_CANDIDATE_FINAL3_FROZEN);
   });
   it("is the cores (new reference), variant A, the guard with its misread check, the sweep off", () => {
