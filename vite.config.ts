@@ -44,7 +44,7 @@ const fieldTwinDevFiles = (): Plugin => ({
         return;
       }
       // EXPERIMENT (experiment/photo-ground): pg/ground.json and pg/{overview,detail}/<z>/<x>/<y>.jpg from scripts/directGeoref/photoGround.ts.
-      const m = /^\/([a-z0-9][a-z0-9-]{0,63})\/(twin\.json|reference\.json|plants\.json|atlas-\d+\.jpg|tiles\/\d{1,2}\/\d{1,9}\/\d{1,9}\.jpg|pg\/ground\.json|pg\/(?:overview|detail)\/\d{1,2}\/\d{1,9}\/\d{1,9}\.jpg|ground\/ground\.json|ground\/\d{1,2}\/\d{1,9}\/\d{1,9}\.jpg)$/.exec(url);
+      const m = /^\/([a-z0-9][a-z0-9-]{0,63})\/(twin\.json|reference\.json|plants\.json|analysis\.json|atlas-\d+\.jpg|tiles\/\d{1,2}\/\d{1,9}\/\d{1,9}\.jpg|pg\/ground\.json|pg\/(?:overview|detail)\/\d{1,2}\/\d{1,9}\/\d{1,9}\.jpg|ground\/ground\.json|ground\/\d{1,2}\/\d{1,9}\/\d{1,9}\.jpg)$/.exec(url);
       if (!m) return next();
       const file = path.join(root, m[1], m[2]);
       if (!fs.existsSync(file)) {

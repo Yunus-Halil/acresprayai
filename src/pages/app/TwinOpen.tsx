@@ -1,6 +1,6 @@
 // One Field Twin, full screen. Opened from the account, or (right after a build) from this tab while its save
 // finishes, so the participant sees the twin at once and the save carries on beneath.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, Loader2 } from "lucide-react";
 import Seo from "@/components/Seo";
@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { usePilotRole } from "@/lib/pilot/access";
 import { type TwinRecord, completeRecordFacts, effectiveStatus, getTwinRecord } from "@/lib/fieldTwin/registry";
-import { loadAtlas, loadTwin } from "@/lib/fieldTwin/store";
+import { loadAtlas, loadTwin, loadTwinAnalysisJson } from "@/lib/fieldTwin/store";
+import { cameraSource } from "@/lib/fieldTwin/plantCameras";
+import { usePhotoGround } from "@/lib/fieldTwin/photoGroundFlag";
 import type { TwinBundle } from "@/lib/fieldTwin/types";
 import { retrySave, sessionTwin, useBuildSession } from "@/lib/fieldTwin/buildSession";
 import { track } from "@/lib/pilot/telemetry";
@@ -46,6 +48,17 @@ export default function TwinOpen() {
   const [ground, setGround] = useState<{ manifest: GroundManifest; overview: (z: number, x: number, y: number) => Promise<string | null> } | null>(null);
   const [photoFiles, setPhotoFiles] = useState<File[] | null>(null);
   const userId = user?.id ?? null;
+  // The founder's photographs of a selected corn plant (PlantPhotos.tsx), by photo ground's own rule: the cameras the
+  // build aligned, from this tab's build, else from the record saved beside the twin in the account; read once a twin.
+  const photosRule = usePhotoGround();
+  const storageKey = state.status === "open" && state.record ? state.record.storage_key : null;
+  const plantPhotos = useMemo(() => (!photosRule || !userId ? null : {
+    cameras: cameraSource(async () => {
+      const mine = sessionTwin(id);
+      if (mine?.analysis) return JSON.parse(await mine.analysis.text()) as unknown;
+      return storageKey ? loadTwinAnalysisJson(userId, storageKey) : null;
+    }),
+  }), [photosRule, userId, id, storageKey]);
 
   useEffect(() => {
     if (!userId) return;
@@ -153,7 +166,7 @@ export default function TwinOpen() {
       </header>
       <main className="relative min-h-0 flex-1">
         <FieldTwinView twin={twin} atlasUrl={atlasUrl} audience={founder ? "founder" : "participant"} expose={import.meta.env.DEV} ground={ground} photoFiles={photoFiles} groundAbsent={state.source.kind === "account"}
-          review={{ twinId: record?.id ?? null }} />
+          review={{ twinId: record?.id ?? null }} plantPhotos={twin.corn ? plantPhotos : null} />
       </main>
     </div>
   );

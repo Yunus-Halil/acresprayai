@@ -20,6 +20,7 @@ import { CornFieldPanel, CornLegend } from "./CornPanels";
 import { isLocalTwin } from "@/lib/fieldTwin/cornView";
 import TwinMap, { type PhotoGroundLayer, type ReferenceImagery, type TwinMapHandle } from "./TwinMap";
 import { type DetailState, PhotoEvidence, PhotoGroundAbsent, PhotoGroundPanel } from "./PhotoGround";
+import PlantPhotos, { type CameraSource } from "./PlantPhotos";
 import { usePhotoGround } from "@/lib/fieldTwin/photoGroundFlag";
 import { CORN_VIEWS, CORN_VIEW_HINT, CORN_VIEW_LABEL, type CornViewMode, cornLookOf } from "@/lib/fieldTwin/cornRender";
 import LateFlightBanner from "./LateFlightBanner";
@@ -112,6 +113,12 @@ type Props = {
   photoFiles?: File[] | null;
   /** Photo ground could be shown, but this twin has no overview in this tab (a reopened twin): say why, once. */
   groundAbsent?: boolean;
+  /**
+   * The founder's photographs of a selected corn plant (PlantPhotos.tsx), passed by the page only to whom photo
+   * ground's rule shows the flight's photographs (photoGroundFlag.ts): the cameras the build aligned, read on the first
+   * plant selected (a twin with photo ground uses its manifest's). Absent: a selected plant shows what it always did.
+   */
+  plantPhotos?: { cameras: CameraSource | null } | null;
 };
 
 const DETAIL_KEY = "swathwise:twin-detail";
@@ -168,7 +175,7 @@ function measured<T>(name: string, fn: () => T): T {
   return v;
 }
 
-export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], initialReference = null, expose = false, detail: detailProp, audience = "founder", review, focus = null, onFocus, plants: plantsOverride = null, ground: groundProp = null, photoFiles = null, groundAbsent = false, cornView: cornViewProp }: Props) {
+export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], initialReference = null, expose = false, detail: detailProp, audience = "founder", review, focus = null, onFocus, plants: plantsOverride = null, ground: groundProp = null, photoFiles = null, groundAbsent = false, cornView: cornViewProp, plantPhotos = null }: Props) {
   const units = useUnitSystem();
   // A corn twin built with the plants first carries its plants; the dev preview can lay its own plants.json over them.
   const plants = useMemo(() => plantsOverride ?? (twin.corn?.plants ? { points: twin.corn.plants.points, note: twin.corn.plants.note, certainty: twin.corn.plants.certainty, photos: twin.corn.plants.photos } : null), [plantsOverride, twin.corn?.plants]);
@@ -675,7 +682,9 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
               onSave={r => saveReview({ kind: r.kind, id: r.id, verdict: r.verdict, note: r.note, algorithmStatus: r.algorithmStatus, says: r.says })} onClear={(k, id) => clearReview(k, id)} /> : null;
           })()}
           <TwinInspector technical={founderView} twin={twin} scene={scene} selection={selection} plants={plants} atlasUrl={atlasUrl} onClose={() => setSelection(null)} onZoomTo={zoomTo} findings={result} onSelectWeed={id => { const w = twin.weeds.find(x => x.id === id); if (w) { setSelection({ kind: "weed", id }); zoomTo(w.lat, w.lng, Math.max(2, w.diameterM * 8)); } }} />
-          {groundOn && groundProp && (() => { const at = placeOf(twin, selection); return at ? <PhotoEvidence manifest={groundProp.manifest} access={photoAccess} setAccess={setPhotoAccess} lat={at.lat} lng={at.lng} what={at.what} windowM={at.windowM} markM={at.markM} /> : null; })()}
+          {selection.kind === "plant" && plants && twin.corn && (plantPhotos || (groundOn && groundProp))
+            ? <PlantPhotos plants={plants} index={selection.index} lat={selection.lat} lng={selection.lng} groundFrames={groundOn && groundProp ? groundProp.manifest.frames : null} cameras={plantPhotos?.cameras ?? null} access={photoAccess} setAccess={setPhotoAccess} />
+            : groundOn && groundProp && (() => { const at = placeOf(twin, selection); return at ? <PhotoEvidence frames={groundProp.manifest.frames} access={photoAccess} setAccess={setPhotoAccess} lat={at.lat} lng={at.lng} what={at.what} windowM={at.windowM} markM={at.markM} /> : null; })()}
           {reviewing && <div className="mt-4 border-t border-[#2e322e] pt-3"><FeedbackButton kind="finding" twinId={review?.twinId ?? null} context={{ selection: selection.kind, ...("id" in selection ? { id: selection.id } : {}) }} label="Tell us more about this" variant="ghost" /></div>}
         </aside>
       ) : resultsOpen ? (

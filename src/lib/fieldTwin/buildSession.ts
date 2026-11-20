@@ -197,9 +197,9 @@ export function releaseSessionOfOtherAccount(currentUser: string | null): void {
 }
 
 /** The in-memory twin and files of this tab's build, when it is the twin `id` (the viewer opens it before the save ends). */
-export function sessionTwin(id: string): { twin: TwinBundle; files: Map<string, Blob>; pending: Promise<Map<string, Blob>>; ground: BuildResult["ground"]; photos: File[] | null } | null {
+export function sessionTwin(id: string): { twin: TwinBundle; files: Map<string, Blob>; pending: Promise<Map<string, Blob>>; ground: BuildResult["ground"]; photos: File[] | null; /** The build's analysis record (a corn build that was asked for one), else null. */ analysis: Blob | null } | null {
   if (state.status === "idle" || !state.result || state.result.twin.id !== id) return null;
-  return { twin: state.result.twin, files: state.result.files, pending: state.result.atlases, ground: state.result.ground ?? Promise.resolve(null), photos: sessionFiles };
+  return { twin: state.result.twin, files: state.result.files, pending: state.result.atlases, ground: state.result.ground ?? Promise.resolve(null), photos: sessionFiles, analysis: state.result.analysis ?? null };
 }
 
 /** Tests only. */

@@ -12,6 +12,7 @@ import { syntheticCornTwin } from "@/lib/fieldTwin/syntheticCorn";
 import { type LatLngPair, type TwinBundle, parseTwin } from "@/lib/fieldTwin/types";
 import { type GroundManifest, parseGroundManifest } from "@/lib/fieldTwin/photoGround";
 import { photoGroundDevFlag } from "@/lib/fieldTwin/photoGroundFlag";
+import { cameraSource } from "@/lib/fieldTwin/plantCameras";
 
 export default function FieldTwinDevPreview() {
   const [twin, setTwin] = useState<TwinBundle | null>(null);
@@ -93,12 +94,31 @@ export default function FieldTwinDevPreview() {
     );
   }
   if (!twin) return <div className="p-6 text-sm text-neutral-400">Loading the twin…</div>;
+  // The founder's photographs of a selected corn plant: the cameras from the build's analysis record when this
+  // computer holds it beside the twin (analysis.json), or from the build just made here.
+  const plantPhotos = audience === "founder" && twin.corn ? { cameras: plantCameras(twin.id, built) } : null;
   const atlasUrl = built
     ? async (i: number) => { const file = twin.atlases[i].file; let b = built.files.get(file); if (!b) { await built.atlases; b = built.files.get(file); } if (!b) throw new Error(`${file} missing`); return URL.createObjectURL(b); }
     : async (i: number) => `/__field-twin/${twin.id}/${twin.atlases[i].file}`;
   return (
     <div className="h-screen w-screen bg-[#1a1c1a]">
-      <FieldTwinView twin={twin} atlasUrl={atlasUrl} referenceOptions={reference} initialReference={photos && !ground ? reference[0]?.id ?? null : null} plants={plants} ground={audience === "founder" ? ground : null} expose detail={detail} cornView={cornView} audience={audience} review={audience === "participant" ? { twinId: null, disabledReason: "Preview: reviews are saved only for a twin in an account." } : undefined} />
+      <FieldTwinView twin={twin} atlasUrl={atlasUrl} referenceOptions={reference} initialReference={photos && !ground ? reference[0]?.id ?? null : null} plants={plants} ground={audience === "founder" ? ground : null} plantPhotos={plantPhotos} expose detail={detail} cornView={cornView} audience={audience} review={audience === "participant" ? { twinId: null, disabledReason: "Preview: reviews are saved only for a twin in an account." } : undefined} />
     </div>
   );
+}
+
+/** One camera source per twin (cameraSource reads once). */
+const plantCameraSources = new Map<string, ReturnType<typeof cameraSource>>();
+function plantCameras(id: string, built: BuiltTwin | null) {
+  const k = `${built ? "built" : "disk"}:${id}`;
+  let s = plantCameraSources.get(k);
+  if (!s) {
+    s = cameraSource(async () => {
+      if (built?.analysis) return JSON.parse(await built.analysis.text()) as unknown;
+      const r = await fetch(`/__field-twin/${id}/analysis.json`);
+      return r.ok ? ((await r.json()) as unknown) : null;
+    });
+    plantCameraSources.set(k, s);
+  }
+  return s;
 }
