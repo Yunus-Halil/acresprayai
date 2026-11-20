@@ -1,7 +1,7 @@
 // The corn twin's views (cornRender.ts): the count, the colours blended over the ground, the tints, and when a plant
 // is drawn as a plant or stamped as a dot.
 import { describe, expect, it } from "vitest";
-import { CORN_RENDER, blendGrid, cornLookOf, cornPlantCount, cornTints, gridCell, isOnRow, leavesFor, plantDrawMode, plantHash, stampOf } from "@/lib/fieldTwin/cornRender";
+import { CORN_RENDER, blendGrid, cornLookOf, cornPlantCount, cornTints, gridCell, isOnRow, leavesFor, plantDrawMode, plantHash, plantKind, stampOf } from "@/lib/fieldTwin/cornRender";
 import type { TwinCorn } from "@/lib/fieldTwin/types";
 
 const corn = (over: Partial<TwinCorn>): TwinCorn => ({ version: 1, engine: "", enteredCrop: "corn", rowSpacingM: 0.76, rowDirectionDeg: 0, rowAgreementM: null, photographs: { read: 1, withRows: 1, failed: [] }, rows: [], weeds: [], gaps: [], summary: { cornRows: 0, unconfirmedRows: 0, cornRowLengthM: 0, offLatticeDropped: 0, weeds: { confirmed: 0, unconfirmed: 0, contested: 0 }, gaps: { confirmed: 0, withheld: 0, confirmedLengthM: 0 }, perPhoto: { weedCandidates: 0, standGaps: 0, rows: 0 } }, notes: [], ...over });
@@ -12,14 +12,23 @@ describe("cornPlantCount", () => {
   it("counts every located plant, on the rows and off them", () => {
     // 0 certain, 1 probable, 4 and 5 found along a row: on a row. 2 on no row, 3 between rows: off the rows.
     const c = cornPlantCount(corn({ plants: plants([0, 0, 1, 4, 5, 2, 2, 3]) }));
-    expect(c).toEqual({ total: 8, onRows: 5, offRows: 3, onNoRow: 2, betweenRows: 1 });
+    expect(c).toEqual({ total: 8, onRows: 5, offRows: 3, onNoRow: 2, betweenRows: 1, sorted: false, doubles: 0, notCorn: 0 });
+  });
+  it("on a twin that sorted its plants off the rows, counts the plants on the rows and the doubles, not the green that is not corn", () => {
+    // 7 a double (counted); 2 on no row and 3 between rows: green that is not corn (not counted).
+    const P = plants([0, 0, 1, 4, 5, 7, 7, 2, 2, 3]);
+    const c = cornPlantCount(corn({ plants: { ...P, summary: { ...P.summary, doubles: 2 } } }));
+    expect(c).toEqual({ total: 7, onRows: 5, offRows: 0, onNoRow: 2, betweenRows: 1, sorted: true, doubles: 2, notCorn: 3 });
+    expect([0, 1, 4, 7, 2, 3].map(k => plantKind(k, true))).toEqual(["row", "row", "row", "double", "notCorn", "notCorn"]);
+    // A twin from before the sort: everything off the rows is counted, as it was.
+    expect([7, 2, 3].map(k => plantKind(k, false))).toEqual(["double", "off", "off"]);
   });
   it("is null on a twin with no located plants (the count was withheld)", () => {
     expect(cornPlantCount(corn({}))).toBeNull();
     expect(cornPlantCount(null)).toBeNull();
   });
   it("knows the row classes", () => {
-    expect([0, 1, 2, 3, 4, 5, 6].map(isOnRow)).toEqual([true, true, false, false, true, true, true]);
+    expect([0, 1, 2, 3, 4, 5, 6, 7].map(isOnRow)).toEqual([true, true, false, false, true, true, true, false]);
   });
 });
 

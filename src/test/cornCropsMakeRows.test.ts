@@ -638,3 +638,38 @@ describe("the plant spacing not asked of a dot on a row's line (off by default)"
     expect(SEQUENCE.offSpacingStricterOnly).toBe(false); expect(SEQUENCE.tooCloseFromField).toBe(false); expect(SEQUENCE_V1.tooCloseFromField).toBe(false);
   });
 });
+
+describe("the dots refused as too far, tried again (retryTooFar, off by default)", () => {
+  // Row 5 lacks its plants from 10.05 to 12.0 m (its plants at 9.9 and 12.15 stay). In the gap, never certain:
+  //   far      at 11.25 m, made by 2 photographs: tried first (the strongest), when the nearest plant on its row is six
+  //            spacings away, so refused as too far
+  //   bridge   10.05 to 10.8 m, a plant every spacing, each made by 1 photograph: tried after it and placed, one by one
+  // Once the bridge is placed, the far dot stands three spacings from a plant on its row.
+  const gap = (a: number) => a > 9.95 && a < 12.1;
+  const base: Dot[] = []; for (let r = 0; r < 6; r++) for (let k = 0; k * SEED <= 24 + 1e-9; k++) { const a = k * SEED; if (r === 5 && gap(a)) continue; base.push(dot(a, r * S)); }
+  const bridge = [10.05, 10.2, 10.35, 10.5, 10.65, 10.8].map(a => dot(a, 5 * S, 1));
+  const dots = [...base, dot(11.25, 5 * S, 2), ...bridge], iFar = base.length;
+
+  it("as it stands: the far dot is refused, though the plants placed after it then stand three spacings from it", () => {
+    const R = read(dots);
+    expect(R.settled[iFar]).toBe(SETTLED.tooFar); expect(R.rowOf[iFar]).toBe(-1);
+    for (let k = 1; k <= bridge.length; k++) expect(R.rowOf[iFar + k]).toBeGreaterThanOrEqual(0);
+  });
+
+  it("tried again, it goes on its row by the same tests; nothing else moves", () => {
+    const R = read(dots, { ...SEQUENCE, retryTooFar: true }), was = read(dots);
+    expect(R.settled[iFar]).toBe(SETTLED.placedOnRetry);
+    expect(R.rowOf[iFar]).toBe(R.rowOf[iFar + 1]);
+    for (let i = 0; i < dots.length; i++) if (i !== iFar) expect(R.rowOf[i] >= 0).toBe(was.rowOf[i] >= 0);
+  });
+
+  it("a dot still too far after every other is placed stays refused", () => {
+    const alone = [...base, dot(11.25, 5 * S, 2)];
+    const R = read(alone, { ...SEQUENCE, retryTooFar: true });
+    expect(R.settled[iFar]).toBe(SETTLED.tooFar); expect(R.rowOf[iFar]).toBe(-1);
+  });
+
+  it("is off by default and in the rules as they stood", () => {
+    expect(SEQUENCE.retryTooFar).toBe(false); expect(SEQUENCE_V1.retryTooFar).toBe(false); expect(SEQUENCE.doublesApart).toBe(false);
+  });
+});

@@ -30,8 +30,13 @@ export const CORN_RENDER = {
   defaultPlantSizeM: 0.1,
   /** Simple view: one flat green that reads on the dark ground. */
   simpleCorn: [127, 208, 106] as TwinRgb,
-  /** A plant located off the rows, in both views: counted, and told apart by colour (not green, not the weeds' red). */
+  /** A plant located off the rows, in both views: counted, and told apart by colour (not green, not the weeds' red).
+   * On a twin whose plants were sorted (`plantsSorted`): the doubles, still counted until the photographs decide them. */
   offRow: [104, 178, 255] as TwinRgb,
+  /** Green that is not corn (a sorted twin's dots on no row other than the doubles): a plain dot, never a corn plant. */
+  notCorn: [214, 196, 86] as TwinRgb,
+  /** Its dot's size, as a share of the drawn plant. */
+  notCornShare: 0.3,
   /** Tints of the corn colour across the field (photographs differ in exposure): this many, so the sprites are few. */
   tints: 6,
   /** A plant under this many screen pixels is stamped as a dot; at or over it, drawn as a plant. */
@@ -46,18 +51,41 @@ export const CORN_RENDER = {
 };
 
 /** Classes of `TwinCornPlants.certainty` that stand on a row (0 certain, 1 probable, 4 and 5 found along a row, 6 development). */
-export const isOnRow = (certainty: number) => certainty === 0 || certainty === 1 || certainty >= 4;
+export const isOnRow = (certainty: number) => certainty === 0 || certainty === 1 || certainty === 4 || certainty === 5 || certainty === 6;
 
-/** The plant count of a corn twin: every located plant, split by whether it stands on a row. Null: no count on this twin. */
-export function cornPlantCount(corn: TwinCorn | null | undefined): { total: number; onRows: number; offRows: number; onNoRow: number; betweenRows: number } | null {
+/** Whether a twin sorted its plants off the rows (2026-11-19 on: the summary carries the doubles): the doubles counted, the rest not corn. */
+export const plantsSorted = (P: { summary?: { doubles?: number } } | null | undefined) => P?.summary?.doubles != null;
+
+/**
+ * What a plant is drawn and counted as: on a row (corn); a double (on a row's line, very close to a plant on it:
+ * counted, its own colour); green that is not corn (a sorted twin's other plants off the rows: a plain dot, not
+ * counted); or, on a twin from before the sort, off the rows (counted, its own colour).
+ */
+export type PlantKind = "row" | "double" | "notCorn" | "off";
+export const plantKind = (certainty: number, sorted: boolean): PlantKind => (isOnRow(certainty) ? "row" : certainty === 7 ? "double" : sorted ? "notCorn" : "off");
+
+export type CornPlantCount = {
+  /** The plants counted: on a sorted twin those on the rows and the doubles; before the sort every located plant. */
+  total: number; onRows: number;
+  /** Before the sort: the plants off the rows, counted (of them `betweenRows` between two rows). On a sorted twin: 0. */
+  offRows: number; onNoRow: number; betweenRows: number;
+  sorted: boolean;
+  /** A sorted twin: the doubles (counted) and the green that is not corn (not counted; of it `betweenRows` between two rows). */
+  doubles: number; notCorn: number;
+};
+
+/** The plant count of a corn twin (see CornPlantCount). Null: no count on this twin. */
+export function cornPlantCount(corn: TwinCorn | null | undefined): CornPlantCount | null {
   const P = corn?.plants;
   if (!P) return null;
-  let on = 0, none = 0, between = 0;
-  for (const c of P.certainty) { if (isOnRow(c)) on++; else if (c === 3) between++; else none++; }
+  const sorted = plantsSorted(P), n = P.points.length;
   // A twin whose classes are missing (never written so far): every plant is on a row.
-  const total = P.points.length;
-  if (P.certainty.length !== total) return { total, onRows: total, offRows: 0, onNoRow: 0, betweenRows: 0 };
-  return { total, onRows: on, offRows: none + between, onNoRow: none, betweenRows: between };
+  if (P.certainty.length !== n) return { total: n, onRows: n, offRows: 0, onNoRow: 0, betweenRows: 0, sorted, doubles: 0, notCorn: 0 };
+  let on = 0, none = 0, between = 0, doubles = 0;
+  for (const c of P.certainty) { if (isOnRow(c)) on++; else if (c === 7) doubles++; else if (c === 3) between++; else none++; }
+  return sorted
+    ? { total: on + doubles, onRows: on, offRows: 0, onNoRow: none, betweenRows: between, sorted, doubles, notCorn: none + between }
+    : { total: n, onRows: on, offRows: none + between + doubles, onNoRow: none + doubles, betweenRows: between, sorted, doubles: 0, notCorn: 0 };
 }
 
 /** A colour sample in the viewer's world coordinates (zoom-0 units). */

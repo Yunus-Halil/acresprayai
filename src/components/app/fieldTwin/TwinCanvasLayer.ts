@@ -17,7 +17,7 @@ import { CORN_STATUS, type Detail, GridIndex, PRESSURE_INDEX, ROW_STATUS, SUPPOR
 import { type TwinLayers, TWIN_COLOURS as C, badgesAllowed } from "@/lib/fieldTwin/style";
 import type { LatLngPair, TwinRgb } from "@/lib/fieldTwin/types";
 import type { RowEdits } from "@/lib/fieldTwin/rowEdits";
-import { CORN_RENDER, type CornLook, type CornViewMode, blendGrid, cornLookOf, cornTints, gridCell, isOnRow, plantDrawMode, plantHash, rgbCss, stampOf } from "@/lib/fieldTwin/cornRender";
+import { CORN_RENDER, type CornLook, type CornViewMode, blendGrid, cornLookOf, cornTints, gridCell, plantDrawMode, plantHash, plantKind, rgbCss, stampOf } from "@/lib/fieldTwin/cornRender";
 import { SpriteCache, soilCanvas, spriteSizeFor } from "./cornSprite";
 
 /** How far (screen pixels) a pointer may be from a boundary handle to take it. */
@@ -110,7 +110,7 @@ export class TwinCanvasLayer extends L.Canvas {
   /** A click that ends a handle drag is not a tap on the ground. */
   private swallowClick = false;
   /** Plants located by the photographs (zoom-0 units), drawn at the plant level as small neutral dots; null for none. */
-  private plants: { n: number; x: Float64Array; y: Float64Array; index: GridIndex; certainty: Uint8Array | null; points: LatLngPair[] } | null = null;
+  private plants: { n: number; x: Float64Array; y: Float64Array; index: GridIndex; certainty: Uint8Array | null; points: LatLngPair[]; /** The twin sorted its plants off the rows (cornRender.ts plantsSorted). */ sorted: boolean } | null = null;
   private showPlants = true;
   /** Corn twins: the view (cornRender.ts: Realistic, Simple, Geometry). Null draws the corn as it was drawn before the
    * views (rows and plant marks together), which the row editor always does. */
@@ -304,12 +304,12 @@ export class TwinCanvasLayer extends L.Canvas {
     if (me._map) { if (active) me._map.doubleClickZoom.disable(); else if (!this.editing) me._map.doubleClickZoom.enable(); }
     this.requestRedraw();
   }
-  /** What each plant is drawn as: 0 certain on a row, 1 probable, 2 on no row, 3 between rows (not the crop); absent: all 0. */
-  setPlants(points: LatLngPair[] | null, show: boolean, certainty: number[] | null = null) {
+  /** What each plant is drawn as: 0 certain on a row, 1 probable, 2 on no row, 3 between rows (not the crop), 7 a double; absent: all 0. `sorted`: cornRender.ts plantsSorted. */
+  setPlants(points: LatLngPair[] | null, show: boolean, certainty: number[] | null = null, sorted = false) {
     if (points) {
       const n = points.length, x = new Float64Array(n), y = new Float64Array(n);
       points.forEach(([lat, lng], i) => { const [wx, wy] = toWorld(lat, lng); x[i] = wx; y[i] = wy; });
-      this.plants = { n, x, y, index: new GridIndex(x, y, this.scene ? 2 / this.scene.mpu : 1e-7), certainty: certainty && certainty.length === n ? Uint8Array.from(certainty) : null, points };
+      this.plants = { n, x, y, index: new GridIndex(x, y, this.scene ? 2 / this.scene.mpu : 1e-7), certainty: certainty && certainty.length === n ? Uint8Array.from(certainty) : null, points, sorted };
     } else this.plants = null;
     this.tints = null;
     this.showPlants = show;
@@ -743,9 +743,9 @@ export class TwinCanvasLayer extends L.Canvas {
       let np = 0;
       // Seen on no row and between the rows (not the crop) are review material: drawn only with the observations
       // the photographs do not confirm.
-      for (const kind of unc ? [3, 2, 5, 4, 1, 0] : [5, 4, 1, 0]) {
+      for (const kind of unc ? [3, 2, 7, 5, 4, 1, 0] : [5, 4, 1, 0]) {
         ctx.beginPath(); let any = false;
-        const rr = kind >= 4 ? r + 1 : kind >= 2 ? Math.max(1, r * 0.55) : kind === 1 ? r + 1 : r;
+        const rr = kind === 7 ? Math.max(1, r * 0.55) : kind >= 4 ? r + 1 : kind >= 2 ? Math.max(1, r * 0.55) : kind === 1 ? r + 1 : r;
         for (const k of idx) {
           if ((P.certainty ? P.certainty[k] : 0) !== kind) continue;
           const x = X(P.x[k]), y = Y(P.y[k]);
@@ -757,7 +757,7 @@ export class TwinCanvasLayer extends L.Canvas {
         if (!any) continue;
         if (kind === 3) { ctx.lineWidth = 1; ctx.strokeStyle = "#8c929a"; ctx.globalAlpha = 0.6; ctx.stroke(); ctx.globalAlpha = 1; continue; }
         // Found along a row at the lower bar: a ring in its own colour (two photographs, or one sharp view).
-        if (kind >= 4) { ctx.lineWidth = 1.8; ctx.strokeStyle = kind === 4 ? C.plantAlongRowTwo : C.plantAlongRowOne; ctx.globalAlpha = 0.95; ctx.stroke(); ctx.globalAlpha = 1; continue; }
+        if (kind >= 4 && kind <= 6) { ctx.lineWidth = 1.8; ctx.strokeStyle = kind === 4 ? C.plantAlongRowTwo : C.plantAlongRowOne; ctx.globalAlpha = 0.95; ctx.stroke(); ctx.globalAlpha = 1; continue; }
         if (kind === 0 && overPhotos) { ctx.lineWidth = 2; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 1; ctx.stroke(); }
         else if (kind === 1 && overPhotos) { ctx.lineWidth = 1; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 0.6; ctx.setLineDash([2, 2]); ctx.stroke(); ctx.setLineDash([]); }
         else if (kind === 0) { ctx.fillStyle = C.plantLocated; ctx.globalAlpha = 0.9; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(20,22,20,0.8)"; ctx.stroke(); }
@@ -906,7 +906,8 @@ export class TwinCanvasLayer extends L.Canvas {
    * and direction: one drawImage a plant). Smaller than a few pixels, or more in view than a frame should draw one by
    * one, they are stamped as dots into one image written pixel by pixel, which costs the same for a thousand plants or
    * a million. On a row: the corn colour (the field's own, tinted by place, in Realistic; one flat green in Simple).
-   * Off the rows: their own colour in both.
+   * Off the rows (a twin from before the sort) and the doubles: their own colour in both. Green that is not corn (a
+   * sorted twin's other plants off the rows): a plain dot in its own colour, never a corn plant.
    */
   private drawPlantView(ctx: Ctx, scene: Scene, X: (u: number) => number, Y: (u: number) => number, pxPerM: number, vx0: number, vy0: number, vx1: number, vy1: number, drawn: Record<string, number>, bx0: number, by0: number, bx1: number, by1: number, realistic: boolean) {
     const P = this.plants!, look = this.look!, R = CORN_RENDER, T = realistic ? this.tintsFor(scene) : null;
@@ -918,9 +919,11 @@ export class TwinCanvasLayer extends L.Canvas {
       // The plant spans 0.88 of its sprite; sizes vary a little plant to plant (0.85 to 1.15), by the plant's own number.
       const dest = plantPx / 0.88, spritePx = spriteSizeFor(dest * 1.15 * dpr);
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+      const dotR = Math.max(1.5, (plantPx * R.notCornShare) / 2), notCornCss = rgbCss(R.notCorn);
       for (const k of idx) {
-        const h = plantHash(k), on = cert ? isOnRow(cert[k]) : true;
-        const colour = on ? (T ? palette[T.plant[k]] : realistic ? look.corn : flat) : R.offRow;
+        const h = plantHash(k), kind = cert ? plantKind(cert[k], P.sorted) : "row";
+        if (kind === "notCorn") { ctx.fillStyle = notCornCss; ctx.beginPath(); ctx.arc(X(P.x[k]), Y(P.y[k]), dotR, 0, 2 * Math.PI); ctx.fill(); continue; }
+        const colour = kind === "row" ? (T ? palette[T.plant[k]] : realistic ? look.corn : flat) : R.offRow;
         const sprite = this.sprites.get(spritePx, colour, sizeM, h % R.variants, (h >>> 8) % R.rotations, realistic);
         if (!sprite) continue;
         const d = dest * (0.85 + (((h >>> 16) % 101) / 100) * 0.3);
@@ -943,13 +946,14 @@ export class TwinCanvasLayer extends L.Canvas {
     const { size, alpha } = stampOf(plantPx), a = Math.round(alpha * 255), half = size / 2, u32 = St.u32;
     // Packed as the image's bytes lie in memory (r, g, b, a on every platform a browser runs on).
     const pack = (c: ArrayLike<number>) => ((a << 24) | (c[2] << 16) | (c[1] << 8) | c[0]) >>> 0;
-    const tintPx = palette.map(pack), flatPx = pack(realistic ? look.corn : flat), offPx = pack(R.offRow), tint = T?.plant ?? null;
+    const tintPx = palette.map(pack), flatPx = pack(realistic ? look.corn : flat), offPx = pack(R.offRow), notCornPx = pack(R.notCorn), tint = T?.plant ?? null;
     const scale = X(1) - X(0), ox = X(0) - bx0 - half, oy = Y(0) - by0 - half;
     let n = 0;
     P.index.each(vx0 - pad, vy0 - pad, vx1 + pad, vy1 + pad, k => {
       const px = Math.round(P.x[k] * scale + ox), py = Math.round(P.y[k] * scale + oy);
       if (px < 0 || py < 0 || px + size > w || py + size > h) return;
-      const v = cert && !isOnRow(cert[k]) ? offPx : tint ? tintPx[tint[k]] : flatPx;
+      const kind = cert ? plantKind(cert[k], P.sorted) : "row";
+      const v = kind === "notCorn" ? notCornPx : kind !== "row" ? offPx : tint ? tintPx[tint[k]] : flatPx;
       for (let dy = 0; dy < size; dy++) { const o = (py + dy) * w + px; for (let dx = 0; dx < size; dx++) u32[o + dx] = v; }
       n++;
     });

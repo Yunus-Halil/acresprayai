@@ -678,6 +678,17 @@ export const SEQUENCE = {
    * neighbouring certain plants on the flight's row lines fall (`Reconstruction.tooCloseM`): closer than the field's own
    * certain plants stand to each other, a dot is a second mark on a plant. With no such gap the half spacing stands. */
   tooCloseFromField: false, tooCloseQuantile: 0.05,
+  /** Off by default (2026-11-19, on in the app's preset): the stricter marks' dots refused as "too far" (no plant on their row within
+   * `maxGapSeeds` plant spacings when they were tried) are tried again once every other dot is placed, strongest first,
+   * until nothing more joins, by the same tests. Each dot is tried once, strongest first, so a dot tried before the
+   * plants around it were placed was refused for a gap those plants then filled: on the private seedling flight 179
+   * real seedlings on their row lines were drawn off the rows for that. */
+  retryTooFar: false,
+  /** Off by default (2026-11-19, on in the app's preset): what a build keeps tells the "doubles" (a dot on a row's line
+   * refused only as closer than the too-close limit to a plant on that row; cornPlants.ts `shown` 7) from the other
+   * dots on no row. His count: the plants on rows and the doubles (until a look at the photographs decides each double);
+   * every other dot on no row is green that is not corn. */
+  doublesApart: false,
 };
 /** The rules as they stood on 2026-11-16 at f23efc0, before the changes above them here: kept so that result can be run beside the present one. */
 export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: false, refuseScattered: false, alleyTest: "none", betweenOffLines: false, spacingRulesNeedASpacing: false, sweepLoneMarks: false };
@@ -689,7 +700,7 @@ export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: fal
  * `cutFromRow`: placed on a row, then left on no row when the row was built (a piece of under three plants, a stretch
  * longer than `maxBridgeM` with no plant, or a stretch over ground judged scattered: `build` in reconstruct).
  */
-export const SETTLED = { none: 0, certainRow: 1, scattered: 2, noRow: 3, noSpacing: 4, alley: 5, tooClose: 6, tooFar: 7, offSpacing: 8, placedAtSpacing: 9, placedOffSpacing: 10, freeAlley: 11, freeTooClose: 12, freePlaced: 13, alone: 14, geometryRow: 15, cutFromRow: 16, secondLook: 17 } as const;
+export const SETTLED = { none: 0, certainRow: 1, scattered: 2, noRow: 3, noSpacing: 4, alley: 5, tooClose: 6, tooFar: 7, offSpacing: 8, placedAtSpacing: 9, placedOffSpacing: 10, freeAlley: 11, freeTooClose: 12, freePlaced: 13, alone: 14, geometryRow: 15, cutFromRow: 16, secondLook: 17, placedOnRetry: 18 } as const;
 export type GroundJudge = { state: (e: number, n: number) => 0 | 1 | 2; dotState?: Uint8Array | null };
 export type RowSegment = { a0: number; a1: number; confirmed: boolean };
 /** A row's course in the rows' frame: its across position at knots along it, from its first plant to its last, and the dots it was fitted through. */

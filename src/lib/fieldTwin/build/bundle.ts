@@ -228,7 +228,7 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
       ...(P ? { plants: {
         points: P.points, certainty: P.shown, photos: P.photos,
         note: "One plant per plant two or more photographs located, placed where they saw it; every one is counted. On a row: seen by most photographs over it, or probable (on a row, at the field's plant spacing). Off the rows: seen on no row, or between two rows; drawn in their own colour. Located by the photographs, not identified as corn by its look.",
-        summary: { plants: P.summary.plants, certain: P.summary.certain, probable: P.summary.probable, onNoRow: P.summary.onNoRow, betweenRows: P.summary.betweenRows, confirmedM: P.summary.confirmedM, notConfirmedM: P.summary.notConfirmedM, ...(P.summary.alongRowsTwo != null ? { alongRowsTwo: P.summary.alongRowsTwo, alongRowsOne: P.summary.alongRowsOne ?? 0 } : {}) },
+        summary: { plants: P.summary.plants, certain: P.summary.certain, probable: P.summary.probable, onNoRow: P.summary.onNoRow, betweenRows: P.summary.betweenRows, confirmedM: P.summary.confirmedM, notConfirmedM: P.summary.notConfirmedM, ...(P.summary.alongRowsTwo != null ? { alongRowsTwo: P.summary.alongRowsTwo, alongRowsOne: P.summary.alongRowsOne ?? 0 } : {}), ...(P.summary.doubles != null ? { doubles: P.summary.doubles } : {}) },
       } } : {}),
       ...(look ? { look } : {}),
       // How late the flight is, from the reads' own assessments (reads made with the late guard carry their share).

@@ -10,7 +10,7 @@
 // cameras, not aligned.
 import { useEffect, useMemo, useState } from "react";
 import type { GeorefFrame } from "@/lib/directGeoref/projection";
-import { CORN_RENDER, isOnRow, rgbCss } from "@/lib/fieldTwin/cornRender";
+import { CORN_RENDER, type PlantKind, plantKind, rgbCss } from "@/lib/fieldTwin/cornRender";
 import type { PhotoAccess } from "@/lib/fieldTwin/photoAccess";
 import type { PlantCameras } from "@/lib/fieldTwin/plantCameras";
 import type { LatLngPair } from "@/lib/fieldTwin/types";
@@ -20,24 +20,28 @@ import { PhotoEvidence } from "./PhotoGround";
 export const PLANT_PHOTOS = {
   windowM: 0.6, markM: 0.06, max: 24, px: 480, neighbourM: 0.45, maxNeighbours: 60, scaleM: 0.1,
   /** Rings that stand out on green leaves and tan soil alike: amber on a row, the map's own blue off the rows. */
-  onRowColour: "#ffb627", offRowColour: rgbCss(CORN_RENDER.offRow),
+  onRowColour: "#ffb627", offRowColour: rgbCss(CORN_RENDER.offRow), notCornColour: rgbCss(CORN_RENDER.notCorn),
 };
 
 export type CameraSource = () => Promise<PlantCameras | null>;
-type Plants = { points: LatLngPair[]; certainty?: number[] | null; photos?: number[] | null };
+type Plants = { points: LatLngPair[]; certainty?: number[] | null; photos?: number[] | null; /** cornRender.ts plantsSorted. */ sorted?: boolean };
+const kindOf = (plants: Plants, i: number): PlantKind => (plants.certainty ? plantKind(plants.certainty[i], !!plants.sorted) : "row");
+/** How a plant is drawn, as the rest of a sentence ("This plant is drawn ..."), and as a short label. */
+const DRAWN_AS: Record<PlantKind, string> = { row: "on a row", double: "as a double (very close to a plant on its row)", notCorn: "as green that is not corn", off: "off the rows" };
+const KIND_WORDS: Record<PlantKind, string> = { row: "on a row", double: "a double", notCorn: "green, not corn", off: "off the rows" };
 
 const M_PER_DEG = 111_320;
 /** Metres between two nearby places (an equirectangular step: exact enough over a metre). */
 const metresApart = (a: LatLngPair, b: LatLngPair) => Math.hypot((a[0] - b[0]) * M_PER_DEG, (a[1] - b[1]) * M_PER_DEG * Math.cos((a[0] * Math.PI) / 180));
 
 /** The located plants within `radiusM` of plant `index` (itself left out), nearest first. */
-export function plantNeighbours(plants: Plants, index: number, radiusM: number = PLANT_PHOTOS.neighbourM, max: number = PLANT_PHOTOS.maxNeighbours): { i: number; d: number; onRow: boolean }[] {
+export function plantNeighbours(plants: Plants, index: number, radiusM: number = PLANT_PHOTOS.neighbourM, max: number = PLANT_PHOTOS.maxNeighbours): { i: number; d: number; onRow: boolean; kind: PlantKind }[] {
   const p = plants.points[index]; if (!p) return [];
-  const dLat = radiusM / M_PER_DEG, out: { i: number; d: number; onRow: boolean }[] = [];
+  const dLat = radiusM / M_PER_DEG, out: { i: number; d: number; onRow: boolean; kind: PlantKind }[] = [];
   plants.points.forEach((q, i) => {
     if (i === index || Math.abs(q[0] - p[0]) > dLat * 1.01) return;
     const d = metresApart(p, q);
-    if (d <= radiusM) out.push({ i, d, onRow: plants.certainty ? isOnRow(plants.certainty[i]) : true });
+    if (d <= radiusM) { const kind = kindOf(plants, i); out.push({ i, d, onRow: kind === "row", kind }); }
   });
   return out.sort((a, b) => a.d - b.d).slice(0, max);
 }
@@ -63,15 +67,15 @@ export default function PlantPhotos({ plants, index, lat, lng, groundFrames, cam
   const frames: GeorefFrame[] | null = loaded.cams?.frames ?? (waiting ? null : groundFrames);
   const marks = loaded.cams?.marks ?? null;
   const near = useMemo(() => plantNeighbours(plants, index), [plants, index]);
-  const others = useMemo(() => near.map(n => ({ lat: plants.points[n.i][0], lng: plants.points[n.i][1], colour: n.onRow ? PLANT_PHOTOS.onRowColour : PLANT_PHOTOS.offRowColour })), [near, plants]);
-  const onRow = plants.certainty ? isOnRow(plants.certainty[index]) : true;
+  const others = useMemo(() => near.map(n => ({ lat: plants.points[n.i][0], lng: plants.points[n.i][1], colour: n.kind === "row" ? PLANT_PHOTOS.onRowColour : n.kind === "notCorn" ? PLANT_PHOTOS.notCornColour : PLANT_PHOTOS.offRowColour })), [near, plants]);
+  const kind = kindOf(plants, index);
   const nearestOnRow = near.find(n => n.onRow), nearest = near[0];
   const located = plants.photos?.[index];
   const intro = (
     <div className="mb-2 space-y-0.5 text-[11px] leading-snug text-neutral-300" aria-label="Around this plant">
-      <p>This plant is drawn {onRow ? "on a row" : "off the rows"}{located != null ? `; ${located} photograph${located === 1 ? "" : "s"} located it` : ""}.</p>
+      <p>This plant is drawn {DRAWN_AS[kind]}{located != null ? `; ${located} photograph${located === 1 ? "" : "s"} located it` : ""}.</p>
       {nearest
-        ? <p>Nearest plant the twin located: {cm(nearest.d)} away, {nearest.onRow ? "on a row" : "off the rows"}.{nearestOnRow && nearestOnRow !== nearest ? ` Nearest on a row: ${cm(nearestOnRow.d)}.` : ""}</p>
+        ? <p>Nearest plant the twin located: {cm(nearest.d)} away, {KIND_WORDS[nearest.kind]}.{nearestOnRow && nearestOnRow !== nearest ? ` Nearest on a row: ${cm(nearestOnRow.d)}.` : ""}</p>
         : <p>No other plant located within {cm(PLANT_PHOTOS.neighbourM)}.</p>}
     </div>
   );
@@ -91,6 +95,8 @@ export default function PlantPhotos({ plants, index, lat, lng, groundFrames, cam
   return (
     <PhotoEvidence frames={frames} access={access} setAccess={setAccess} lat={lat} lng={lng} what="this plant"
       windowM={PLANT_PHOTOS.windowM} markM={PLANT_PHOTOS.markM} max={PLANT_PHOTOS.max} px={PLANT_PHOTOS.px} others={others} intro={intro} northUp scaleM={PLANT_PHOTOS.scaleM} lead marks={marks}
-      legend={<>Other plants the twin located: <span className="font-semibold" style={{ color: PLANT_PHOTOS.onRowColour }}>amber, on a row</span>; <span className="font-semibold" style={{ color: PLANT_PHOTOS.offRowColour }}>blue, off the rows</span> (blue on the map too).</>} />
+      legend={plants.sorted
+        ? <>Other plants the twin located: <span className="font-semibold" style={{ color: PLANT_PHOTOS.onRowColour }}>amber, on a row</span>; <span className="font-semibold" style={{ color: PLANT_PHOTOS.offRowColour }}>blue, a double</span>; <span className="font-semibold" style={{ color: PLANT_PHOTOS.notCornColour }}>yellow, green that is not corn</span> (the same colours on the map).</>
+        : <>Other plants the twin located: <span className="font-semibold" style={{ color: PLANT_PHOTOS.onRowColour }}>amber, on a row</span>; <span className="font-semibold" style={{ color: PLANT_PHOTOS.offRowColour }}>blue, off the rows</span> (blue on the map too).</>} />
   );
 }

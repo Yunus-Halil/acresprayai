@@ -197,12 +197,16 @@ export type TwinCornPlants = {
   /** Per plant: latitude, longitude. */
   points: LatLngPair[];
   /** Per plant: 0 a certain plant on a row, 1 a probable one, 2 seen on no row, 3 between two rows (not the crop);
-   * found along a row at the lower bar (2026-11-16 on, probable): 4 by two or more photographs, 5 by one sharp view. */
+   * found along a row at the lower bar (2026-11-16 on, probable): 4 by two or more photographs, 5 by one sharp view;
+   * 7 a double (2026-11-19 on): on a row's line, closer than half a plant spacing to a plant on it. A twin whose summary
+   * carries `doubles` sorted its plants that way: 2 and 3 are then green that is not corn, not counted. */
   certainty: number[];
   /** Per plant: photographs that located it. */
   photos: number[];
   note: string;
-  summary: { plants: number; certain: number; probable: number; onNoRow: number; betweenRows: number; confirmedM: number; notConfirmedM: number; alongRowsTwo?: number; alongRowsOne?: number };
+  summary: { plants: number; certain: number; probable: number; onNoRow: number; betweenRows: number; confirmedM: number; notConfirmedM: number; alongRowsTwo?: number; alongRowsOne?: number;
+    /** The doubles (class 7). Present: the twin's plants off the rows were sorted (doubles counted, the rest not corn). */
+    doubles?: number };
 };
 
 export type TwinVegetation = { id: number; lat: number; lng: number; areaM2: number; seenBy: number; ring: LatLngPair[] };
