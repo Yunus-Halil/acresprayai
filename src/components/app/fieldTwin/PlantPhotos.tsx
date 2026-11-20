@@ -66,6 +66,9 @@ export default function PlantPhotos({ plants, index, lat, lng, groundFrames, cam
   const waiting = !!cameras && loaded.status === "loading";
   const frames: GeorefFrame[] | null = loaded.cams?.frames ?? (waiting ? null : groundFrames);
   const marks = loaded.cams?.marks ?? null;
+  // The photographs that marked this plant, each with its own mark (the record says, from 2026-11-20 on).
+  const marked = loaded.cams?.marked ?? null;
+  const own = useMemo(() => (marked ? marked(index) : null), [marked, index]);
   const near = useMemo(() => plantNeighbours(plants, index), [plants, index]);
   const others = useMemo(() => near.map(n => ({ lat: plants.points[n.i][0], lng: plants.points[n.i][1], colour: n.kind === "row" ? PLANT_PHOTOS.onRowColour : n.kind === "notCorn" ? PLANT_PHOTOS.notCornColour : PLANT_PHOTOS.offRowColour })), [near, plants]);
   const kind = kindOf(plants, index);
@@ -77,6 +80,9 @@ export default function PlantPhotos({ plants, index, lat, lng, groundFrames, cam
       {nearest
         ? <p>Nearest plant the twin located: {cm(nearest.d)} away, {KIND_WORDS[nearest.kind]}.{nearestOnRow && nearestOnRow !== nearest ? ` Nearest on a row: ${cm(nearestOnRow.d)}.` : ""}</p>
         : <p>No other plant located within {cm(PLANT_PHOTOS.neighbourM)}.</p>}
+      {own
+        ? <p>{own.length ? <>Marked by {own.map(o => o.photo.replace(/^DJI_\d+_/, "")).join(", ")}: shown first, each centred on its own mark. The others saw the place and did not mark it.</> : "The record names no photograph that marked it."}</p>
+        : loaded.status === "ready" ? <p className="text-neutral-500">This twin's record does not say which photographs marked each plant (built before that was kept): the crops are the photographs most directly overhead, which may not be the ones that marked it. Building it again keeps it.</p> : null}
     </div>
   );
   if (!frames) {
@@ -94,7 +100,7 @@ export default function PlantPhotos({ plants, index, lat, lng, groundFrames, cam
   }
   return (
     <PhotoEvidence frames={frames} access={access} setAccess={setAccess} lat={lat} lng={lng} what="this plant"
-      windowM={PLANT_PHOTOS.windowM} markM={PLANT_PHOTOS.markM} max={PLANT_PHOTOS.max} px={PLANT_PHOTOS.px} others={others} intro={intro} northUp scaleM={PLANT_PHOTOS.scaleM} lead marks={marks}
+      windowM={PLANT_PHOTOS.windowM} markM={PLANT_PHOTOS.markM} max={PLANT_PHOTOS.max} px={PLANT_PHOTOS.px} others={others} intro={intro} northUp scaleM={PLANT_PHOTOS.scaleM} lead marks={marks} own={own}
       legend={plants.sorted
         ? <>Other plants the twin located: <span className="font-semibold" style={{ color: PLANT_PHOTOS.onRowColour }}>amber, on a row</span>; <span className="font-semibold" style={{ color: PLANT_PHOTOS.offRowColour }}>blue, a double</span>; <span className="font-semibold" style={{ color: PLANT_PHOTOS.notCornColour }}>yellow, green that is not corn</span> (the same colours on the map).</>
         : <>Other plants the twin located: <span className="font-semibold" style={{ color: PLANT_PHOTOS.onRowColour }}>amber, on a row</span>; <span className="font-semibold" style={{ color: PLANT_PHOTOS.offRowColour }}>blue, off the rows</span> (blue on the map too).</>} />

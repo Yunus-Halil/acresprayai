@@ -8,7 +8,7 @@ import FieldTwinView from "@/components/app/fieldTwin/FieldTwinView";
 import PlantPhotos, { PLANT_PHOTOS, plantNeighbours } from "@/components/app/fieldTwin/PlantPhotos";
 import { cameraSource } from "@/lib/fieldTwin/plantCameras";
 import { viewsOf } from "@/lib/fieldTwin/photoGround";
-import { alignOnMarks, cropPoint, northUpTurn } from "@/lib/fieldTwin/photoAccess";
+import { alignOnMarks, cropPoint, markedFirst, northUpTurn } from "@/lib/fieldTwin/photoAccess";
 import { IDENTITY, enuFromCamera, mulM, type GeorefFrame, type M3 } from "@/lib/directGeoref/projection";
 import { CORN_TWIN } from "./fixtures/cornTwin";
 
@@ -108,6 +108,19 @@ describe("the founder's photographs of a plant", () => {
     expect(within(s).getByText(/Nearest plant the twin located: 5\.0 cm away, on a row/)).toBeInTheDocument();
     expect(within(s).getByText("Read on this device only, never uploaded.")).toBeInTheDocument();
     expect(cameras).toHaveBeenCalledTimes(1);
+  });
+
+  it("names the photographs that marked the plant, which come first whatever is nearest overhead", async () => {
+    // Three photographs see the place, nearest first a, b, c; the record says c and b marked it.
+    expect(markedFirst([{ name: "a" }, { name: "b" }, { name: "c" }, { name: "d" }], new Set(["c", "b"]), 3).map(v => v.name)).toEqual(["b", "c", "a"]);
+    const cameras = async () => ({ frames: [camera("a", 0)], marks: new Map<string, [number, number][]>(), marked: (i: number) => (i === 1 ? [{ photo: "DJI_20260417134335_0078_D", u: 10, v: 20 }, { photo: "DJI_20260417134337_0079_D", u: 30, v: 40 }] : []) });
+    render(<PlantPhotos plants={PLANTS} index={1} lat={PLANTS.points[1][0]} lng={PLANTS.points[1][1]} groundFrames={null} cameras={cameras} access={null} setAccess={() => undefined} />);
+    expect(await screen.findByText(/Marked by 0078_D, 0079_D: shown first, each centred on its own mark\. The others saw the place and did not mark it\./, undefined, { timeout: 5000 })).toBeInTheDocument();
+  });
+
+  it("says so when the record does not say which photographs marked each plant", async () => {
+    render(<PlantPhotos plants={PLANTS} index={1} lat={PLANTS.points[1][0]} lng={PLANTS.points[1][1]} groundFrames={null} cameras={async () => ({ frames: [camera("a", 0)], marks: new Map<string, [number, number][]>() })} access={null} setAccess={() => undefined} />);
+    expect(await screen.findByText(/does not say which photographs marked each plant/, undefined, { timeout: 5000 })).toBeInTheDocument();
   });
 
   it("says so when the twin keeps no record of its cameras", async () => {

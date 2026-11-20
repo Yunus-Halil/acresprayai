@@ -12,11 +12,12 @@ import { cropProfileFor } from "../../cropProfiles/registry";
 import { groundSampleAt, type GeorefFrame } from "../../directGeoref/projection";
 import type { PhotoPixels } from "../../photoScout/pattern";
 import { FIELD, FIELD_V2, compactCornRead, cornFieldAndGround, cornFlightGuard, type CornFieldResult, type CornPhotoRead } from "../cornField";
-import { type CornPlants, cornPlantsOf, placeDots, readRows } from "../cornPlants";
+import { type CornPlants, cornPlantsOf, placeDots, plantSightings, readRows } from "../cornPlants";
 import type { CornPlantsOptions, PlacedDots } from "../layers/l3Place";
 import type { Reconstruction } from "../plantsFirst";
 import { type CornPreset, cornPresetSettings } from "../cornPreset";
 import { type PhotoColours, samplePhotoColours } from "../cornColours";
+import { type PackedLooks, type PhotoLooks, measureMarkLooks, packLooks, plantLooks } from "../cornPlantLook";
 import type { Pool } from "./pool";
 import { type BuildHooks, type CornVariant, type PhotoSource, checkCancelled } from "./types";
 
@@ -53,6 +54,11 @@ export type CornStageResult = {
   /** Each read photograph's soil and corn colours, by name (cornColours.ts): for the twin's Realistic view, read after
    * the corn read from the same decoded pixels. `colourMs`: what sampling them cost over the whole flight. */
   colours: { name: string; colours: PhotoColours }[]; colourMs: number;
+  /** Each plant's own look, in the plants' order (cornPlantLook.ts): which way its leaves lie, its length, its green,
+   * from the photographs that marked it; null with no plants. And what measuring it cost over the flight. */
+  plantLook: PackedLooks | null; lookMs: number;
+  /** Read only: for each plant, in the plants' order, the marks it was made from (cornPlants.ts plantSightings); null with no plants. */
+  plantMarks: { photo: string; u: number; v: number; k: number }[][] | null;
   failed: { name: string; reason: string }[];
   /** Photographs whose read holds any row. */
   withRows: number;
@@ -65,7 +71,8 @@ export async function cornStage(photos: PhotoSource[], frames: Map<string, Geore
   const t0 = Date.now(), baseline = variant === "corn-v1.0";
   const list = photos.filter(p => frames.has(p.name));
   const reads: CornPhotoRead[] = [], failed: { name: string; reason: string }[] = [], colours: { name: string; colours: PhotoColours }[] = [];
-  let done = 0, readMs = 0, colourMs = 0;
+  let done = 0, readMs = 0, colourMs = 0, lookMs = 0;
+  const looks = new Map<string, PhotoLooks>(), NO_LOW = new Uint8Array(0);
   const gsdOf = (name: string) => { const f = frames.get(name)!; return groundSampleAt(f, f.intrinsics.cx, f.intrinsics.cy); };
   const report = (name: string) => hooks.onProgress?.({ stage: "corn", done, total: list.length, message: `${name}: read by Corn V1`, elapsedMs: Date.now() - t0 });
   const one = async (p: PhotoSource): Promise<void> => {
@@ -77,12 +84,14 @@ export async function cornStage(photos: PhotoSource[], frames: Map<string, Geore
         if (r.kind !== "corn") throw new Error("the helper answered another task");
         reads.push(r.read); readMs += r.ms;
         colours.push({ name: p.name, colours: r.colours }); colourMs += r.colourMs;
+        if (r.looks) looks.set(p.name, { plants: r.looks, low: NO_LOW }); lookMs += r.lookMs;
       } else {
         const t = Date.now();
         const px = await p.decode(1);
         const read = cornPhotoRead(p.name, px, gsdOf(p.name), baseline, null, preset);
         reads.push(read); readMs += Date.now() - t;
         const tc = performance.now(); colours.push({ name: p.name, colours: samplePhotoColours(px, read.plants) }); colourMs += performance.now() - tc;
+        const g = gsdOf(p.name), tl = performance.now(); if (g) looks.set(p.name, { plants: measureMarkLooks(px, read.plants, g * read.scale), low: NO_LOW }); lookMs += performance.now() - tl;
       }
       const last = reads[reads.length - 1];
       hooks.log?.(`${p.name}: ${last.rows.filter(r => r.identity === "corn").length} corn rows, ${last.rows.length} rows, ${last.patches.filter(q => q.verdict === "weed candidate").length} weed candidates, ${last.gaps.filter(g => g.verdict === "stand gap").length} gaps${last.countWithheld ? "; plant count withheld (too late for a per-plant count)" : ""}`);
@@ -105,7 +114,19 @@ export async function cornStage(photos: PhotoSource[], frames: Map<string, Geore
   hooks.log?.(`soil and corn colours: ${colours.filter(c => c.colours.soil).length} photographs with a soil colour, ${colours.filter(c => c.colours.corn).length} with a corn colour, ${colourMs.toFixed(0)} ms in all`);
   const C = cornCombine(reads, frames, preset, variant, hooks.log, () => hooks.onProgress?.({ stage: "corn", done: list.length, total: list.length, message: "placing the plants, then the rows through them", elapsedMs: Date.now() - t0 }));
   if (C.reads !== reads) { reads.length = 0; reads.push(...C.reads); }
-  return { variant, field: C.field, plants: C.plants, reads, colours, colourMs: Math.round(colourMs), failed, withRows: reads.filter(r => r.rows.length).length, msPerPhoto: reads.length ? Math.round(readMs / reads.length) : 0, ms: Date.now() - t0 };
+  // Each plant's own look, from the marks it was made of. Nothing above reads it; a failure leaves the plants as they are.
+  let plantLook: PackedLooks | null = null, plantMarks: CornStageResult["plantMarks"] = null;
+  if (C.plants && C.placed && C.rows) {
+    try {
+      const tl = performance.now();
+      plantMarks = plantSightings(C.placed, C.rows);
+      if (plantMarks.length !== C.plants.points.length) throw new Error("the plants and their marks differ in number");
+      const L = plantLooks(plantMarks, looks, new Map(reads.map(r => [r.name, r])), frames, C.field.origin);
+      plantLook = packLooks(L); lookMs += performance.now() - tl;
+      hooks.log?.(`each plant's own look: ${L.filter(p => p.dirDeg != null).length} of ${L.length} plants with a leaf direction, ${L.filter(p => p.sizeM != null).length} with a size and a colour, ${lookMs.toFixed(0)} ms in all`);
+    } catch (e) { plantLook = null; plantMarks = null; hooks.log?.(`each plant's own look: not made (${(e as Error)?.message ?? e})`); }
+  }
+  return { variant, field: C.field, plants: C.plants, plantLook, plantMarks, lookMs: Math.round(lookMs), reads, colours, colourMs: Math.round(colourMs), failed, withRows: reads.filter(r => r.rows.length).length, msPerPhoto: reads.length ? Math.round(readMs / reads.length) : 0, ms: Date.now() - t0 };
 }
 
 /**

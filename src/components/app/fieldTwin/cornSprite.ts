@@ -1,7 +1,7 @@
 // The drawn corn plant of the Realistic and Simple views, and the soil of the Realistic view (cornRender.ts says what
 // is measured and what is drawn). A plant is drawn once per (size, colour, shape, direction) into a small canvas and
 // stamped from there: the map never draws a leaf per frame.
-import { CORN_RENDER, type ColourGrid, type Leaf, leavesFor, mixRgb, rgbCss } from "@/lib/fieldTwin/cornRender";
+import { CORN_RENDER, type ColourGrid, type Leaf, leavesFor, lineLeaves, mixRgb, rgbCss } from "@/lib/fieldTwin/cornRender";
 import type { TwinRgb } from "@/lib/fieldTwin/types";
 
 type Ctx = CanvasRenderingContext2D;
@@ -16,13 +16,24 @@ function leafPath(ctx: Ctx, l: Leaf, r: number) {
 
 /**
  * A corn plant seen from above, centred in a square canvas of `px` pixels. `shade`: with a soft shadow, a lighter
- * midrib and a darker heart (Realistic); without, one flat colour (Simple).
+ * midrib and a darker heart (Realistic); without, one flat colour (Simple). `line`: a plant whose leaf line was
+ * measured: `rotation` is then its compass direction in CORN_RENDER.lookRotations steps over a half turn (0 north,
+ * turning east), and the leaves are lineLeaves' (north is up on the map).
  */
-export function cornSprite(px: number, colour: TwinRgb, sizeM: number, variant: number, rotation: number, shade: boolean): HTMLCanvasElement | null {
+export function cornSprite(px: number, colour: TwinRgb, sizeM: number, variant: number, rotation: number, shade: boolean, line: { shape: 0 | 1; flip: boolean } | null = null): HTMLCanvasElement | null {
   try {
     const c = document.createElement("canvas"); c.width = c.height = px;
     const ctx = c.getContext("2d"); if (!ctx) return null;
-    const r = px * 0.44, leaves = leavesFor(sizeM, variant), turn = (rotation / CORN_RENDER.rotations) * 2 * Math.PI;
+    paintCorn(ctx, px, colour, sizeM, variant, rotation, shade, line);
+    return c;
+  } catch { return null; }
+}
+
+/** The plant of `cornSprite`, painted into the square of `px` pixels at the context's origin (the context is left moved: save and restore around it). */
+function paintCorn(ctx: Ctx, px: number, colour: TwinRgb, sizeM: number, variant: number, rotation: number, shade: boolean, line: { shape: 0 | 1; flip: boolean } | null) {
+  {
+    const r = px * 0.44, leaves = line ? lineLeaves(sizeM, line.shape, line.flip) : leavesFor(sizeM, variant);
+    const turn = line ? (rotation / CORN_RENDER.lookRotations) * Math.PI - Math.PI / 2 : (rotation / CORN_RENDER.rotations) * 2 * Math.PI;
     ctx.translate(px / 2, px / 2);
     const each = (fn: (l: Leaf) => void) => { for (const l of leaves) { ctx.save(); ctx.rotate(turn + l.angle); fn(l); ctx.restore(); } };
     if (shade) {
@@ -43,20 +54,53 @@ export function cornSprite(px: number, colour: TwinRgb, sizeM: number, variant: 
       }
     });
     if (shade) { ctx.beginPath(); ctx.arc(0, 0, Math.max(0.8, r * 0.1), 0, 2 * Math.PI); ctx.fillStyle = rgbCss(mixRgb(colour, [0, 0, 0], 0.3)); ctx.fill(); }
-    return c;
-  } catch { return null; }
+  }
 }
 
-/** The sprites drawn so far, by what they show; emptied when it grows past a few hundred (a zoom changes every size). */
-export class SpriteCache {
-  private map = new Map<string, HTMLCanvasElement | null>();
-  get(px: number, colour: TwinRgb, sizeM: number, variant: number, rotation: number, shade: boolean): HTMLCanvasElement | null {
-    const key = `${px}|${colour[0]},${colour[1]},${colour[2]}|${variant}|${rotation}|${shade ? 1 : 0}|${sizeM < 0.08 ? 0 : sizeM < 0.2 ? 1 : 2}`;
-    let s = this.map.get(key);
-    if (s === undefined) { if (this.map.size > 900) this.map.clear(); s = cornSprite(px, colour, sizeM, variant, rotation, shade); this.map.set(key, s); }
-    return s;
+/** Where a plant's drawing lies on its sheet: the sheet, the square's corner and its side, pixels. */
+export type SpriteAt = { sheet: HTMLCanvasElement; x: number; y: number; s: number };
+
+/**
+ * The plants drawn so far, all on ONE sheet per sprite size (2026-11-20). With each plant's own direction and green
+ * there are a thousand different drawings in a view instead of a few hundred, and a frame that stamps from a
+ * thousand small canvases is three times slower than one that stamps from a single sheet (measured: 11 ms against
+ * 4 ms for 3,400 plants). A sheet is a grid of squares filled as plants are first met; full, or at another sprite
+ * size, it is started again.
+ */
+export class SpriteSheet {
+  private sheet: HTMLCanvasElement | null = null;
+  private ctx: Ctx | null = null;
+  private px = 0; private cols = 0; private used = 0;
+  private at = new Map<string, number>();
+  private failed = false;
+  private start(px: number): boolean {
+    try {
+      // Squares enough for every drawing of a view at this size, on a sheet no wider than 2,048 pixels.
+      const cols = Math.max(4, Math.min(64, Math.floor(2048 / px)));
+      const c = this.sheet ?? document.createElement("canvas"); c.width = c.height = cols * px;
+      const g = c.getContext("2d"); if (!g) { this.failed = true; return false; }
+      this.sheet = c; this.ctx = g; this.px = px; this.cols = cols; this.used = 0; this.at.clear();
+      return true;
+    } catch { this.failed = true; return false; }
   }
-  clear() { this.map.clear(); }
+  get(px: number, colour: TwinRgb, sizeM: number, variant: number, rotation: number, shade: boolean, line: { shape: 0 | 1; flip: boolean } | null = null): SpriteAt | null {
+    if (this.failed) return null;
+    if ((px !== this.px || !this.sheet) && !this.start(px)) return null;
+    const key = `${colour[0]},${colour[1]},${colour[2]}|${line ? `L${line.shape}${line.flip ? 1 : 0}` : variant}|${rotation}|${shade ? 1 : 0}|${sizeM < 0.08 ? 0 : sizeM < 0.2 ? 1 : 2}`;
+    let k = this.at.get(key);
+    if (k === undefined) {
+      if (this.used >= this.cols * this.cols && !this.start(px)) return null;
+      k = this.used++; this.at.set(key, k);
+      const g = this.ctx!, x = (k % this.cols) * px, y = Math.floor(k / this.cols) * px;
+      g.save(); g.beginPath(); g.rect(x, y, px, px); g.clip(); g.translate(x, y);
+      try { paintCorn(g, px, colour, sizeM, variant, rotation, shade, line); } catch { /* an empty square: the plant is not drawn */ }
+      g.restore();
+    }
+    return { sheet: this.sheet!, x: (k % this.cols) * px, y: Math.floor(k / this.cols) * px, s: px };
+  }
+  /** Drawings held (for the tests and the bench). */
+  get size() { return this.at.size; }
+  clear() { this.px = 0; this.used = 0; this.at.clear(); }
 }
 
 /** The sprite size (canvas pixels) for a plant drawn `drawPx` device pixels across: the next power of two, 16 to 256. */

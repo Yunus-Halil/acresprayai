@@ -2,6 +2,7 @@
 // compact layer panel (Standard and Full), a status strip with the pressure legend, the docked inspector or results
 // panel, and an expandable diagnostics section (Full only: technical layers, draw timing, the developer-only
 // reference imagery). The twin itself comes from the shell (account, files, or the dev server).
+import type { PackedLooks } from "@/lib/fieldTwin/cornPlantLook";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Layers } from "lucide-react";
 import { NO_OPERATIONAL_BOUNDARY, type OperationalBoundaryState, operationalBoundary, validRing } from "@/lib/fieldTwin/boundary";
@@ -103,7 +104,7 @@ type Props = {
   focus?: ReviewFocus | null;
   onFocus?: (found: { status: string } | null) => void;
   /** Corn twins: plants the photographs located, drawn up close and snapped to by the row editor. Defaults to the twin's own (twin.corn.plants); the dev preview passes its plants.json. */
-  plants?: { points: LatLngPair[]; note: string; certainty?: number[] | null; photos?: number[] | null; /** cornRender.ts plantsSorted. */ sorted?: boolean } | null;
+  plants?: { points: LatLngPair[]; note: string; certainty?: number[] | null; photos?: number[] | null; /** cornRender.ts plantsSorted. */ sorted?: boolean; /** Each plant's own look (cornPlantLook.ts). */ look?: PackedLooks | null } | null;
   /**
    * Photo ground (behind its flag; photoGround.ts): the overview of the flight's photographs under the twin, its tiles
    * from a resolver. Absent, or with the flag off, the viewer is exactly the geometry-only twin.
@@ -180,7 +181,7 @@ function measured<T>(name: string, fn: () => T): T {
 export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], initialReference = null, expose = false, detail: detailProp, audience = "founder", review, focus = null, onFocus, plants: plantsOverride = null, ground: groundProp = null, photoFiles = null, groundAbsent = false, cornView: cornViewProp, plantPhotos = null }: Props) {
   const units = useUnitSystem();
   // A corn twin built with the plants first carries its plants; the dev preview can lay its own plants.json over them.
-  const plants = useMemo(() => plantsOverride ?? (twin.corn?.plants ? { points: twin.corn.plants.points, note: twin.corn.plants.note, certainty: twin.corn.plants.certainty, photos: twin.corn.plants.photos, sorted: plantsSorted(twin.corn.plants) } : null), [plantsOverride, twin.corn?.plants]);
+  const plants = useMemo(() => plantsOverride ?? (twin.corn?.plants ? { points: twin.corn.plants.points, note: twin.corn.plants.note, certainty: twin.corn.plants.certainty, photos: twin.corn.plants.photos, sorted: plantsSorted(twin.corn.plants), look: twin.corn.plants.look ?? null } : null), [plantsOverride, twin.corn?.plants]);
   const founderView = audience === "founder";
   const stops = founderView ? DETAIL_STOPS : PARTICIPANT_STOPS;
   const referenceOptions = founderView ? referenceProp : [];
@@ -270,7 +271,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const selectedRowKey = selection?.kind === "cornRow" ? selection.id : selection?.kind === "addedRow" ? selection.uid : null;
   const rowHandles = useMemo(() => (rowEditing && rowModelNow && selectedRowKey != null ? rowEndsNow(rowModelNow, selectedRowKey) : null), [rowEditing, rowModelNow, selectedRowKey]);
   const rowEditsProp = useMemo(() => (twin.corn ? { edits: rowEdits, active: rowEditing, hideRows, hover: rowEditing ? rowHover : null, overrides: rowOverrides, handles: rowHandles } : null), [twin.corn, rowEdits, rowEditing, hideRows, rowHover, rowOverrides, rowHandles]);
-  const plantsProp = useMemo(() => (plants ? { points: plants.points, show: showPlants, certainty: plants.certainty ?? null, sorted: plants.sorted ?? false } : null), [plants, showPlants]);
+  const plantsProp = useMemo(() => (plants ? { points: plants.points, show: showPlants, certainty: plants.certainty ?? null, sorted: plants.sorted ?? false, look: plants.look ?? null } : null), [plants, showPlants]);
 
   // The findings for the current query: computed once per query, cached by the engine where it can.
   const result = useMemo<FindingsResult>(() => engine.run(query), [engine, query]);
@@ -480,7 +481,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
               ))}
             </div>
             <p className="mt-1 text-[10px] leading-snug text-neutral-500">{rowEditing ? "Editing rows: the rows and the located plants are shown as marks until you finish." : photosUnder || reference ? "The photographs are the ground now, with the rows and plants marked on them. Pick a view to go back to the drawn field." : CORN_VIEW_HINT[cornView]}</p>
-            {cornView === "realistic" && !rowEditing && !photosUnder && !reference && <p className="mt-1 text-[10px] leading-snug text-neutral-500">{cornLook.sampled ? "Soil and corn colours are this field's own, read from its photographs." : "Standard soil and corn colours: this twin was built before colours were read from the photographs. Building it again gives this field's own."} Each plant's place is measured; its leaves are drawn.</p>}
+            {cornView === "realistic" && !rowEditing && !photosUnder && !reference && <p className="mt-1 text-[10px] leading-snug text-neutral-500">{cornLook.sampled ? "Soil and corn colours are this field's own, read from its photographs." : "Standard soil and corn colours: this twin was built before colours were read from the photographs. Building it again gives this field's own."} {plants?.look ? "Each plant's place, the way its leaves lie, its length and its green are measured from the photographs that marked it; the leaf outlines are drawn. A plant the photographs did not agree on is drawn with a direction of its own." : "Each plant's place is measured; its leaves are drawn."}</p>}
             {founderView && <label className="mt-1.5 flex items-start gap-2 border-t border-[#2e322e] pt-1.5 text-[11px] text-neutral-200"><input type="checkbox" className="mt-0.5 accent-[#f0a63a]" checked={allLayers} onChange={e => { setAllLayers(e.target.checked); chooseDetail(e.target.checked ? "full" : "simple"); }} /><span>All layers<span className="block text-[10px] leading-snug text-neutral-500">every layer, the observations not confirmed and the diagnostics (founder only)</span></span></label>}
           </div>
         )}

@@ -136,3 +136,18 @@ export function stretchLine(line: [number, number][], a0: number, a1: number, ct
   const pts: [number, number][] = [[a0, cAt(a0)], ...ac.filter(([a]) => a > a0 + 1e-6 && a < a1 - 1e-6), [a1, cAt(a1)]];
   return pts.map(([a, c]) => [a * ct - c * st, a * st + c * ct]);
 }
+
+/**
+ * Read only (2026-11-20): for each plant of `cornPlantsOf`, in its order, the marks it was made from: the photograph
+ * and the mark's pixel in it. `k`: the mark's index in that photograph's stricter marks, or -1 for a lower-bar
+ * candidate. For each plant's own look (cornPlantLook.ts) and for the founder's "photographs that marked it".
+ */
+export function plantSightings(P: PlacedDots, rec: { rowOf: Int32Array }): { photo: string; u: number; v: number; k: number }[][] {
+  const out: { photo: string; u: number; v: number; k: number }[][] = [], S = P.sights ?? [], C = P.candidates;
+  for (let i = 0; i < P.all.length; i++) {
+    if (!(i < P.strict || rec.rowOf[i] >= 0)) continue;
+    if (i < P.strict) out.push(P.all[i].members.map(m => ({ photo: P.photos[S[m].p], u: S[m].u, v: S[m].v, k: S[m].k ?? -1 })));
+    else out.push((C?.members[i - P.strict] ?? []).map(j => { const f = C!.from[j]; return { photo: P.photos[f.p], u: f.u, v: f.v, k: f.sight >= 0 ? S[f.sight].k ?? -1 : -1 }; }));
+  }
+  return out;
+}

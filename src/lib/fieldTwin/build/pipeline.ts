@@ -18,7 +18,7 @@ export type BuildReport = {
   rows: Record<string, unknown> | null;
   weeds: { detections: number; photographsRun: number; failed: { name: string; reason: string }[]; stats: Record<string, unknown> };
   /** A corn build: what the corn stage did. */
-  corn: { photographsRead: number; withRows: number; failed: { name: string; reason: string }[]; msPerPhoto: number; ms: number; /** What reading the soil and corn colours cost over the whole flight (cornColours.ts). */ colourMs: number; summary: CornStageResult["field"]["summary"]; planting: CornStageResult["field"]["planting"]; variant: string | null; rowAgreementM: number | null; rowSpacingM: number | null } | null;
+  corn: { photographsRead: number; withRows: number; failed: { name: string; reason: string }[]; msPerPhoto: number; ms: number; /** What reading the soil and corn colours cost over the whole flight (cornColours.ts). */ colourMs: number; /** What measuring each plant's own look cost over the whole flight, in the helpers and in combining (cornPlantLook.ts). */ lookMs: number; summary: CornStageResult["field"]["summary"]; planting: CornStageResult["field"]["planting"]; variant: string | null; rowAgreementM: number | null; rowSpacingM: number | null } | null;
   boundary: { areaM2: number; uncertaintyM2: number; supportPhotographs: number; failures: string[] } | null;
   crops: number;
   timings: StageTimings;
@@ -113,7 +113,7 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
     cameras: cams.report as unknown as Record<string, unknown>,
     rows: rows?.report ?? null,
     weeds: { detections: weeds.detections, photographsRun: weeds.photographsRun, failed: weeds.photographsFailed, stats: weeds.stats },
-    corn: corn ? { photographsRead: corn.reads.length, withRows: corn.withRows, failed: corn.failed, msPerPhoto: corn.msPerPhoto, ms: corn.ms, colourMs: corn.colourMs, summary: corn.field.summary, planting: corn.field.planting, variant: corn.variant ?? null, rowAgreementM: corn.field.rowAgreementM, rowSpacingM: corn.field.pitchM } : null,
+    corn: corn ? { photographsRead: corn.reads.length, withRows: corn.withRows, failed: corn.failed, msPerPhoto: corn.msPerPhoto, ms: corn.ms, colourMs: corn.colourMs, lookMs: corn.lookMs, summary: corn.field.summary, planting: corn.field.planting, variant: corn.variant ?? null, rowAgreementM: corn.field.rowAgreementM, rowSpacingM: corn.field.pitchM } : null,
     boundary: ev.boundary ? { areaM2: ev.boundary.areaM2, uncertaintyM2: ev.boundary.uncertaintyM2, supportPhotographs: ev.boundary.stats.support.photographs, failures: ev.boundary.failures } : null,
     crops: built.crops, timings, totalMs: Date.now() - T0, notes,
   };
@@ -123,7 +123,7 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   if (options.analysis && corn) {
     try {
       const meta = new Map(reads.map(r => [r.name, { bytes: photoFiles?.get(r.name)?.size ?? null, capturedAt: r.meta.capturedAt ?? null }]));
-      const record = buildTwinAnalysis({ twin: built.twin, reads: corn.reads, field: corn.field, frames: cams.frames, crops: built.cropSources, photographs: meta });
+      const record = buildTwinAnalysis({ twin: built.twin, reads: corn.reads, field: corn.field, frames: cams.frames, crops: built.cropSources, photographs: meta, plantMarks: corn.plantMarks });
       analysis = record ? analysisBytes(record) : null;
       hooks.log?.(record ? `analysis record: ${record.reads.length} photographs, ${(analysis!.length / 1024).toFixed(0)} KB before compression` : "analysis record: not made (the cameras' ground is not a flat plane)");
     } catch (e) {
