@@ -689,6 +689,17 @@ export const SEQUENCE = {
    * dots on no row. His count: the plants on rows and the doubles (until a look at the photographs decides each double);
    * every other dot on no row is green that is not corn. */
   doublesApart: false,
+  /** TEMPORARY PATCH (2026-11-20; 0 = off, the default; 0.05 in the app's preset). A second-look candidate placed on a
+   * row is taken off it when it stands over this far ACROSS from the line through the stricter marks' plants beside it
+   * on that row (the nearest before and the nearest after it along, each within 3 plant spacings; one alone where
+   * only one is; with none the candidate stays). Why: where two flight lines disagree on a row's place by about 10 cm
+   * a real plant marked only by the second look of one line lands on bare soil beside its row, inside the on-row band
+   * (0.12 of the row spacing: 11 cm at 0.925 m), and is drawn and counted there (dot 57911 of the private seedling
+   * flight, photographs 0077 to 0079). Measured on that flight: 247 of 2,783 second-look plants stand over 5 cm
+   * across; on photo 0025's dev tiles the rule takes 4 marks, none on a labelled plant (found 1,023 unchanged, wrong
+   * 78 -> 75); at 4 cm it takes labelled plants (4 of 10). It treats the symptom: the cause is the photographs'
+   * registration, and this goes when that is mended. */
+  secondLookAcrossMaxM: 0,
 };
 /** The rules as they stood on 2026-11-16 at f23efc0, before the changes above them here: kept so that result can be run beside the present one. */
 export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: false, refuseScattered: false, alleyTest: "none", betweenOffLines: false, spacingRulesNeedASpacing: false, sweepLoneMarks: false };
@@ -700,7 +711,7 @@ export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: fal
  * `cutFromRow`: placed on a row, then left on no row when the row was built (a piece of under three plants, a stretch
  * longer than `maxBridgeM` with no plant, or a stretch over ground judged scattered: `build` in reconstruct).
  */
-export const SETTLED = { none: 0, certainRow: 1, scattered: 2, noRow: 3, noSpacing: 4, alley: 5, tooClose: 6, tooFar: 7, offSpacing: 8, placedAtSpacing: 9, placedOffSpacing: 10, freeAlley: 11, freeTooClose: 12, freePlaced: 13, alone: 14, geometryRow: 15, cutFromRow: 16, secondLook: 17, placedOnRetry: 18 } as const;
+export const SETTLED = { none: 0, certainRow: 1, scattered: 2, noRow: 3, noSpacing: 4, alley: 5, tooClose: 6, tooFar: 7, offSpacing: 8, placedAtSpacing: 9, placedOffSpacing: 10, freeAlley: 11, freeTooClose: 12, freePlaced: 13, alone: 14, geometryRow: 15, cutFromRow: 16, secondLook: 17, placedOnRetry: 18, offLine: 19 } as const;
 export type GroundJudge = { state: (e: number, n: number) => 0 | 1 | 2; dotState?: Uint8Array | null };
 export type RowSegment = { a0: number; a1: number; confirmed: boolean };
 /** A row's course in the rows' frame: its across position at knots along it, from its first plant to its last, and the dots it was fitted through. */
@@ -718,7 +729,7 @@ export type Reconstruction = {
   rowOf: Int32Array;
   /** Per dot: 1 when it is on no row, off every row's line, and has a row on either side of it within a spacing: between the rows, not the crop. */
   between: Uint8Array;
-  /** Per dot, why it is on no row: 0 on a row, 1 no row reaches it, 2 as close as a double to a plant on the row, 3 not at the plant spacing, 4 between two rows, 5 on ground the field's plants show as scattered, 6 a candidate (or a dot for the loosened placement) on a stretch of row whose band does not beat the ground between the rows, 7 the plant spacing is not measured on this flight, so the rule that would place it does not run, 8 a candidate that was on a row and alone on it (the final sweep, `sweepLoneMarks`). */
+  /** Per dot, why it is on no row: 0 on a row, 1 no row reaches it, 2 as close as a double to a plant on the row, 3 not at the plant spacing, 4 between two rows, 5 on ground the field's plants show as scattered, 6 a candidate (or a dot for the loosened placement) on a stretch of row whose band does not beat the ground between the rows, 7 the plant spacing is not measured on this flight, so the rule that would place it does not run, 8 a candidate that was on a row and alone on it (the final sweep, `sweepLoneMarks`), 9 a candidate that was on a row and too far across from the line of the plants beside it (the temporary patch, `secondLookAcrossMaxM`). */
   why: Uint8Array;
   /** The gap rule as measured, and what it did: gaps bridged as confirmed, stretches not confirmed, rows cut (over a
    * stretch with no plant, and where the course would cross ground judged scattered). */

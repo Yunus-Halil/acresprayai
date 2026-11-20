@@ -673,3 +673,32 @@ describe("the dots refused as too far, tried again (retryTooFar, off by default)
     expect(SEQUENCE.retryTooFar).toBe(false); expect(SEQUENCE_V1.retryTooFar).toBe(false); expect(SEQUENCE.doublesApart).toBe(false);
   });
 });
+
+describe("a second-look plant beside its row (secondLookAcrossMaxM, the temporary patch, off by default)", () => {
+  // Row 3 lacks two plants, at 10.05 and 12.0 m. A second-look candidate stands in each gap: one on the row's line,
+  // one 8 cm across from it (inside the on-row band: 0.12 of 0.9 m is 10.8 cm).
+  const base: Dot[] = []; for (let r = 0; r < 6; r++) for (let k = 0; k * SEED <= 24 + 1e-9; k++) { const a = k * SEED; if (r === 3 && (Math.abs(a - 10.05) < 1e-6 || Math.abs(a - 12) < 1e-6)) continue; base.push(dot(a, r * S)); }
+  const dots = [...base, dot(10.05, 3 * S + 0.01, 2), dot(12, 3 * S + 0.08, 2)], iOn = base.length, iBeside = base.length + 1;
+  const tiers = dots.map((_, i) => (i >= base.length ? 1 : 0));
+
+  it("as it stands, both are placed on the row", () => {
+    const R = read(dots, SEQUENCE, null, tiers);
+    expect(R.rowOf[iOn]).toBeGreaterThanOrEqual(0); expect(R.rowOf[iBeside]).toBe(R.rowOf[iOn]);
+  });
+
+  it("with the patch at 5 cm, the one beside the line comes off; the one on it and every other plant stay", () => {
+    const R = read(dots, { ...SEQUENCE, secondLookAcrossMaxM: 0.05 }, null, tiers), was = read(dots, SEQUENCE, null, tiers);
+    expect(R.rowOf[iBeside]).toBe(-1); expect(R.settled[iBeside]).toBe(SETTLED.offLine); expect(R.why[iBeside]).toBe(9);
+    expect(R.rowOf[iOn]).toBeGreaterThanOrEqual(0);
+    for (let i = 0; i < dots.length; i++) if (i !== iBeside) expect(R.rowOf[i] >= 0).toBe(was.rowOf[i] >= 0);
+  });
+
+  it("never moves a plant of the stricter marks, however far across it stands", () => {
+    const strict = [...base, dot(12, 3 * S + 0.08, 2)], R = read(strict, { ...SEQUENCE, secondLookAcrossMaxM: 0.05 }), was = read(strict);
+    expect(Array.from(R.rowOf)).toEqual(Array.from(was.rowOf)); expect(Array.from(R.settled)).toEqual(Array.from(was.settled));
+  });
+
+  it("is off by default and in the rules as they stood", () => {
+    expect(SEQUENCE.secondLookAcrossMaxM).toBe(0); expect(SEQUENCE_V1.secondLookAcrossMaxM).toBe(0);
+  });
+});

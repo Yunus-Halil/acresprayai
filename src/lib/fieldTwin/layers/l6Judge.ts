@@ -113,6 +113,22 @@ export function judgeDots(dots: Dot[], L4: ObviousPlants, L5: RowProfile, o: Pla
       return false;
     });
   });
+  // TEMPORARY PATCH (q.secondLookAcrossMaxM, plantsFirst.ts SEQUENCE): a candidate on a row over that far across from
+  // the line through the stricter marks' plants beside it on the row is off the row: why 9.
+  if (q.secondLookAcrossMaxM > 0 && tier && spacingRules) lines.forEach((L, ri) => {
+    const st = [...L.dots, ...extra[ri].filter(i => !tier[i])].sort((x, y) => A[x] - A[y]);
+    if (!st.length) return;
+    extra[ri] = extra[ri].filter(i => {
+      if (!tier[i]) return true;
+      let b = 0, e = st.length; while (b < e) { const m = (b + e) >> 1; if (A[st[m]] < A[i]) b = m + 1; else e = m; }
+      const lo = b > 0 ? st[b - 1] : -1, hi = b < st.length ? st[b] : -1;
+      const okLo = lo >= 0 && A[i] - A[lo] <= 3 * seed, okHi = hi >= 0 && A[hi] - A[i] <= 3 * seed;
+      const line = okLo && okHi ? C[lo] + ((A[i] - A[lo]) / Math.max(1e-6, A[hi] - A[lo])) * (C[hi] - C[lo]) : okLo ? C[lo] : okHi ? C[hi] : null;
+      if (line == null || Math.abs(C[i] - line) <= q.secondLookAcrossMaxM) return true;
+      why[i] = 9; onCertain[i] = 0; loose[i] = 0; offSpacing[i] = 0; if (certainty[i] === 1) certainty[i] = 2; settled[i] = SETTLED.offLine;
+      return false;
+    });
+  });
   // New rows from what is left, only in a row slot of the planter's pattern that no certain row holds there, as dense
   // as the certain rows are, straight.
   const restByJ = new Map<number, number[]>();
