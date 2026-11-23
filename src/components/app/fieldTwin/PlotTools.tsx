@@ -62,6 +62,7 @@ const nearestOf = (v: number[], x: number) => v.reduce((b, y) => (Math.abs(y - x
 /** The numbers for a plot (US units, his brief). */
 export function PlotNumbersView({ n, shape }: { n: PlotNumbers; shape: PlotShape | null }) {
   const [rowsOpen, setRowsOpen] = useState(false);
+  const [howOpen, setHowOpen] = useState(false);
   const row = (label: React.ReactNode, value: React.ReactNode) => <><dt className="text-neutral-400">{label}</dt><dd className="text-right tabular-nums text-neutral-100">{value}</dd></>;
   return (
     <div className="mt-1.5" role="group" aria-label="Plot numbers">
@@ -72,15 +73,21 @@ export function PlotNumbersView({ n, shape }: { n: PlotNumbers; shape: PlotShape
         {row("Rows read in the photos", n.readShare != null ? fmtPct(n.readShare) : "no row inside")}
         {row("Plant spacing", n.spacing ? `${fmtIn(n.spacing.meanM)} avg` : "–")}
         {n.spacing && row(<span className="pl-2 text-neutral-500">spread · CV</span>, `±${fmtIn(n.spacing.sdM)} · ${fmtPct(n.spacing.cv)}`)}
-        {n.spacing && row(<span className="pl-2 text-neutral-500">over 1.5 × the median</span>, n.spacing.long.toLocaleString("en-US"))}
+        {n.spacing && n.spacing.long > 0 && <p className="col-span-2 -mt-0.5 pl-2 text-[10px] leading-snug text-neutral-500">Includes plants the photos missed: {n.spacing.long.toLocaleString("en-US")} spacing{n.spacing.long === 1 ? " is" : "s are"} over 1.5 × the median (a missed plant or a skip).</p>}
         {row("Plant span (leaf tip to tip)", n.span ? `${fmtIn(n.span.medianM)} median` : "–")}
-        {row("Green, not corn", n.greenNotCorn.toLocaleString("en-US"))}
-        {(n.weeds.confirmed + n.weeds.unconfirmed + n.weeds.contested > 0) && row("Weed candidates", `${n.weeds.confirmed} confirmed · ${n.weeds.unconfirmed + n.weeds.contested} not`)}
+        {row("Possible weeds", `${n.possibleWeeds.total.toLocaleString("en-US")} ${n.possibleWeeds.confirmed ? `(${n.possibleWeeds.confirmed} confirmed)` : "(unconfirmed)"}`)}
         {row("Gaps", n.gaps.measured ? `${n.gaps.confirmed}${n.gaps.confirmed ? ` · ${fmtIn(n.gaps.lengthM, 0)}` : ""}` : "Not measured on this flight")}
       </dl>
-      {n.spacing && n.spacing.long > 0 && <p className="mt-1 text-[10px] leading-snug text-neutral-500">Spacings over 1.5 × the plot's median ({fmtIn(n.spacing.medianM)}) may be missed plants or skips: the photographs can't tell which, so the spread includes the plants they missed.</p>}
-      {n.span && <p className="mt-0.5 text-[10px] leading-snug text-neutral-500">Span: the whole plant's leaf line, tip to tip, on {n.span.n.toLocaleString("en-US")} of its plants; not one leaf's length.</p>}
-      <p className="mt-0.5 text-[10px] leading-snug text-neutral-500">Green, not corn: located green on no row, not counted; often a weed, sometimes dark ground or shadow.</p>
+      <button type="button" className="mt-1 inline-flex items-center gap-1 text-[10.5px] text-neutral-400 hover:text-neutral-200" onClick={() => setHowOpen(o => !o)} aria-expanded={howOpen}>
+        <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-neutral-500 text-[9px] font-bold leading-none" aria-hidden="true">?</span>How these are measured
+      </button>
+      {howOpen && <div className="mt-1 space-y-0.5 border-l border-[#2e322e] pl-2 text-[10px] leading-snug text-neutral-500">
+        <p>Plants per acre: the plants counted inside ÷ (the row inside with plants seen × the field's row spacing), the same rule as the Stand.</p>
+        <p>Rows read in the photos: of the row inside, the share with plants seen along it.</p>
+        {n.spacing && <p>Plant spacing: between neighbouring plants on each row, both inside the plot. Over 1.5 × the plot's median ({fmtIn(n.spacing.medianM)}) the photos can't tell a missed plant from a skip.</p>}
+        {n.span && <p>Plant span: the whole plant's leaf line, tip to tip, on {n.span.n.toLocaleString("en-US")} of its plants; not one leaf's length.</p>}
+        <p>Possible weeds: green on no row (not counted) plus weed candidates, each place once; often a weed, sometimes dark ground or shadow.</p>
+      </div>}
       {n.small && <p className="mt-1 rounded-sm border border-[#6b4f1d] bg-[rgba(64,46,14,0.55)] px-2 py-1 text-[10.5px] leading-snug text-[#f3c97a]">Small plot: {n.small.why === "plants" ? `${n.plants} plants` : `${fmtFt(n.seenM)} of row with plants seen`}, so the per-acre number could be off by about ±{Math.round(100 * n.small.margin)} %. Draw at least 100 plants and 50 ft of row for a stable number.</p>}
       {n.rows.length > 0 && <>
         <button type="button" className="mt-1 text-[10.5px] text-neutral-400 hover:text-neutral-200" onClick={() => setRowsOpen(o => !o)} aria-expanded={rowsOpen}>{rowsOpen ? "▾" : "▸"} Spacing per row ({n.rows.length})</button>
