@@ -24,6 +24,11 @@ type Draft = { ring: LatLngPair[]; shape: PlotShape };
 type Mode = { kind: "idle" } | { kind: "drawing"; tool: Tool } | { kind: "naming"; draft: Draft } | { kind: "editing"; uid: string; draft: Draft };
 
 const PANE = "twinPlots";
+/** A map still on the page: the twin's map is made again when its scene changes (a boundary corrected; a hot reload),
+ * and an effect must not draw on the one just removed (Leaflet clears its container id on remove). */
+const alive = (map: L.Map | null): map is L.Map => !!map && (map as unknown as { _containerId?: number })._containerId != null && !!map.getPane("mapPane");
+/** Take layers off a map that may have gone meanwhile. */
+const drop = (l: L.Layer) => { try { l.remove(); } catch { /* the map went first */ } };
 function paneOf(map: L.Map): { pane: string; renderer: L.Renderer } {
   if (!map.getPane(PANE)) map.createPane(PANE).style.zIndex = "450";
   const m = map as L.Map & { __plotRenderer?: L.Renderer };
@@ -142,7 +147,7 @@ export function PlotWorkbench({ map, ctx, twinId, onBusy }: { map: L.Map | null;
     setLive(null); setMode({ kind: "idle" });
   };
   const remove = () => { if (!selectedPlot) return; commit(plots.filter(p => p.uid !== selectedPlot.uid)); setSelected(null); setConfirmDelete(false); };
-  const zoomTo = (p: Plot) => { if (map) map.flyToBounds(L.latLngBounds(p.ring.map(([a, b]) => L.latLng(a, b))).pad(0.6), { duration: 0.5, maxZoom: 25 }); };
+  const zoomTo = (p: Plot) => { if (alive(map)) map.flyToBounds(L.latLngBounds(p.ring.map(([a, b]) => L.latLng(a, b))).pad(0.6), { duration: 0.5, maxZoom: 25 }); };
 
   // Esc cancels a tool or an edit; Enter closes a polygon.
   useEffect(() => {
@@ -159,7 +164,7 @@ export function PlotWorkbench({ map, ctx, twinId, onBusy }: { map: L.Map | null;
 
   // The saved plots on the map: an outline in their colour, their number at the middle (a click selects).
   useEffect(() => {
-    if (!map || !shown) return;
+    if (!alive(map) || !shown) return;
     const { pane, renderer } = paneOf(map), g = L.layerGroup().addTo(map);
     for (const p of plots) {
       if (mode.kind === "editing" && mode.uid === p.uid) continue;
@@ -168,13 +173,13 @@ export function PlotWorkbench({ map, ctx, twinId, onBusy }: { map: L.Map | null;
       L.marker(centroid(p.ring), { icon: numberIcon(p.number, p.colour, on), keyboard: false, title: p.name, zIndexOffset: on ? 500 : 0 })
         .on("click", e => { L.DomEvent.stop(e as unknown as Event); if (mode.kind === "idle") { setSelected(p.uid); setConfirmDelete(false); } }).addTo(g);
     }
-    return () => { g.remove(); };
+    return () => { drop(g); };
   }, [map, plots, selected, shown, mode]);
 
   // A tool: the shape follows the pointer, its words beside it, the numbers in the card.
   const toolNow = mode.kind === "drawing" ? mode.tool : null;
   useEffect(() => {
-    if (!map || !toolNow) return;
+    if (!alive(map) || !toolNow) return;
     const tool = toolNow, el = map.getContainer(), { pane, renderer } = paneOf(map);
     const draft = L.polygon([], { pane, renderer, color: "#ffffff", weight: 2, dashArray: "6 4", fillColor: "#ffffff", fillOpacity: 0.1, interactive: false }).addTo(map);
     const line = L.polyline([], { pane, renderer, color: "#ffffff", weight: 2, dashArray: "6 4", interactive: false }).addTo(map);
@@ -192,17 +197,33 @@ export function PlotWorkbench({ map, ctx, twinId, onBusy }: { map: L.Map | null;
     if (tool === "polygon") {
       const pts: LatLngPair[] = [];
       const finish = () => { if (pts.length >= 3) finished({ ring: [...pts], shape: { tool: "polygon" } }); };
-      const click = (e: L.LeafletMouseEvent) => {
-        if (pts.length >= 3 && map.latLngToContainerPoint(pts[0]).distanceTo(e.containerPoint) < 12) { finish(); return; }
-        if (pts.length && map.latLngToContainerPoint(pts[pts.length - 1]).distanceTo(e.containerPoint) < 5) return;
-        pts.push([e.latlng.lat, e.latlng.lng]); setVertices(pts.length);
-        line.setLatLngs(pts); show([...pts], { tool: "polygon" }, e.latlng);
+      // The twin's canvas stops the map's own click once it has picked (TwinCanvasLayer), so a corner comes from the
+      // pointer itself: a press and release that hardly moved is a tap (a longer move is a pan, left to the map); a
+      // second tap on the last corner within 350 ms is a double tap and closes the polygon.
+      let press: { x: number; y: number; t: number } | null = null, lastTap = { x: -99, y: -99, t: 0 };
+      const at = (ev: PointerEvent) => { const r = el.getBoundingClientRect(); return L.point(ev.clientX - r.left, ev.clientY - r.top); };
+      const down = (ev: PointerEvent) => {
+        if ((ev.target as HTMLElement).closest(".leaflet-control, .leaflet-marker-icon")) return;
+        if (ev.pointerType === "mouse" && ev.button !== 0) return;
+        const q = at(ev); press = { x: q.x, y: q.y, t: ev.timeStamp };
       };
-      const move = (e: L.LeafletMouseEvent) => { if (!pts.length) return; const ring: LatLngPair[] = [...pts, [e.latlng.lat, e.latlng.lng]]; line.setLatLngs(ring); show(ring, { tool: "polygon" }, e.latlng); };
-      const dbl = (e: L.LeafletMouseEvent) => { L.DomEvent.stop(e as unknown as Event); finish(); };
-      map.on("click", click); map.on("mousemove", move); map.on("dblclick", dbl);
+      const up = (ev: PointerEvent) => {
+        if (!press) return;
+        const q = at(ev), moved = Math.hypot(q.x - press.x, q.y - press.y);
+        press = null;
+        if (moved > 6) return;
+        const dbl = ev.timeStamp - lastTap.t < 350 && Math.hypot(q.x - lastTap.x, q.y - lastTap.y) < 8;
+        lastTap = { x: q.x, y: q.y, t: ev.timeStamp };
+        if (dbl) { finish(); return; }
+        if (pts.length >= 3 && map.latLngToContainerPoint(pts[0]).distanceTo(q) < 12) { finish(); return; }
+        const ll = map.containerPointToLatLng(q);
+        pts.push([ll.lat, ll.lng]); setVertices(pts.length);
+        line.setLatLngs(pts); show([...pts], { tool: "polygon" }, ll);
+      };
+      const move = (ev: PointerEvent) => { if (!pts.length || press) return; const ll = map.containerPointToLatLng(at(ev)); const ring: LatLngPair[] = [...pts, [ll.lat, ll.lng]]; line.setLatLngs(ring); show(ring, { tool: "polygon" }, ll); };
+      el.addEventListener("pointerdown", down, true); el.addEventListener("pointerup", up, true); el.addEventListener("pointermove", move);
       polygonApi.current = { undo: () => { pts.pop(); setVertices(pts.length); line.setLatLngs(pts); show([...pts], { tool: "polygon" }, null); }, finish };
-      cleanups.push(() => { map.off("click", click); map.off("mousemove", move); map.off("dblclick", dbl); polygonApi.current = null; });
+      cleanups.push(() => { el.removeEventListener("pointerdown", down, true); el.removeEventListener("pointerup", up, true); el.removeEventListener("pointermove", move); polygonApi.current = null; });
     } else {
       map.dragging.disable();
       let from: [number, number] | null = null, last: { ring: LatLngPair[]; shape: PlotShape } | null = null;
@@ -233,19 +254,19 @@ export function PlotWorkbench({ map, ctx, twinId, onBusy }: { map: L.Map | null;
         else { draft.setLatLngs([]); map.removeLayer(tip); setLive(null); }
       };
       el.addEventListener("pointerdown", down, true); window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
-      cleanups.push(() => { el.removeEventListener("pointerdown", down, true); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); map.dragging.enable(); });
+      cleanups.push(() => { el.removeEventListener("pointerdown", down, true); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); if (alive(map)) map.dragging.enable(); });
     }
-    return () => { cancelAnimationFrame(raf); for (const f of cleanups) f(); draft.remove(); line.remove(); tip.remove(); el.style.cursor = ""; map.doubleClickZoom.enable(); };
+    return () => { cancelAnimationFrame(raf); for (const f of cleanups) { try { f(); } catch { /* the map went first */ } } drop(draft); drop(line); drop(tip); el.style.cursor = ""; if (alive(map)) map.doubleClickZoom.enable(); };
   }, [map, toolNow, ctx, finished]);
 
   // A draft waiting for its name, or a plot being edited: its outline, and in an edit its handles.
   const draftNow = mode.kind === "naming" || mode.kind === "editing" ? mode.draft : null;
   const editing = mode.kind === "editing";
   useEffect(() => {
-    if (!map || !draftNow) return;
+    if (!alive(map) || !draftNow) return;
     const { pane, renderer } = paneOf(map), g = L.layerGroup().addTo(map);
     const poly = L.polygon(draftNow.ring, { pane, renderer, color: colour, weight: 2.5, dashArray: editing ? "6 4" : undefined, fillColor: colour, fillOpacity: 0.14, interactive: false }).addTo(g);
-    if (!editing) return () => { g.remove(); };
+    if (!editing) return () => { drop(g); };
     const d = draftNow;
     const done = (next: Draft) => { setLive(null); setMode(m => (m.kind === "editing" ? { ...m, draft: next } : m)); };
     const preview = (next: Draft) => { poly.setLatLngs(next.ring); setLive({ ring: next.ring, shape: next.shape }); };
@@ -279,7 +300,7 @@ export function PlotWorkbench({ map, ctx, twinId, onBusy }: { map: L.Map | null;
       ring.forEach((pt, i) => { const q = ring[(i + 1) % ring.length]; handle([(pt[0] + q[0]) / 2, (pt[1] + q[1]) / 2], "mid", p => { const r = [...ring]; r.splice(i + 1, 0, [p.lat, p.lng]); return { ring: r, shape: { tool: "polygon" } }; }); });
       handle(centroid(ring), "move", (p, from) => { const dLat = p.lat - from.lat, dLng = p.lng - from.lng; return { ring: ring.map(([a, b]): LatLngPair => [a + dLat, b + dLng]), shape: { tool: "polygon" } }; });
     }
-    return () => { g.remove(); };
+    return () => { drop(g); };
   }, [map, draftNow, editing, colour, ctx]);
 
   const removeCorner = () => {
@@ -353,7 +374,7 @@ export function PlotWorkbench({ map, ctx, twinId, onBusy }: { map: L.Map | null;
 export function PatchPins({ map, ctx, patches, active, onPick }: { map: L.Map | null; ctx: PlotContext; patches: WeedPatch[]; active: number | null; onPick: (p: WeedPatch) => void }) {
   const onPickRef = useRef(onPick); onPickRef.current = onPick;
   useEffect(() => {
-    if (!map || !patches.length) return;
+    if (!alive(map) || !patches.length) return;
     const { pane, renderer } = paneOf(map), g = L.layerGroup().addTo(map);
     for (const p of patches) {
       L.marker([p.lat, p.lng], { icon: numberIcon(p.number, WEED_PATCH_COLOUR, p.number === active), keyboard: false, title: `Weed patch ${p.number}: ${fmtAcres(p.areaM2)}, unconfirmed`, zIndexOffset: p.number === active ? 400 : -100 })
@@ -372,7 +393,7 @@ export function PatchPins({ map, ctx, patches, active, onPick }: { map: L.Map | 
       }
       L.polyline(segs, { pane, renderer, color: "#ffffff", weight: 2, dashArray: "5 4", opacity: 0.9, interactive: false }).addTo(g);
     }
-    return () => { g.remove(); };
+    return () => { drop(g); };
   }, [map, ctx, patches, active]);
   return null;
 }

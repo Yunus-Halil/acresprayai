@@ -60,7 +60,7 @@ describe("who sees photo ground", () => {
       const rendered = render(view());
       expect(screen.queryByRole("group", { name: "Photographs" })).toBeNull();
       expect(screen.getByText("Not photographed")).toBeInTheDocument();
-      fireEvent.click(within(screen.getByRole("group", { name: "Corn" })).getByText("Weed 1"));
+      fireEvent.click(within(screen.getByRole("group", { name: "Corn" })).getByRole("button", { name: /^Details/ })); fireEvent.click(within(screen.getByRole("list", { name: "Corn findings to review" })).getByText("Weed 1"));
       expect(screen.queryByRole("region", { name: "Every photograph that saw it" })).toBeNull();
       expect(ground.overview).not.toHaveBeenCalled();
       await close(rendered);
@@ -83,7 +83,7 @@ describe("who sees photo ground", () => {
     expect(within(panel).getByRole("checkbox", { name: /The flight's photographs/ })).toBeChecked();
     expect(within(panel).getByText(/Open the flight's photographs/)).toBeInTheDocument();
     expect(screen.getByText("Dark: not photographed")).toBeInTheDocument();
-    fireEvent.click(within(screen.getByRole("group", { name: "Corn" })).getByText("Weed 1"));
+    fireEvent.click(within(screen.getByRole("group", { name: "Corn" })).getByRole("button", { name: /^Details/ })); fireEvent.click(within(screen.getByRole("list", { name: "Corn findings to review" })).getByText("Weed 1"));
     const ev = screen.getByRole("region", { name: "Every photograph that saw it" });
     expect(within(ev).getByText(/every photograph that saw it/)).toBeInTheDocument();
     expect(within(ev).getByText("Read on this device only, never uploaded.")).toBeInTheDocument();

@@ -60,9 +60,11 @@ export function weedPatches(ctx: PlotContext, o = WEED_PATCH): WeedPatch[] {
   const kept = found.filter(g => g.marks >= o.minMarks).sort((a, b) => b.cells.length - a.cells.length || b.marks - a.marks);
   return kept.map((g, idx) => {
     const e = g.sx / g.marks, no = g.sy / g.marks, de = e - cx, dn = no - cy;
-    const where = Math.hypot(de, dn) < 0.2 * size ? "middle" : COMPASS[Math.round(((Math.atan2(dn, de) * 180) / Math.PI + 360) / 45) % 8];
     let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
     const cells = g.cells.map(k => { const i = k % nx, j = (k - i) / nx, ex = x0 + i * c, ny0 = y0 + j * c; bx0 = Math.min(bx0, ex); by0 = Math.min(by0, ny0); bx1 = Math.max(bx1, ex + c); by1 = Math.max(by1, ny0 + c); return [ex, ny0] as [number, number]; });
+    // A patch reaching across much of the field (a headland strip) is "along" its side, not at a point of it.
+    const dir = COMPASS[Math.round(((Math.atan2(dn, de) * 180) / Math.PI + 360) / 45) % 8], long = Math.hypot(bx1 - bx0, by1 - by0) > 0.4 * size;
+    const where = long ? `along the ${dir} side` : Math.hypot(de, dn) < 0.2 * size ? "middle" : dir;
     const [lat, lng] = ctx.frame.toLL(e, no);
     return { number: idx + 1, marks: g.marks, areaM2: g.cells.length * c * c, lat, lng, bounds: [ctx.frame.toLL(bx0, by0), ctx.frame.toLL(bx1, by1)], where, cells };
   });
