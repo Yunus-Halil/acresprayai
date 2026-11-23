@@ -123,6 +123,8 @@ export class TwinCanvasLayer extends L.Canvas {
   /** The corn twin's colours and plant size; the Realistic ground and each plant's tint, built when first drawn. */
   private look: CornLook | null = null;
   private soil: HTMLCanvasElement | null | undefined = undefined;
+  /** Where the photographed ground is, as a yes/no grid (coverFor), built once per twin; null: not to be had. */
+  private cover: GroundCover | null | undefined = undefined;
   private tints: { palette: TwinRgb[]; plant: Uint8Array } | null = null;
   private sprites = new SpriteSheet();
   private stamp: { canvas: HTMLCanvasElement; g: Ctx; img: ImageData; u32: Uint32Array; w: number; h: number } | null = null;
@@ -146,7 +148,7 @@ export class TwinCanvasLayer extends L.Canvas {
     this.heat = scene ? buildHeatLevels(scene.intel, this.layers.heatScale) : null;
     try { performance.measure("twin:heatmap", { start: t0, end: performance.now() }); } catch { /* older browsers */ }
     this.heatCanvas.clear(); this.evidenceCanvas = null; this.findings = null; this.firstDraw = true;
-    this.look = scene?.corn ? cornLookOf(scene.twin.corn, toWorld) : null; this.soil = undefined; this.tints = null; this.sprites.clear();
+    this.look = scene?.corn ? cornLookOf(scene.twin.corn, toWorld) : null; this.soil = undefined; this.cover = undefined; this.tints = null; this.sprites.clear();
     this.requestRedraw();
   }
   /** The Simple view's row bars and the field's average colour (simpleView.ts rowBars); null: none (boxes at every zoom). */
@@ -463,23 +465,73 @@ export class TwinCanvasLayer extends L.Canvas {
     const simple = !!scene.corn && L_.corn && this.cornViewNow() === "simple";
     if (L_.ground && simple) { ctx.fillStyle = SIMPLE.ground; ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0); drawn.ground = 1; }
     else if (L_.ground) {
-      ctx.globalAlpha = 1 - (L_.surroundings ? d.surroundings : 0);
-      if (ctx.globalAlpha > 0.01) { ctx.fillStyle = C.outside; ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0); }
-      ctx.globalAlpha = 1;
-      if (L_.coverage) {
-        ctx.beginPath(); ring(ctx, scene.imagery, X, Y); ctx.fillStyle = C.imagery; ctx.fill();
-        if (!this.hatch) this.hatch = makeHatch(ctx);
-        if (this.hatch) { ctx.save(); ctx.beginPath(); ring(ctx, scene.imagery, X, Y); ctx.clip(); ctx.fillStyle = this.hatch; ctx.fillRect(Math.max(bx0, X(scene.bbox[0])), Math.max(by0, Y(scene.bbox[1])), Math.min(bx1, X(scene.bbox[2])) - Math.max(bx0, X(scene.bbox[0])), Math.min(by1, Y(scene.bbox[3])) - Math.max(by0, Y(scene.bbox[1]))); ctx.restore(); }
-        // The photographed ground over it: every photograph's footprint in the observed fill, so the hatch stays only
-        // where no photograph reached (the hull is convex; coverage is not). Each footprint filled on its own, so the
-        // rings' winding never cancels where two overlap.
-        const F = scene.footprints;
-        ctx.fillStyle = C.imagery;
-        for (let k = 0; k + 1 < F.off.length; k++) { ctx.beginPath(); packed(ctx, F, k, X, Y); ctx.fill(); }
+      // Painted once, not layer over layer (2026-11-23). The ground was the slow part of a frame: the charcoal, the
+      // hull, the hatch, then every photograph's footprint filled over the whole canvas (some twenty of them over any
+      // place in a field flown with overlap), the block, the soil. Where the whole canvas lies on photographed ground
+      // (or inside the block) everything under the top layer is hidden, so only the top layer is painted: the same
+      // pixels, one fill. Elsewhere the hatch and the footprints are laid only where the ground is not wholly
+      // photographed (below).
+      const realistic = !!scene.corn && L_.corn && this.cornViewNow() === "realistic";
+      const cover = L_.coverage && this.groundOnce ? this.coverFor(scene) : null;
+      const photographed = !!cover && coveredAll(cover, vx0, vy0, vx1, vy1);
+      const inBlock = this.groundOnce && !!scene.block && rectInRing(scene.block, vx0, vy0, vx1, vy1);
+      // Realistic: the soil picture is opaque wherever a photograph reached, so over photographed ground it is the whole ground.
+      const soilOnly = realistic && photographed && !!this.soilFor(scene) && vx0 >= scene.bbox[0] && vy0 >= scene.bbox[1] && vx1 <= scene.bbox[2] && vy1 <= scene.bbox[3];
+      if (soilOnly) drawn.groundOnce = 1;
+      else if (inBlock) { ctx.fillStyle = C.soil; ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0); drawn.groundOnce = 1; }
+      else if (photographed) {
+        ctx.fillStyle = C.imagery; ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0); drawn.groundOnce = 1;
+        if (scene.block) { ctx.beginPath(); ring(ctx, scene.block, X, Y); ctx.fillStyle = C.soil; ctx.fill(); }
+      } else {
+        ctx.globalAlpha = 1 - (L_.surroundings ? d.surroundings : 0);
+        if (ctx.globalAlpha > 0.01) { ctx.fillStyle = C.outside; ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0); }
+        ctx.globalAlpha = 1;
+        if (L_.coverage) {
+          ctx.beginPath(); ring(ctx, scene.imagery, X, Y); ctx.fillStyle = C.imagery; ctx.fill();
+          if (!this.hatch) this.hatch = makeHatch(ctx);
+          // The hatch for ground no photograph reached, then every photograph's footprint over it in the hull's own
+          // fill, so the hatch stays only where none reached (the hull is convex; coverage is not; each footprint
+          // filled on its own, so the rings' winding never cancels where two overlap). The hatch was the dearest
+          // thing in a frame: a pattern laid over the whole hull and painted out again almost everywhere. Now:
+          //   - it is drawn as its lines (hatchLines: the same lines the pattern made, cut to the hull), not a pattern;
+          //   - with no square in view that is not wholly photographed, neither it nor a footprint is drawn (the hull
+          //     already has its fill, the colour a footprint is filled in);
+          //   - with a few such squares (zoomed in at the edge of the photographed ground), both are laid only over
+          //     them: a footprint is then the size of the whole canvas, and twenty lie over any place.
+          const F = scene.footprints, hatchBox = () => ctx.fillRect(Math.max(bx0, X(scene.bbox[0])), Math.max(by0, Y(scene.bbox[1])), Math.min(bx1, X(scene.bbox[2])) - Math.max(bx0, X(scene.bbox[0])), Math.min(by1, Y(scene.bbox[3])) - Math.max(by0, Y(scene.bbox[1])));
+          if (cover) {
+            const G = cover.gaps, rects: number[] = [];
+            let gx0 = Infinity, gy0 = Infinity, gx1 = -Infinity, gy1 = -Infinity;
+            for (let i = 0; i < G.length; i += 4) {
+              if (G[i + 2] < vx0 || G[i] > vx1 || G[i + 3] < vy0 || G[i + 1] > vy1) continue;
+              const ax = Math.max(vx0, G[i]), ay = Math.max(vy0, G[i + 1]), bx = Math.min(vx1, G[i + 2]), by = Math.min(vy1, G[i + 3]);
+              // Half a pixel wider each way: neighbouring squares overlap, so no seam between them.
+              rects.push(X(ax) - 0.5, Y(ay) - 0.5, X(bx) - X(ax) + 1, Y(by) - Y(ay) + 1);
+              if (ax < gx0) gx0 = ax; if (ay < gy0) gy0 = ay; if (bx > gx1) gx1 = bx; if (by > gy1) gy1 = by;
+            }
+            const n = rects.length / 4;
+            if (n) {
+              const few = n <= GROUND_FEW_GAPS;
+              ctx.save();
+              if (few) { ctx.beginPath(); for (let i = 0; i < rects.length; i += 4) ctx.rect(rects[i], rects[i + 1], rects[i + 2], rects[i + 3]); ctx.clip(); }
+              else { gx0 = vx0; gy0 = vy0; gx1 = vx1; gy1 = vy1; }
+              hatchLines(ctx, scene.imagery, X, Y, Math.max(bx0, X(gx0) - 1), Math.max(by0, Y(gy0) - 1), Math.min(bx1, X(gx1) + 1), Math.min(by1, Y(gy1) + 1));
+              ctx.fillStyle = C.imagery;
+              const pad = 1 / scale, q = cover.boxes;
+              for (let k = 0; k + 1 < F.off.length; k++) { if (q[4 * k + 2] < gx0 - pad || q[4 * k] > gx1 + pad || q[4 * k + 3] < gy0 - pad || q[4 * k + 1] > gy1 + pad) continue; ctx.beginPath(); packed(ctx, F, k, X, Y); ctx.fill(); }
+              ctx.restore();
+            }
+            drawn.groundGaps = n;
+          } else {
+            if (this.hatch) { ctx.save(); ctx.beginPath(); ring(ctx, scene.imagery, X, Y); ctx.clip(); ctx.fillStyle = this.hatch; hatchBox(); ctx.restore(); }
+            ctx.fillStyle = C.imagery;
+            for (let k = 0; k + 1 < F.off.length; k++) { ctx.beginPath(); packed(ctx, F, k, X, Y); ctx.fill(); }
+          }
+        }
+        if (scene.block) { ctx.beginPath(); ring(ctx, scene.block, X, Y); ctx.fillStyle = C.soil; ctx.fill(); }
       }
-      if (scene.block) { ctx.beginPath(); ring(ctx, scene.block, X, Y); ctx.fillStyle = C.soil; ctx.fill(); }
       // Realistic (corn twins): the photographed ground in the field's own soil colour, one drawImage of the part in view.
-      if (scene.corn && L_.corn && this.cornViewNow() === "realistic") {
+      if (realistic) {
         const soil = this.soilFor(scene), [sx0w, sy0w, sx1w, sy1w] = scene.bbox;
         if (soil && sx1w > sx0w && sy1w > sy0w) {
           const ax = Math.max(vx0, sx0w), ay = Math.max(vy0, sy0w), bx = Math.min(vx1, sx1w), by = Math.min(vy1, sy1w);
@@ -1064,6 +1116,64 @@ export class TwinCanvasLayer extends L.Canvas {
     drawn.plants = n; if (boxes) drawn.plantsAsBoxes = n; else drawn.possibleWeeds = n;
   }
 
+  /** Whether the ground is painted once (see _draw); off, it is painted layer over layer as before (the bench's "before"). */
+  groundOnce = true;
+
+  /**
+   * Where the photographed ground of this twin is, built once: every photograph's footprint filled into one picture
+   * (each by itself, so overlapping rings never cancel), and from that picture a grid of squares about a metre across.
+   * Two things are kept of it. `sat` answers "is this whole rectangle photographed ground?": a square says yes only
+   * when every pixel of it, and of the squares around it, is inside a footprint (a metre or so held back from the
+   * edge, so a yes is never a pixel short). `gaps` are the squares with any pixel outside every footprint, joined
+   * into rectangles: the only ground the hatch can show on.
+   */
+  private coverFor(scene: Scene): GroundCover | null {
+    if (this.cover !== undefined) return this.cover;
+    this.cover = null;
+    try {
+      const t0 = performance.now(), F = scene.footprints;
+      if (F.off.length < 2) return null;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (let i = 0; i < F.xy.length; i += 2) { const x = F.xy[i], y = F.xy[i + 1]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      if (!(x1 > x0 && y1 > y0)) return null;
+      const LONG = 2048, aspect = (x1 - x0) / (y1 - y0), W = Math.max(8, Math.round(aspect >= 1 ? LONG : LONG * aspect)), H = Math.max(8, Math.round(aspect >= 1 ? LONG / aspect : LONG));
+      const canvas = document.createElement("canvas"); canvas.width = W; canvas.height = H;
+      const g = canvas.getContext("2d"); if (!g) return null;
+      const fx = (u: number) => ((u - x0) / (x1 - x0)) * W, fy = (u: number) => ((u - y0) / (y1 - y0)) * H;
+      g.fillStyle = C.imagery;
+      for (let k = 0; k + 1 < F.off.length; k++) { g.beginPath(); packed(g, F, k, fx, fy); g.fill(); }
+      const CELL = 8, gw = Math.ceil(W / CELL), gh = Math.ceil(H / CELL), a = g.getImageData(0, 0, W, H).data, full = new Uint8Array(gw * gh).fill(1);
+      for (let y = 0; y < H; y++) { const row = ((y / CELL) | 0) * gw; for (let x = 0; x < W; x++) if (a[4 * (y * W + x) + 3] !== 255) full[row + ((x / CELL) | 0)] = 0; }
+      // Summed over the grid, of the squares whose neighbours are all full too.
+      const sat = new Int32Array((gw + 1) * (gh + 1));
+      for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+        let ok = 1;
+        for (let dj = -1; dj <= 1 && ok; dj++) for (let di = -1; di <= 1; di++) { const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= gw || jj >= gh || !full[jj * gw + ii]) { ok = 0; break; } }
+        sat[(j + 1) * (gw + 1) + i + 1] = ok + sat[j * (gw + 1) + i + 1] + sat[(j + 1) * (gw + 1) + i] - sat[j * (gw + 1) + i];
+      }
+      // The squares not wholly photographed, as rectangles: runs along each row, a run joined to the same run of the row above.
+      const cellX = ((x1 - x0) / W) * CELL, cellY = ((y1 - y0) / H) * CELL, gaps: number[] = [];
+      let open = new Map<number, number>();
+      for (let j = 0; j < gh; j++) {
+        const now = new Map<number, number>();
+        for (let i = 0; i < gw; i++) {
+          if (full[j * gw + i]) continue;
+          let e = i; while (e + 1 < gw && !full[j * gw + e + 1]) e++;
+          const key = i * 65536 + e, at = open.get(key);
+          if (at !== undefined) { gaps[at + 3] = y0 + (j + 1) * cellY; now.set(key, at); }
+          else { now.set(key, gaps.length); gaps.push(x0 + i * cellX, y0 + j * cellY, Math.min(x1, x0 + (e + 1) * cellX), y0 + (j + 1) * cellY); }
+          i = e;
+        }
+        open = now;
+      }
+      const boxes = new Float64Array(4 * (F.off.length - 1));
+      for (let k = 0; k + 1 < F.off.length; k++) { let a0 = Infinity, b0 = Infinity, a1 = -Infinity, b1 = -Infinity; for (let i = F.off[k]; i < F.off[k + 1]; i += 2) { const x = F.xy[i], y = F.xy[i + 1]; if (x < a0) a0 = x; if (x > a1) a1 = x; if (y < b0) b0 = y; if (y > b1) b1 = y; } boxes.set([a0, b0, a1, b1], 4 * k); }
+      this.cover = { x0, y0, x1, y1, gw, gh, cellX, cellY, sat, gaps: Float64Array.from(gaps), boxes };
+      try { performance.measure("twin:cover", { start: t0, end: performance.now() }); } catch { /* older browsers */ }
+    } catch { this.cover = null; }
+    return this.cover;
+  }
+
   /** The Realistic view's ground for this twin, built once: the soil colours blended over the twin's box, kept only
    * where a photograph saw the ground (each footprint filled by itself, so overlapping rings never cancel). */
   private soilFor(scene: Scene): HTMLCanvasElement | null {
@@ -1535,6 +1645,65 @@ function reach(r: { xy: Float64Array; off: Int32Array }, k: number, cx: number, 
 function packed(ctx: Ctx, r: { xy: Float64Array; off: Int32Array }, k: number, X: (u: number) => number, Y: (u: number) => number) {
   const o = r.off[k], e = r.off[k + 1];
   for (let i = o; i < e; i += 2) { if (i === o) ctx.moveTo(X(r.xy[i]), Y(r.xy[i + 1])); else ctx.lineTo(X(r.xy[i]), Y(r.xy[i + 1])); }
+}
+/** Where the photographed ground is, over the box x0..x1, y0..y1 (scene units): its yes/no grid summed (`sat`), the
+ * squares not wholly photographed as rectangles (`gaps`: x0, y0, x1, y1 each), and each footprint's own box. */
+type GroundCover = { x0: number; y0: number; x1: number; y1: number; gw: number; gh: number; cellX: number; cellY: number; sat: Int32Array; gaps: Float64Array; boxes: Float64Array };
+/** Whether the whole rectangle (scene units) is photographed ground, by the grid (TwinCanvasLayer.coverFor). */
+export function coveredAll(c: Pick<GroundCover, "x0" | "y0" | "x1" | "y1" | "gw" | "gh" | "cellX" | "cellY" | "sat">, x0: number, y0: number, x1: number, y1: number): boolean {
+  if (!(x1 > x0 && y1 > y0) || x0 < c.x0 || y0 < c.y0 || x1 > c.x1 || y1 > c.y1) return false;
+  const i0 = Math.floor((x0 - c.x0) / c.cellX), j0 = Math.floor((y0 - c.y0) / c.cellY), i1 = Math.min(c.gw - 1, Math.floor((x1 - c.x0) / c.cellX)), j1 = Math.min(c.gh - 1, Math.floor((y1 - c.y0) / c.cellY));
+  if (i0 < 0 || j0 < 0 || i1 < i0 || j1 < j0) return false;
+  const w = c.gw + 1, sum = c.sat[(j1 + 1) * w + i1 + 1] - c.sat[j0 * w + i1 + 1] - c.sat[(j1 + 1) * w + i0] + c.sat[j0 * w + i0];
+  return sum === (i1 - i0 + 1) * (j1 - j0 + 1);
+}
+/** Whether the whole rectangle lies inside the ring (a simple polygon, flat x, y): its corners inside, no edge of the ring through it. */
+export function rectInRing(xy: Float64Array, x0: number, y0: number, x1: number, y1: number): boolean {
+  const n = xy.length / 2;
+  if (n < 3 || !(x1 > x0 && y1 > y0)) return false;
+  if (!inFlatRing(x0, y0, xy) || !inFlatRing(x1, y0, xy) || !inFlatRing(x1, y1, xy) || !inFlatRing(x0, y1, xy)) return false;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const ax = xy[2 * j], ay = xy[2 * j + 1], dx = xy[2 * i] - ax, dy = xy[2 * i + 1] - ay;
+    // The edge clipped to the rectangle (Liang-Barsky): anything left of it is inside the rectangle.
+    let t0 = 0, t1 = 1, hit = true;
+    for (const [p, q] of [[-dx, ax - x0], [dx, x1 - ax], [-dy, ay - y0], [dy, y1 - ay]]) {
+      if (p === 0) { if (q < 0) { hit = false; break; } continue; }
+      const r = q / p;
+      if (p < 0) { if (r > t1) { hit = false; break; } if (r > t0) t0 = r; } else { if (r < t0) { hit = false; break; } if (r < t1) t1 = r; }
+    }
+    if (hit) return false;
+  }
+  return true;
+}
+/** Up to this many squares not wholly photographed in view, the hatch and the footprints are laid only over them
+ * (a clip of a few rectangles); with more (zoomed out) a clip of hundreds costs more than it saves. */
+const GROUND_FEW_GAPS = 48;
+/**
+ * The hatch for ground no photograph covered, as its lines: the lines the pattern of `makeHatch` makes (one pixel wide,
+ * x + y a multiple of 12 in the layer's own pixels), each cut to the convex hull and to the box given (layer pixels),
+ * in one stroke. A pattern laid over the hull cost several times the rest of the ground.
+ */
+function hatchLines(ctx: Ctx, hull: Float64Array, X: (u: number) => number, Y: (u: number) => number, x0: number, y0: number, x1: number, y1: number) {
+  const n = hull.length / 2;
+  if (n < 3 || !(x1 > x0 && y1 > y0)) return;
+  const hx = new Float64Array(n), hy = new Float64Array(n);
+  let area = 0;
+  for (let i = 0; i < n; i++) { hx[i] = X(hull[2 * i]); hy[i] = Y(hull[2 * i + 1]); }
+  for (let i = 0, j = n - 1; i < n; j = i++) area += hx[j] * hy[i] - hx[i] * hy[j];
+  const sign = area >= 0 ? 1 : -1;
+  ctx.beginPath();
+  for (let k = Math.ceil((x0 + y0) / 12); 12 * k <= x1 + y1; k++) {
+    // The line x + y = 12 k, by its x: inside the box, then inside every edge of the hull.
+    let lo = Math.max(x0, 12 * k - y1), hi = Math.min(x1, 12 * k - y0);
+    for (let i = 0, j = n - 1; i < n && lo < hi; j = i++) {
+      // Inside the edge j -> i: sign * cross(edge, point - start) >= 0, a linear function of x along the line.
+      const ex = hx[i] - hx[j], ey = hy[i] - hy[j], c0 = sign * (ex * (12 * k - hy[j]) + ey * hx[j]), c1 = sign * (-ex - ey);
+      // c0 + c1 * x >= 0
+      if (c1 === 0) { if (c0 < 0) lo = hi; } else if (c1 > 0) lo = Math.max(lo, -c0 / c1); else hi = Math.min(hi, -c0 / c1);
+    }
+    if (lo < hi) { ctx.moveTo(lo, 12 * k - lo); ctx.lineTo(hi, 12 * k - hi); }
+  }
+  ctx.strokeStyle = C.hatch; ctx.lineWidth = 1; ctx.lineCap = "butt"; ctx.setLineDash([]); ctx.stroke();
 }
 /** A faint diagonal hatch for ground no photograph covered. */
 function makeHatch(ctx: Ctx): CanvasPattern | null {
