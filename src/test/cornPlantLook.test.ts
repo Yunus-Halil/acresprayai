@@ -99,9 +99,33 @@ describe("the looks packed for the twin", () => {
     expect(U.dir[1] >= 90).toBe(true); expect([0, 178]).toContain((U.dir[1] % 90) * 2);
     expect(U.dir[2]).toBe(255); expect(U.size[2]).toBe(0); expect(U.colour[2]).toBe(0);
     expect(U.size[0] / 200).toBeCloseTo(0.125, 3);
-    const c = lookRgb(U.colour[0]); expect(Math.abs(c[0] - 70)).toBeLessThanOrEqual(4); expect(Math.abs(c[1] - 96)).toBeLessThanOrEqual(2); expect(Math.abs(c[2] - 44)).toBeLessThanOrEqual(4);
+    // The colour comes back exactly (2026-11-23: three bytes a plant beside the 5-6-5 colour).
+    expect(U.fine).toBe(true);
+    expect(lookRgb(U.colour[0])).toEqual([70, 96, 44]);
     // A measured black still reads as a colour (0 means none).
     expect(U.colour[1]).not.toBe(0);
+  });
+  it("open as they always did on a twin built before the finer colour, and when the finer colour is not these plants'", () => {
+    const L = [{ dirDeg: 91, shape: 0 as const, sizeM: 0.123, rgb: [70, 96, 44] as [number, number, number] }, { dirDeg: null, shape: 1 as const, sizeM: null, rgb: null }];
+    const P = packLooks(L), { rgb: _fine, ...old } = P;
+    void _fine;
+    for (const twin of [old, { ...P, rgb: "AAAA" }, { ...P, rgb: "***" }]) {
+      const U = unpackLooks(twin, 2)!;
+      expect(U.fine).toBe(false);
+      // The middle of each 5-6-5 step, as the views drew it before: within a few levels of what was measured.
+      expect(lookRgb(U.colour[0])).toEqual([(70 >> 3) * 8 + 4, (96 >> 2) * 4 + 2, (44 >> 3) * 8 + 4]);
+      expect(U.colour[1]).toBe(0);
+    }
+    // The 5-6-5 colour is still written: the app as it was before reads only that.
+    expect(atob(P.colour).length).toBe(4); expect(atob(P.rgb!).length).toBe(6);
+  });
+  it("keep two plants apart that the 5-6-5 colour stored as one", () => {
+    // A dark seedling and one a little yellower (red 68 against 71): one step of red in five bits holds both.
+    const P = packLooks([{ dirDeg: null, shape: 1, sizeM: 0.1, rgb: [68, 66, 36] }, { dirDeg: null, shape: 1, sizeM: 0.1, rgb: [71, 66, 36] }]);
+    const { rgb: _f, ...old } = P; void _f;
+    const before = unpackLooks(old, 2)!, now = unpackLooks(P, 2)!;
+    expect(before.colour[0]).toBe(before.colour[1]);
+    expect(lookRgb(now.colour[0])[0]).toBe(68); expect(lookRgb(now.colour[1])[0]).toBe(71);
   });
   it("are refused when they are not this twin's plants", () => {
     const P = packLooks([{ dirDeg: 10, shape: 0, sizeM: 0.1, rgb: [1, 2, 3] }]);

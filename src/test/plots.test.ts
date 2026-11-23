@@ -157,11 +157,25 @@ describe("the Simple view's stretched colours", () => {
     expect(l(white)).toBeLessThanOrEqual(SIMPLE.lightMax + 0.01);
     expect(hueOf(orange[0], orange[1], orange[2])).toBeGreaterThanOrEqual(SIMPLE.hueMin - 1);
   });
+  it("widen yellowness further on a twin that keeps each plant's colour as measured, the direction unchanged", () => {
+    // Red 71 against the field's 68: a difference the 5-6-5 colour could not hold (one of its steps is 8).
+    const h = (c: ArrayLike<number>) => hueOf(c[0], c[1], c[2]);
+    const coarse = stretched([71, 66, 36], F), fine = stretched([71, 66, 36], F, SIMPLE, true);
+    expect(h(fine)).toBeLessThan(h(coarse)); expect(h(coarse)).toBeLessThan(SIMPLE.hue);
+    expect(SIMPLE.hue - h(fine)).toBeCloseTo((SIMPLE.hueGainFine / SIMPLE.hueGain) * (SIMPLE.hue - h(coarse)), 0);
+    expect(stretched([68, 66, 36], F, SIMPLE, true)).toEqual(averageColour());
+    // The rows' bars follow the twin: a twin built with the finer colour says so in its context.
+    const t = exactTwin(), P = t.corn!.plants!;
+    P.look = packLooks(P.points.map(() => ({ dirDeg: null, shape: 1 as const, sizeM: 0.12, rgb: [68, 66, 36] as [number, number, number] })));
+    expect(plotContext(t)!.pColourFine).toBe(true);
+    const { rgb: _fine, ...old } = P.look; void _fine; P.look = old;
+    expect(plotContext(t)!.pColourFine).toBe(false);
+  });
   it("take the field's average from the middle of its plants' measured colours", () => {
-    const pack = (r: number, g: number, b: number) => ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
-    const f = fieldColourOf(Uint16Array.from([pack(68, 66, 36), pack(68, 66, 36), pack(92, 86, 52), 0]))!;
-    expect(f.hue).toBeCloseTo(hueOf(68, 66, 36), 0);
-    expect(fieldColourOf(new Uint16Array(4))).toBeNull();
+    const pack = (r: number, g: number, b: number) => (r << 16) | (g << 8) | b;
+    const f = fieldColourOf(Uint32Array.from([pack(68, 66, 36), pack(68, 66, 36), pack(92, 86, 52), 0]))!;
+    expect(f.hue).toBeCloseTo(hueOf(68, 66, 36), 6);
+    expect(fieldColourOf(new Uint32Array(4))).toBeNull();
   });
   it("word a plot's label, its number amber when the stand is well under the field's or the plot is small", () => {
     expect(fmtPerAcreShort(29_501)).toBe("29.5k/ac");

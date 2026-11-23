@@ -105,6 +105,8 @@ type Props = {
   showDoubles?: boolean;
   /** Corn twins: the Simple view's row bars and the field's average colour (simpleView.ts), or null. */
   simple?: RowBars | null;
+  /** Corn twins: the field boundary in use; green that is not corn and weed candidates outside it are not drawn. */
+  fieldLimit?: LatLngPair[] | null;
 };
 
 const bar = "background:rgba(20,22,20,.86);border:1px solid #333;color:#d9ddd6;";
@@ -131,7 +133,7 @@ const LocateControl = L.Control.extend({
   },
 });
 
-export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null, operational = null, editing = null, onBoundaryEdit, rowEdits = null, plants = null, onRowEnd, photoGround = null, cornView = null, showDoubles = false, simple = null }: Props) {
+export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null, operational = null, editing = null, onBoundaryEdit, rowEdits = null, plants = null, onRowEnd, photoGround = null, cornView = null, showDoubles = false, simple = null, fieldLimit = null }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const miniEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -249,6 +251,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
     if (el.current) el.current.style.background = cornView === "simple" ? SIMPLE.ground : TWIN_COLOURS.outside;
   }, [cornView, scene]);
   useEffect(() => { layerRef.current?.setSimple(simple); }, [simple, scene]);
+  useEffect(() => { layerRef.current?.setFieldLimit(fieldLimit); }, [fieldLimit, scene]);
   useEffect(() => { layerRef.current?.setShowDoubles(showDoubles); }, [showDoubles, scene]);
 
   // The scale bar follows the account's units.

@@ -45,7 +45,8 @@ const flown = (twin: TwinBundle) => {
  * the flight only when it limits the result, then Details, closed, with everything else. US units throughout. `plots`
  * goes between the flight line and Details (the founder's plot cards).
  */
-export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, view, technical = false, plotCtx: ctxProp, patches: patchesProp, blockHa = null, onLookAt, activePatch = null, plots = null }: {
+export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, view, technical = false, plotCtx: ctxProp, patches: patchesProp, blockHa = null, onLookAt, activePatch = null, plots = null, weedsOutside = 0 }: {
+  /** Marks of green that is not corn outside the field boundary in use: not shown, not in a patch. */ weedsOutside?: number;
   twin: TwinBundle; corn: TwinCorn; layers: TwinLayers; setLayers: (f: (l: TwinLayers) => TwinLayers) => void;
   onSelect: (p: TwinPick, lat: number, lng: number, metresAcross: number) => void;
   /** Kept for the callers; the corn panel speaks US units (his brief). */ units?: UnitSystem;
@@ -152,6 +153,7 @@ export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, view, 
           ))}
           {patches.length > 3 && <button type="button" className="px-2 pb-1 text-[10.5px] text-neutral-500 hover:text-neutral-300" onClick={() => setAllPatches(o => !o)}>{allPatches ? "Show the largest 3" : `+ ${patches.length - 3} smaller · show all`}</button>}
           {patches.length > 0 && <p className="px-2 pb-1 text-[10px] leading-snug text-neutral-500">Where the green that is not corn stands thick: often weeds, sometimes dark ground or shadow.</p>}
+          {weedsOutside > 0 && <p className="px-2 pb-1 text-[10px] leading-snug text-neutral-500">Inside the field boundary only: {weedsOutside.toLocaleString()} green marks outside it are not shown.</p>}
         </>}
         {confirmedWeeds.length > 0 && <div className="mx-1.5 mt-1 border-t border-[#262a26] pt-1.5">
           <div className="flex items-baseline justify-between text-[11.5px]"><span className="text-neutral-200">Weed candidates, confirmed</span><span className="tabular-nums text-neutral-100">{confirmedWeeds.length}</span></div>

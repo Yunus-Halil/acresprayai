@@ -5,6 +5,10 @@
 //
 // The rule: one-metre cells holding at least `minPerM2` marks; cells touching (side or corner) make one patch; a patch
 // of fewer than `minMarks` marks is left out.
+//
+// Only inside the field boundary (2026-11-23, his report: weeds were shown outside a clear boundary). The photographs
+// see the verge and the neighbouring ground too, and green there is not this field's weeds: with a boundary in use
+// (the operator's correction, else the inferred one, else the rows' block) only the marks inside it make patches.
 import type { PlotContext } from "./plots";
 import type { LatLngPair } from "./types";
 
@@ -28,8 +32,27 @@ export type WeedPatch = {
 
 const COMPASS = ["east", "north-east", "north", "north-west", "west", "south-west", "south", "south-east"];
 
-export function weedPatches(ctx: PlotContext, o = WEED_PATCH): WeedPatch[] {
-  const { gE, gN } = ctx, n = gE.length;
+/**
+ * Which marks of green that is not corn lie inside the ring (latitude / longitude): `keep` a mark each in the
+ * context's order (null: no ring, every mark is kept), and how many lie outside it.
+ */
+export function greenInside(ctx: PlotContext, ring: LatLngPair[] | null): { keep: Uint8Array | null; outside: number } {
+  if (!ring || ring.length < 3) return { keep: null, outside: 0 };
+  const en = ring.map(([la, ln]) => ctx.frame.toEN(la, ln)), m = en.length, n = ctx.gE.length, keep = new Uint8Array(n);
+  let outside = 0;
+  for (let i = 0; i < n; i++) {
+    const x = ctx.gE[i], y = ctx.gN[i];
+    let inside = false;
+    for (let a = 0, b = m - 1; a < m; b = a++) { const [xa, ya] = en[a], [xb, yb] = en[b]; if ((ya > y) !== (yb > y) && x < ((xb - xa) * (y - ya)) / (yb - ya) + xa) inside = !inside; }
+    if (inside) keep[i] = 1; else outside++;
+  }
+  return { keep, outside };
+}
+
+/** The weed patches; with `ring` (the field boundary in use, latitude / longitude) only from the marks inside it. */
+export function weedPatches(ctx: PlotContext, o = WEED_PATCH, ring: LatLngPair[] | null = null): WeedPatch[] {
+  const { keep } = greenInside(ctx, ring);
+  const gE = keep ? ctx.gE.filter((_, i) => keep[i] === 1) : ctx.gE, gN = keep ? ctx.gN.filter((_, i) => keep[i] === 1) : ctx.gN, n = gE.length;
   if (!n) return [];
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (let i = 0; i < n; i++) { x0 = Math.min(x0, gE[i]); x1 = Math.max(x1, gE[i]); y0 = Math.min(y0, gN[i]); y1 = Math.max(y1, gN[i]); }

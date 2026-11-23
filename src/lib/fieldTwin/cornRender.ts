@@ -235,7 +235,7 @@ export function lineLeaves(sizeM: number, shape: 0 | 1, flip: boolean): Leaf[] {
  * The plants' own greens as a handful of tints: the plants `use` picks (those with a measured colour), sorted by
  * brightness and cut into `tints` equal groups, each group's mean colour; per plant the tint it takes (255: none).
  */
-export function plantOwnTints(colour: Uint16Array, rgbOf: (v: number) => ArrayLike<number>, use: (k: number) => boolean, tints = CORN_RENDER.lookTints): { palette: TwinRgb[]; plant: Uint8Array } {
+export function plantOwnTints(colour: ArrayLike<number>, rgbOf: (v: number) => ArrayLike<number>, use: (k: number) => boolean, tints = CORN_RENDER.lookTints): { palette: TwinRgb[]; plant: Uint8Array } {
   const n = colour.length, plant = new Uint8Array(n).fill(255), idx: number[] = [], l = new Float32Array(n);
   const rgb = new Uint8Array(3 * n);
   for (let k = 0; k < n; k++) { if (!colour[k] || !use(k)) continue; const c = rgbOf(colour[k]); rgb[3 * k] = c[0]; rgb[3 * k + 1] = c[1]; rgb[3 * k + 2] = c[2]; idx.push(k); l[k] = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]; }

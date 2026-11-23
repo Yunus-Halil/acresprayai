@@ -165,32 +165,52 @@ export function plantLooks(plants: LookSighting[][], looks: Map<string, PhotoLoo
 
 /** The looks packed for the twin, a plant each in the plants' order: `dir` a byte (2-degree steps 0..89, plus 90 when
  * the shape is fuller; 255: no direction), `size` a byte (half centimetres, 0: none), `colour` two bytes (5-6-5 bits
- * of r, g, b, low byte first; 0: none). */
-export type PackedLooks = { version: 1; dir: string; size: string; colour: string };
+ * of r, g, b, low byte first; 0: none).
+ * `rgb` (2026-11-23 on): the same colour as measured, three bytes a plant (r, g, b; 0, 0, 0: none). The 5-6-5 colour
+ * keeps 8 levels of red and blue to a step and 4 of green: on a dark seedling (red about 68) one step of red is 12 % of
+ * it, as large as the difference between two plants, so a plant's yellowness could not be told from the storage's
+ * steps. `colour` is still written beside it: the app as it was before reads only that. A twin without `rgb` opens as
+ * it always did. */
+export type PackedLooks = { version: 1; dir: string; size: string; colour: string; rgb?: string };
 
 const b64 = (u: Uint8Array) => { let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
 const unb64 = (s: string) => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
 
 export function packLooks(L: PlantLook[]): PackedLooks {
-  const n = L.length, dir = new Uint8Array(n), size = new Uint8Array(n), colour = new Uint8Array(2 * n);
+  const n = L.length, dir = new Uint8Array(n), size = new Uint8Array(n), colour = new Uint8Array(2 * n), rgb = new Uint8Array(3 * n);
+  const byte = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
   L.forEach((p, i) => {
     dir[i] = p.dirDeg == null ? NONE : (Math.round(p.dirDeg / 2) % 90) + (p.shape ? 90 : 0);
     size[i] = p.sizeM == null ? 0 : Math.max(1, Math.min(255, Math.round(p.sizeM * 200)));
-    if (p.rgb) { const v = Math.max(1, ((p.rgb[0] >> 3) << 11) | ((p.rgb[1] >> 2) << 5) | (p.rgb[2] >> 3)); colour[2 * i] = v & 255; colour[2 * i + 1] = v >> 8; }
+    if (p.rgb) {
+      const v = Math.max(1, ((p.rgb[0] >> 3) << 11) | ((p.rgb[1] >> 2) << 5) | (p.rgb[2] >> 3)); colour[2 * i] = v & 255; colour[2 * i + 1] = v >> 8;
+      // A measured black still reads as a colour (0, 0, 0 means none).
+      const r = byte(p.rgb[0]), g = byte(p.rgb[1]), b = byte(p.rgb[2]); rgb[3 * i] = r; rgb[3 * i + 1] = g; rgb[3 * i + 2] = r || g || b ? b : 1;
+    }
   });
-  return { version: 1, dir: b64(dir), size: b64(size), colour: b64(colour) };
+  return { version: 1, dir: b64(dir), size: b64(size), colour: b64(colour), rgb: b64(rgb) };
 }
 
-/** The packed looks opened for drawing; null when they are not a version 1 record of `n` plants. */
-export function unpackLooks(P: PackedLooks | null | undefined, n: number): { dir: Uint8Array; size: Uint8Array; colour: Uint16Array } | null {
+/**
+ * The packed looks opened for drawing; null when they are not a version 1 record of `n` plants. `colour`: a plant's
+ * colour as one number (red, green, blue a byte each: `lookRgb`; 0: none), from `rgb` where the twin has it for these
+ * plants, else from the 5-6-5 colour (the middle of each of its steps, as it was always drawn).
+ */
+export function unpackLooks(P: PackedLooks | null | undefined, n: number): { dir: Uint8Array; size: Uint8Array; colour: Uint32Array; fine: boolean } | null {
   if (!P || P.version !== 1) return null;
   try {
     const dir = unb64(P.dir), size = unb64(P.size), c = unb64(P.colour);
     if (dir.length !== n || size.length !== n || c.length !== 2 * n) return null;
-    const colour = new Uint16Array(n); for (let i = 0; i < n; i++) colour[i] = c[2 * i] | (c[2 * i + 1] << 8);
-    return { dir, size, colour };
+    let f: Uint8Array | null = null;
+    if (typeof P.rgb === "string") { try { f = unb64(P.rgb); if (f.length !== 3 * n) f = null; } catch { f = null; } }
+    const colour = new Uint32Array(n);
+    for (let i = 0; i < n; i++) {
+      if (f) colour[i] = (f[3 * i] << 16) | (f[3 * i + 1] << 8) | f[3 * i + 2];
+      else { const v = c[2 * i] | (c[2 * i + 1] << 8); colour[i] = v ? ((((v >> 11) & 31) * 8 + 4) << 16) | ((((v >> 5) & 63) * 4 + 2) << 8) | ((v & 31) * 8 + 4) : 0; }
+    }
+    return { dir, size, colour, fine: !!f };
   } catch { return null; }
 }
 
-/** A packed colour as r, g, b. */
-export const lookRgb = (v: number): [number, number, number] => [((v >> 11) & 31) * 8 + 4, ((v >> 5) & 63) * 4 + 2, (v & 31) * 8 + 4];
+/** An opened colour (`unpackLooks`) as r, g, b. */
+export const lookRgb = (v: number): [number, number, number] => [(v >> 16) & 255, (v >> 8) & 255, v & 255];
