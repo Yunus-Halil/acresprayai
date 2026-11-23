@@ -19,7 +19,7 @@ export const CORN_VIEWS: CornViewMode[] = ["realistic", "simple", "geometry"];
 export const CORN_VIEW_LABEL: Record<CornViewMode, string> = { realistic: "Realistic", simple: "Simple", geometry: "Geometry" };
 export const CORN_VIEW_HINT: Record<CornViewMode, string> = {
   realistic: "The field as it looks: its own soil colour, a corn plant at every located plant in its own green, and the weeds.",
-  simple: "The plants and the weeds, on a plain ground.",
+  simple: "Every plant a box on its row, sized by its measured span and coloured by its own green. Possible weeds in red.",
   geometry: "The rows and the weeds, without the plants.",
 };
 

@@ -14,6 +14,7 @@ import { TWIN_COLOURS, type TwinLayers } from "@/lib/fieldTwin/style";
 import type { LatLngPair } from "@/lib/fieldTwin/types";
 import { NO_ROW_EDITS, type RowEdits } from "@/lib/fieldTwin/rowEdits";
 import type { CornViewMode } from "@/lib/fieldTwin/cornRender";
+import { type RowBars, SIMPLE } from "@/lib/fieldTwin/simpleView";
 import type { UnitSystem } from "@/lib/units";
 import { type DrawStats, TwinCanvasLayer, type TwinPick } from "./TwinCanvasLayer";
 
@@ -102,6 +103,8 @@ type Props = {
   cornView?: CornViewMode | null;
   /** Corn twins: whether the views draw a sorted twin's doubles (the founder's "All layers"). */
   showDoubles?: boolean;
+  /** Corn twins: the Simple view's row bars and the field's average colour (simpleView.ts), or null. */
+  simple?: RowBars | null;
 };
 
 const bar = "background:rgba(20,22,20,.86);border:1px solid #333;color:#d9ddd6;";
@@ -128,7 +131,7 @@ const LocateControl = L.Control.extend({
   },
 });
 
-export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null, operational = null, editing = null, onBoundaryEdit, rowEdits = null, plants = null, onRowEnd, photoGround = null, cornView = null, showDoubles = false }: Props) {
+export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null, operational = null, editing = null, onBoundaryEdit, rowEdits = null, plants = null, onRowEnd, photoGround = null, cornView = null, showDoubles = false, simple = null }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const miniEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -240,7 +243,12 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
   useEffect(() => { layerRef.current?.setEditing(editing); }, [editing, scene]);
   useEffect(() => { layerRef.current?.setRowEdits(rowEdits?.edits ?? NO_ROW_EDITS, !!rowEdits?.active, !!rowEdits?.hideRows, rowEdits?.hover ?? null, rowEdits?.overrides ?? [], rowEdits?.handles ?? null); }, [rowEdits, scene]);
   useEffect(() => { layerRef.current?.setPlants(plants?.points ?? null, plants?.show ?? false, plants?.certainty ?? null, plants?.sorted ?? false, plants?.look ?? null); }, [plants, scene]);
-  useEffect(() => { layerRef.current?.setCornView(cornView); }, [cornView, scene]);
+  useEffect(() => {
+    layerRef.current?.setCornView(cornView);
+    // Simple is drawn on black: the map's own ground too, so no charcoal shows at the canvas's edge during a pan.
+    if (el.current) el.current.style.background = cornView === "simple" ? SIMPLE.ground : TWIN_COLOURS.outside;
+  }, [cornView, scene]);
+  useEffect(() => { layerRef.current?.setSimple(simple); }, [simple, scene]);
   useEffect(() => { layerRef.current?.setShowDoubles(showDoubles); }, [showDoubles, scene]);
 
   // The scale bar follows the account's units.

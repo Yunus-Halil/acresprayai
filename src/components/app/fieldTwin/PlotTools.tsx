@@ -11,6 +11,7 @@ import { PLOT_COLOURS, type Plot, type PlotBox, type PlotContext, type PlotNumbe
 import { loadPlots, nextPlotNumber, savePlots } from "@/lib/fieldTwin/plotStore";
 import { newUid } from "@/lib/fieldTwin/rowEdits";
 import { WEED_PATCH_COLOUR, type WeedPatch } from "@/lib/fieldTwin/cornPatches";
+import { fmtPerAcreShort, plotNumberTone } from "@/lib/fieldTwin/simpleView";
 
 const panel = "rounded-md border border-[#343834] bg-[#171a17]";
 type Tool = "polygon" | "rectangle" | "rows";
@@ -35,6 +36,15 @@ function paneOf(map: L.Map): { pane: string; renderer: L.Renderer } {
   if (!m.__plotRenderer) m.__plotRenderer = L.svg({ pane: PANE });
   return { pane: PANE, renderer: m.__plotRenderer };
 }
+/** The Simple view's plot: a blue outline, its label on its top edge (the name, then plants per acre in green or amber). */
+const PLOT_BLUE = "#4d8dff", PLOT_BLUE_ON = "#a9c8ff", TONE = { green: "#4ade80", amber: "#f0a63a" };
+/** Where a plot's label sits: its top-most corner (the western one of two as high as each other). */
+function topCorner(ring: LatLngPair[]): LatLngPair {
+  const top = Math.max(...ring.map(p => p[0])), span = Math.max(1e-9, top - Math.min(...ring.map(p => p[0])));
+  return ring.filter(p => top - p[0] <= 0.02 * span).reduce((b, p) => (p[1] < b[1] ? p : b));
+}
+const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
+const labelIcon = (name: string, number: string | null, tone: "green" | "amber", on: boolean) => L.divIcon({ className: "", iconSize: [0, 0], iconAnchor: [0, 0], html: `<div style="position:absolute;left:-1px;bottom:3px;white-space:nowrap;cursor:pointer;background:rgba(0,0,0,.82);border:1px solid ${on ? PLOT_BLUE_ON : PLOT_BLUE};color:${on ? PLOT_BLUE_ON : PLOT_BLUE};font:${on ? 700 : 600} 11px system-ui,sans-serif;padding:1px 5px;border-radius:2px">${esc(name)}${number ? ` <span style="color:#6b7280">·</span> <span style="color:${TONE[tone]}">${number}</span>` : ""}</div>` });
 const centroid = (ring: LatLngPair[]): LatLngPair => [ring.reduce((t, p) => t + p[0], 0) / ring.length, ring.reduce((t, p) => t + p[1], 0) / ring.length];
 const numberIcon = (n: number | string, colour: string, on: boolean) => L.divIcon({ className: "", iconSize: [24, 24], iconAnchor: [12, 12], html: `<div style="width:24px;height:24px;border-radius:50%;background:${colour};color:#1b1d1b;font:800 12px system-ui,sans-serif;display:flex;align-items:center;justify-content:center;border:2px solid #1b1d1b;box-shadow:${on ? "0 0 0 3px #fff,0 0 14px rgba(255,255,255,.6)" : "0 0 0 2px rgba(0,0,0,.35)"};cursor:pointer">${n}</div>` });
 const tipIcon = (text: string) => L.divIcon({ className: "", iconSize: [0, 0], iconAnchor: [-14, 18], html: `<div style="white-space:nowrap;background:rgba(20,22,20,.92);border:1px solid #444;color:#f2f2f2;font:600 11px system-ui,sans-serif;padding:3px 7px;border-radius:3px;pointer-events:none">${text}</div>` });
@@ -104,7 +114,7 @@ export function PlotNumbersView({ n, shape }: { n: PlotNumbers; shape: PlotShape
  * The Plots card and everything plots do on the map. `onBusy` says when a tool or an edit holds the map (the twin's own
  * clicks are then not picks).
  */
-export function PlotWorkbench({ map, ctx, twinId, onBusy }: { map: L.Map | null; ctx: PlotContext; twinId: string; onBusy: (busy: boolean) => void }) {
+export function PlotWorkbench({ map, ctx, twinId, onBusy, simple = false, fieldPerAcre = null }: { map: L.Map | null; ctx: PlotContext; twinId: string; onBusy: (busy: boolean) => void; /** The Simple view is on: plots as blue outlines with a label on their top edge. */ simple?: boolean; /** The field's own plants per acre (a plot well under it gets an amber number). */ fieldPerAcre?: number | null }) {
   const [plots, setPlots] = useState<Plot[]>(() => loadPlots(twinId));
   useEffect(() => { setPlots(loadPlots(twinId)); setSelected(null); setMode({ kind: "idle" }); }, [twinId]);
   const [mode, setMode] = useState<Mode>({ kind: "idle" });
@@ -132,6 +142,8 @@ export function PlotWorkbench({ map, ctx, twinId, onBusy }: { map: L.Map | null;
     const ring = live?.ring ?? (mode.kind === "naming" || mode.kind === "editing" ? mode.draft.ring : selectedPlot?.ring);
     return ring && ring.length >= 3 ? measurePlot(ctx, ring) : null;
   }, [ctx, live, mode, selectedPlot]);
+  // Every saved plot's numbers, for its label on the map (a fraction of a millisecond each).
+  const plotNumbers = useMemo(() => new Map(plots.map(p => [p.uid, measurePlot(ctx, p.ring)])), [ctx, plots]);
   const shapeNow = live?.shape ?? (mode.kind === "naming" || mode.kind === "editing" ? mode.draft.shape : selectedPlot?.shape ?? null);
 
   const start = (tool: Tool) => { setSelected(null); setLive(null); setNote(null); setVertices(0); setConfirmDelete(false); setMode({ kind: "drawing", tool }); };
@@ -175,13 +187,19 @@ export function PlotWorkbench({ map, ctx, twinId, onBusy }: { map: L.Map | null;
     const { pane, renderer } = paneOf(map), g = L.layerGroup().addTo(map);
     for (const p of plots) {
       if (mode.kind === "editing" && mode.uid === p.uid) continue;
-      const on = p.uid === selected;
+      const on = p.uid === selected, pick = (e: L.LeafletEvent) => { L.DomEvent.stop(e as unknown as Event); if (mode.kind === "idle") { setSelected(p.uid); setConfirmDelete(false); } };
+      if (simple) {
+        // Simple: a blue outline (brighter and thicker when selected), nothing filled over the boxes, the label on its top edge.
+        const n = plotNumbers.get(p.uid) ?? null;
+        L.polygon(p.ring, { pane, renderer, color: on ? PLOT_BLUE_ON : PLOT_BLUE, weight: on ? 3 : 1.5, opacity: 1, fill: false, interactive: false }).addTo(g);
+        L.marker(topCorner(p.ring), { icon: labelIcon(p.name, n?.perAcre != null ? fmtPerAcreShort(n.perAcre) : null, plotNumberTone(n?.perAcre ?? null, fieldPerAcre, !!n?.small), on), keyboard: false, title: `${p.name}: open its numbers`, zIndexOffset: on ? 500 : 0 }).on("click", pick).addTo(g);
+        continue;
+      }
       L.polygon(p.ring, { pane, renderer, color: p.colour, weight: on ? 3 : 2, opacity: 0.95, fillColor: p.colour, fillOpacity: on ? 0.16 : 0.07, interactive: false }).addTo(g);
-      L.marker(centroid(p.ring), { icon: numberIcon(p.number, p.colour, on), keyboard: false, title: p.name, zIndexOffset: on ? 500 : 0 })
-        .on("click", e => { L.DomEvent.stop(e as unknown as Event); if (mode.kind === "idle") { setSelected(p.uid); setConfirmDelete(false); } }).addTo(g);
+      L.marker(centroid(p.ring), { icon: numberIcon(p.number, p.colour, on), keyboard: false, title: p.name, zIndexOffset: on ? 500 : 0 }).on("click", pick).addTo(g);
     }
     return () => { drop(g); };
-  }, [map, plots, selected, shown, mode]);
+  }, [map, plots, selected, shown, mode, simple, plotNumbers, fieldPerAcre]);
 
   // A tool: the shape follows the pointer, its words beside it, the numbers in the card.
   const toolNow = mode.kind === "drawing" ? mode.tool : null;

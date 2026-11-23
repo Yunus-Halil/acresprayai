@@ -1,0 +1,145 @@
+// The Simple view of a corn twin (his sketch of 2026-11-23): a black ground, the rows as thin white lines, every corn
+// plant a small square box, the possible weeds red boxes; zoomed out, each row a bar. Plain shapes, so it is the
+// cheapest view to draw.
+//
+// A plant's box:
+//   size    its measured span (cornPlantLook.ts), the box's side `boxShare` of it, so neighbouring plants stay apart;
+//   colour  its own measured green, STRETCHED: real corn colours lie very close together (on the first seedling flight
+//           every plant is a similar dark olive), so each plant is compared with the field's average and the
+//           difference widened. The field's average is drawn as one clear green (`hue`, `light`); a plant paler than
+//           the average is drawn lighter, a darker one darker, a yellower one more yellow, a greener one greener. The
+//           direction of a difference is always the measured one; only its size is widened.
+// A plant with no measured colour or span gets a neutral box at the field's typical span.
+//
+// How far each is widened. Paleness: a plant 10 % brighter than the field's average is drawn `lightGain` x 0.1 lighter
+// (a real difference of about 3 % of lightness becomes 9 %). Yellowness: the measured hue difference from the field's
+// average, times `hueGain`. The gain on hue is the smaller one on purpose: a twin keeps each plant's colour in 16 bits
+// (5 of red, 6 of green, 5 of blue), and on a dark seedling one step of red is about as large as the difference
+// between two plants, so a larger gain would paint the storage's steps as yellow plants. Brightness has no such limit.
+import { lookRgb } from "./cornPlantLook";
+import type { PlotContext } from "./plots";
+import type { LatLngPair, TwinRgb } from "./types";
+
+export const SIMPLE = {
+  /** A box's side, as a share of the plant's measured span. */
+  boxShare: 0.6,
+  /** The field's average plant: this hue (degrees), saturation and lightness. */
+  hue: 100, sat: 0.78, light: 0.42,
+  hueGain: 1.5, hueMin: 48, hueMax: 140,
+  lightGain: 0.9, lightMin: 0.2, lightMax: 0.8,
+  neutral: [138, 143, 138] as TwinRgb,
+  weed: [255, 59, 48] as TwinRgb,
+  row: "#ffffff",
+  ground: "#000000",
+  /** Boxes from where a typical plant's box is this many pixels; smaller, each row is a bar. */
+  boxesMinPx: 2.5,
+  /** Up to this many boxes in view are drawn one by one; more are written into one image. */
+  directMax: 12_000,
+  /** Zoomed out, the red marks are drawn one by one only on a field of up to this many located plants. */
+  directFieldMax: 80_000,
+  /** A row's bar is cut into pieces about this long, metres (each its plants' average colour and its own fullness). */
+  barM: 3,
+  /** A bar's width as a share of the row spacing, and its faintest (an empty piece). */
+  barShare: 0.42, barMinAlpha: 0.18,
+};
+
+/** The field's average plant colour, as measured: the median hue (degrees) and brightness of its counted plants. */
+export type FieldColour = { hue: number; lum: number };
+
+const lumOf = (r: number, g: number, b: number) => 0.3 * r + 0.59 * g + 0.11 * b;
+/** Hue in degrees, 0 to 360 (0 for a grey). */
+export function hueOf(r: number, g: number, b: number): number {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  if (d <= 0) return 0;
+  const h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return (h * 60 + 360) % 360;
+}
+export function hslRgb(h: number, s: number, l: number): TwinRgb {
+  const c = (1 - Math.abs(2 * l - 1)) * s, hp = (((h % 360) + 360) % 360) / 60, x = c * (1 - Math.abs((hp % 2) - 1)), m = l - c / 2;
+  const [r, g, b] = hp < 1 ? [c, x, 0] : hp < 2 ? [x, c, 0] : hp < 3 ? [0, c, x] : hp < 4 ? [0, x, c] : hp < 5 ? [x, 0, c] : [c, 0, x];
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+}
+
+/** The field's average from its plants' packed colours (0: none), over the plants `use` keeps. Null: none measured. */
+export function fieldColourOf(colour: ArrayLike<number>, use: (k: number) => boolean = () => true): FieldColour | null {
+  const hues: number[] = [], lums: number[] = [];
+  for (let k = 0; k < colour.length; k++) { if (!colour[k] || !use(k)) continue; const [r, g, b] = lookRgb(colour[k]); hues.push(hueOf(r, g, b)); lums.push(lumOf(r, g, b)); }
+  if (!hues.length) return null;
+  hues.sort((a, b) => a - b); lums.sort((a, b) => a - b);
+  return { hue: hues[hues.length >> 1], lum: lums[lums.length >> 1] };
+}
+
+/** A measured colour as the Simple view draws it: its difference from the field's average, widened (see the header). */
+export function stretched(rgb: ArrayLike<number>, F: FieldColour, o = SIMPLE): TwinRgb {
+  const dHue = hueOf(rgb[0], rgb[1], rgb[2]) - F.hue, rel = F.lum > 0 ? lumOf(rgb[0], rgb[1], rgb[2]) / F.lum - 1 : 0;
+  const h = Math.max(o.hueMin, Math.min(o.hueMax, o.hue + o.hueGain * dHue));
+  const l = Math.max(o.lightMin, Math.min(o.lightMax, o.light + o.lightGain * rel));
+  return hslRgb(h, o.sat, l);
+}
+/** The colour the field's average plant is drawn in (the legend's swatch). */
+export const averageColour = (o = SIMPLE): TwinRgb => hslRgb(o.hue, o.sat, o.light);
+
+/** A row's bars for the zoomed-out view: pieces of each stretch with plants seen, their ends, colour and fullness. */
+export type RowBars = {
+  n: number;
+  /** Each piece's two ends, latitude / longitude. */
+  a: LatLngPair[]; b: LatLngPair[];
+  /** Its plants' average colour, stretched (the neutral colour where none was measured). */
+  rgb: TwinRgb[];
+  /** 0 to 1: its counted plants per length against the field's (1: as full as the field's average, or fuller). */
+  full: Float32Array;
+  field: FieldColour | null;
+};
+
+/**
+ * The bars: every stretch of row with plants seen along it, cut into pieces of about `barM`. A piece's colour is the
+ * average of its plants' measured colours, stretched as a plant's is; its fullness its counted plants per metre over
+ * the field's (counted plants on the rows per metre of row with plants seen).
+ */
+export function rowBars(ctx: PlotContext, o = SIMPLE): RowBars {
+  const field = fieldColourOf(ctx.pColour);
+  const a: LatLngPair[] = [], b: LatLngPair[] = [], rgb: TwinRgb[] = [], full: number[] = [];
+  let plants = 0, seenM = 0;
+  for (const s of ctx.stretches) { if (!s.seen) continue; plants += s.plants.length; let L = 0; for (let i = 1; i < s.pts.length / 2; i++) L += Math.hypot(s.pts[2 * i] - s.pts[2 * i - 2], s.pts[2 * i + 1] - s.pts[2 * i - 1]); seenM += L * s.scale; }
+  const perM = seenM > 0 ? plants / seenM : 0;
+  for (const s of ctx.stretches) {
+    if (!s.seen || s.pts.length < 4) continue;
+    // The stretch's course by its along value (a stretch runs one way along the rows).
+    const k = s.pts.length / 2, A = new Float64Array(k);
+    for (let i = 0; i < k; i++) A[i] = ctx.toAC(s.pts[2 * i], s.pts[2 * i + 1])[0];
+    const rev = A[k - 1] < A[0], a0 = Math.min(A[0], A[k - 1]), a1 = Math.max(A[0], A[k - 1]), len = a1 - a0;
+    if (len <= 0) continue;
+    const at = (av: number): [number, number] => {
+      for (let i = 1; i < k; i++) {
+        const lo = rev ? A[i] : A[i - 1], hi = rev ? A[i - 1] : A[i];
+        if (av >= lo - 1e-9 && av <= hi + 1e-9) { const t = (av - A[i - 1]) / (A[i] - A[i - 1] || 1); return [s.pts[2 * i - 2] + t * (s.pts[2 * i] - s.pts[2 * i - 2]), s.pts[2 * i - 1] + t * (s.pts[2 * i + 1] - s.pts[2 * i - 1])]; }
+      }
+      return av <= a0 ? [s.pts[rev ? 2 * k - 2 : 0], s.pts[rev ? 2 * k - 1 : 1]] : [s.pts[rev ? 0 : 2 * k - 2], s.pts[rev ? 1 : 2 * k - 1]];
+    };
+    const pieces = Math.max(1, Math.round(len / o.barM)), step = len / pieces;
+    const cnt = new Int32Array(pieces), sr = new Float64Array(pieces), sg = new Float64Array(pieces), sb = new Float64Array(pieces), nc = new Int32Array(pieces);
+    for (const p of s.plants) {
+      const j = Math.max(0, Math.min(pieces - 1, Math.floor((ctx.pA[p] - a0) / step)));
+      cnt[j]++;
+      if (ctx.pColour[p]) { const [r, g, bl] = lookRgb(ctx.pColour[p]); sr[j] += r; sg[j] += g; sb[j] += bl; nc[j]++; }
+    }
+    for (let j = 0; j < pieces; j++) {
+      const p0 = at(a0 + j * step), p1 = at(a0 + (j + 1) * step);
+      a.push(ctx.frame.toLL(p0[0], p0[1])); b.push(ctx.frame.toLL(p1[0], p1[1]));
+      rgb.push(nc[j] && field ? stretched([sr[j] / nc[j], sg[j] / nc[j], sb[j] / nc[j]], field, o) : o.neutral);
+      full.push(perM > 0 ? Math.min(1, cnt[j] / (step * s.scale) / perM) : 0);
+    }
+  }
+  return { n: a.length, a, b, rgb, full: Float32Array.from(full), field };
+}
+
+/** A plots-per-acre figure for a plot's label: "29.5k/ac". */
+export const fmtPerAcreShort = (v: number) => `${(Math.round(v / 100) / 10).toFixed(1)}k/ac`;
+/**
+ * A plot's number in its label: amber when it calls for care (the stand is more than `under` below the field's, or the
+ * plot is too small for a stable number), green otherwise.
+ */
+export function plotNumberTone(perAcre: number | null, fieldPerAcre: number | null, small: boolean, under = 0.1): "green" | "amber" {
+  if (small || perAcre == null) return "amber";
+  return fieldPerAcre != null && perAcre < (1 - under) * fieldPerAcre ? "amber" : "green";
+}

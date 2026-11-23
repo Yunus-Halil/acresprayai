@@ -19,6 +19,7 @@ import type { LatLngPair, TwinRgb } from "@/lib/fieldTwin/types";
 import type { RowEdits } from "@/lib/fieldTwin/rowEdits";
 import { CORN_RENDER, type CornLook, type CornViewMode, blendGrid, cornLookOf, cornTints, gridCell, plantDrawMode, plantHash, plantKind, plantOwnTints, rgbCss, stampOf } from "@/lib/fieldTwin/cornRender";
 import { type PackedLooks, lookRgb, unpackLooks } from "@/lib/fieldTwin/cornPlantLook";
+import { type FieldColour, type RowBars, SIMPLE, fieldColourOf, stretched } from "@/lib/fieldTwin/simpleView";
 import { SpriteSheet, soilCanvas, spriteSizeFor } from "./cornSprite";
 
 /** How far (screen pixels) a pointer may be from a boundary handle to take it. */
@@ -125,6 +126,12 @@ export class TwinCanvasLayer extends L.Canvas {
   private tints: { palette: TwinRgb[]; plant: Uint8Array } | null = null;
   private sprites = new SpriteSheet();
   private stamp: { canvas: HTMLCanvasElement; g: Ctx; img: ImageData; u32: Uint32Array; w: number; h: number } | null = null;
+  /** The Simple view (simpleView.ts): the rows' bars for the zoomed-out view (zoom-0 units, grouped by colour and
+   * fullness so each group is one stroke) and the field's average colour, from the page; each plant's box (its colour
+   * as the pixel it is stamped with, its side in metres), made when first drawn. */
+  private simpleBars: { groups: { css: string; alpha: number; xy: Float64Array }[]; n: number } | null = null;
+  private simpleField: FieldColour | null = null;
+  private simpleBoxes: { px: Uint32Array; sideM: Float32Array; typicalM: number } | null = null;
 
   constructor(layers: TwinLayers, options: L.RendererOptions = {}) {
     super({ padding: 0.25, tolerance: 6, ...options });
@@ -138,6 +145,21 @@ export class TwinCanvasLayer extends L.Canvas {
     try { performance.measure("twin:heatmap", { start: t0, end: performance.now() }); } catch { /* older browsers */ }
     this.heatCanvas.clear(); this.evidenceCanvas = null; this.findings = null; this.firstDraw = true;
     this.look = scene?.corn ? cornLookOf(scene.twin.corn, toWorld) : null; this.soil = undefined; this.tints = null; this.sprites.clear();
+    this.requestRedraw();
+  }
+  /** The Simple view's row bars and the field's average colour (simpleView.ts rowBars); null: none (boxes at every zoom). */
+  setSimple(bars: RowBars | null) {
+    this.simpleField = bars?.field ?? null; this.simpleBoxes = null;
+    if (!bars || !bars.n) { this.simpleBars = null; this.requestRedraw(); return; }
+    // One stroke per colour and fullness: colours to 4 bits a channel, fullness to eighths.
+    const by = new Map<string, { css: string; alpha: number; xy: number[] }>();
+    for (let k = 0; k < bars.n; k++) {
+      const c = bars.rgb[k], q = (v: number) => Math.min(255, Math.round(v / 17) * 17), al = Math.round((SIMPLE.barMinAlpha + (1 - SIMPLE.barMinAlpha) * bars.full[k]) * 8) / 8;
+      const css = `rgb(${q(c[0])},${q(c[1])},${q(c[2])})`, key = `${css}|${al}`;
+      const g = by.get(key) ?? by.set(key, { css, alpha: al, xy: [] }).get(key)!;
+      g.xy.push(...toWorld(bars.a[k][0], bars.a[k][1]), ...toWorld(bars.b[k][0], bars.b[k][1]));
+    }
+    this.simpleBars = { groups: [...by.values()].map(g => ({ css: g.css, alpha: g.alpha, xy: Float64Array.from(g.xy) })), n: bars.n };
     this.requestRedraw();
   }
   /** Corn twins: which view to draw (null: as before the views). */
@@ -319,7 +341,7 @@ export class TwinCanvasLayer extends L.Canvas {
       points.forEach(([lat, lng], i) => { const [wx, wy] = toWorld(lat, lng); x[i] = wx; y[i] = wy; });
       this.plants = { n, x, y, index: new GridIndex(x, y, this.scene ? 2 / this.scene.mpu : 1e-7), certainty: certainty && certainty.length === n ? Uint8Array.from(certainty) : null, points, sorted, look: unpackLooks(look, n) };
     } else this.plants = null;
-    this.tints = null;
+    this.tints = null; this.simpleBoxes = null;
     this.showPlants = show;
     this.requestRedraw();
   }
@@ -433,7 +455,10 @@ export class TwinCanvasLayer extends L.Canvas {
     // 1. Ground: charcoal everywhere (fading out where the surroundings basemap shows through), the observed ground
     //    inside the imagery hull, the block warmer. Ground inside the hull that no photograph covered keeps a hatch
     //    (clipped to the hull, so the pattern never covers the viewport). Off entirely over reference imagery.
-    if (L_.ground) {
+    // Simple (corn twins): a black ground, nothing else under the rows and the boxes.
+    const simple = !!scene.corn && L_.corn && this.cornViewNow() === "simple";
+    if (L_.ground && simple) { ctx.fillStyle = SIMPLE.ground; ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0); drawn.ground = 1; }
+    else if (L_.ground) {
       ctx.globalAlpha = 1 - (L_.surroundings ? d.surroundings : 0);
       if (ctx.globalAlpha > 0.01) { ctx.fillStyle = C.outside; ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0); }
       ctx.globalAlpha = 1;
@@ -740,7 +765,8 @@ export class TwinCanvasLayer extends L.Canvas {
     // A twin with no located plants (its count withheld) has only its rows: the plant views draw them as green bands.
     const view = this.cornViewNow(), plantView = view === "realistic" || view === "simple";
     const rowsAs: "lines" | "bands" | "none" = RE.hideRows ? "none" : !plantView ? "lines" : this.plants ? "none" : "bands";
-    if (plantView && this.plants && this.look) this.drawPlantView(ctx, scene, X, Y, pxPerM, vx0, vy0, vx1, vy1, drawn, bx0, by0, bx1, by1, view === "realistic");
+    if (view === "simple" && this.plants && this.look) this.drawSimpleView(ctx, scene, X, Y, pxPerM, vx0, vy0, vx1, vy1, drawn, bx0, by0, bx1, by1);
+    else if (plantView && this.plants && this.look) this.drawPlantView(ctx, scene, X, Y, pxPerM, vx0, vy0, vx1, vy1, drawn, bx0, by0, bx1, by1, view === "realistic");
     // EXPERIMENT (photo ground): over the photographs, up close, the marks step back so the plants under them show:
     // rows thin and translucent, every plant a ring (nothing filled over a seedling).
     const overPhotos = !this.layers.ground && pxPerM >= 25;
@@ -879,13 +905,146 @@ export class TwinCanvasLayer extends L.Canvas {
       if (st !== S.weed.confirmed && !unc) continue;
       ctx.beginPath();
       let any = false;
-      for (const k of idx) { if (K.weeds.status[k] !== st) continue; const r = Math.max(st === S.weed.confirmed ? 4 : 3, K.weeds.rM[k] * pxPerM), x = X(K.weeds.x[k]), y = Y(K.weeds.y[k]); ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 2 * Math.PI); any = true; nw++; }
+      for (const k of idx) {
+        if (K.weeds.status[k] !== st) continue;
+        const x = X(K.weeds.x[k]), y = Y(K.weeds.y[k]);
+        // Simple: a red box, its side the same share of the weed's measured size across as a plant's box of its span.
+        if (view === "simple") { const h = Math.max(2, SIMPLE.boxShare * K.weeds.rM[k] * pxPerM); ctx.rect(Math.round(x - h), Math.round(y - h), Math.round(2 * h), Math.round(2 * h)); }
+        else { const r = Math.max(st === S.weed.confirmed ? 4 : 3, K.weeds.rM[k] * pxPerM); ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 2 * Math.PI); }
+        any = true; nw++;
+      }
       if (!any) continue;
+      if (view === "simple") {
+        ctx.fillStyle = rgbCss(SIMPLE.weed); ctx.globalAlpha = 1; ctx.fill();
+        // A confirmed weed candidate: a white edge; the ones not confirmed, the red box alone.
+        if (st === S.weed.confirmed) { ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1; ctx.setLineDash([]); ctx.stroke(); }
+        continue;
+      }
       ctx.fillStyle = colour; ctx.globalAlpha = fill; ctx.fill();
       ctx.strokeStyle = colour; ctx.lineWidth = st === S.weed.confirmed ? 2 : 1.4; ctx.setLineDash([...dash]); ctx.globalAlpha = 1; ctx.stroke();
     }
     ctx.setLineDash([]); ctx.globalAlpha = 1;
     drawn.cornRows = nr; drawn.cornGaps = ng; drawn.cornWeeds = nw;
+  }
+
+  /** Each plant's box for the Simple view (simpleView.ts), made once per twin and plant set: the pixel it is stamped
+   * with (its own measured green stretched about the field's average; neutral where none was measured; red for green
+   * that is not corn; the doubles' blue) and its side in metres (a share of its measured span, the field's typical
+   * span where none was measured). */
+  private simpleBoxesFor(): NonNullable<TwinCanvasLayer["simpleBoxes"]> {
+    if (this.simpleBoxes) return this.simpleBoxes;
+    const P = this.plants!, look = this.look!, S_ = SIMPLE, n = P.n, own = P.look, cert = P.certainty;
+    const kindOf = (k: number) => (cert ? plantKind(cert[k], P.sorted) : "row");
+    const field = this.simpleField ?? (own ? fieldColourOf(own.colour, k => kindOf(k) === "row") : null);
+    // The field's typical span: the median of the measured ones on the rows, else the twin's typical plant.
+    let typicalM = look.plantSizeM;
+    if (own) { const v: number[] = []; for (let k = 0; k < n; k++) if (own.size[k] && kindOf(k) === "row") v.push(own.size[k]); if (v.length) { v.sort((a, b) => a - b); typicalM = v[v.length >> 1] / 200; } }
+    const pack = (c: ArrayLike<number>) => ((255 << 24) | (c[2] << 16) | (c[1] << 8) | c[0]) >>> 0;
+    const neutral = pack(S_.neutral), weed = pack(S_.weed), off = pack(CORN_RENDER.offRow), cache = new Map<number, number>();
+    const px = new Uint32Array(n), sideM = new Float32Array(n);
+    for (let k = 0; k < n; k++) {
+      const kind = kindOf(k), c = own ? own.colour[k] : 0;
+      sideM[k] = S_.boxShare * (own && own.size[k] ? own.size[k] / 200 : typicalM);
+      if (kind === "notCorn") px[k] = weed;
+      else if (kind !== "row") px[k] = off;
+      else if (!c || !field) px[k] = neutral;
+      else { let v = cache.get(c); if (v === undefined) { v = pack(stretched(lookRgb(c), field)); cache.set(c, v); } px[k] = v; }
+    }
+    return (this.simpleBoxes = { px, sideM, typicalM });
+  }
+
+  /**
+   * Simple (his sketch of 2026-11-23; simpleView.ts): over the black ground, the rows as thin white lines and every
+   * plant a square box, its side its measured span and its fill its own green stretched about the field's average;
+   * green that is not corn a red box. Zoomed out (a typical box under a few pixels) each row is a bar instead, in its
+   * plants' average colour and fainter where it is thinner, and only the red marks are stamped. Every box is written
+   * straight into one image (a few pixels each), so a frame costs the same for a hundred plants or a hundred thousand.
+   */
+  private drawSimpleView(ctx: Ctx, scene: Scene, X: (u: number) => number, Y: (u: number) => number, pxPerM: number, vx0: number, vy0: number, vx1: number, vy1: number, drawn: Record<string, number>, bx0: number, by0: number, bx1: number, by1: number) {
+    const P = this.plants!, K = scene.corn!, S_ = SIMPLE, B = this.simpleBoxesFor(), cert = P.certainty;
+    const boxes = S_.boxShare * B.typicalM * pxPerM >= S_.boxesMinPx || !this.simpleBars;
+    const inView = (k: number) => { const b = K.rows.box; return !(b[4 * k + 2] < vx0 || b[4 * k] > vx1 || b[4 * k + 3] < vy0 || b[4 * k + 1] > vy1); };
+    // The rows: white lines under the boxes (fainter where a row continues but no plant was confirmed); zoomed out, bars.
+    ctx.setLineDash([]); ctx.lineCap = "butt";
+    for (const seen of boxes ? [0, 1] : [0]) {
+      ctx.beginPath(); let any = false;
+      for (let k = 0; k < K.rows.n; k++) { if ((K.rows.status[k] === CORN_STATUS.row.corn ? 1 : 0) !== seen || !inView(k)) continue; packed(ctx, K.rows.lines, k, X, Y); any = true; }
+      if (any) { ctx.strokeStyle = S_.row; ctx.lineWidth = 1; ctx.globalAlpha = seen ? 0.85 : 0.3; ctx.stroke(); }
+    }
+    if (!boxes) {
+      const w = Math.max(1.5, S_.barShare * (scene.twin.corn?.rowSpacingM ?? 0.76) * pxPerM);
+      ctx.lineWidth = w;
+      for (const g of this.simpleBars!.groups) {
+        ctx.beginPath();
+        for (let i = 0; i < g.xy.length; i += 4) {
+          const x1 = g.xy[i], y1 = g.xy[i + 1], x2 = g.xy[i + 2], y2 = g.xy[i + 3];
+          if (Math.max(x1, x2) < vx0 || Math.min(x1, x2) > vx1 || Math.max(y1, y2) < vy0 || Math.min(y1, y2) > vy1) continue;
+          ctx.moveTo(X(x1), Y(y1)); ctx.lineTo(X(x2), Y(y2));
+        }
+        ctx.strokeStyle = g.css; ctx.globalAlpha = g.alpha; ctx.stroke();
+      }
+      drawn.rowBars = this.simpleBars!.n;
+    }
+    ctx.globalAlpha = 1;
+    // Up to some thousands of boxes in view: each drawn straight onto the canvas, one fill a colour. A screen-sized
+    // image pushed to the canvas costs the same whatever is in it, and for this many boxes that is the dearer way
+    // (measured: about half the time to the pixels). Zoomed out only the red marks are boxes; on a very large field
+    // they go by the image, so the plants in view are not listed every frame.
+    if (boxes || P.n <= S_.directFieldMax) {
+      const idx = P.index.query(vx0, vy0, vx1, vy1, (S_.boxShare * 0.3) / scene.mpu), by = new Map<number, number[]>();
+      let total = 0;
+      for (const k of idx) {
+        const kind = cert ? plantKind(cert[k], P.sorted) : "row";
+        if ((kind === "double" && !this.showDoubles) || (!boxes && kind !== "notCorn")) continue;
+        const v = B.px[k] + (kind === "notCorn" ? 0 : 0.5);
+        (by.get(v) ?? by.set(v, []).get(v)!).push(k); total++;
+      }
+      if (total <= S_.directMax) {
+        let n = 0;
+        // The red marks first (their key is the whole number), the corn over them.
+        for (const [v, list] of [...by].sort((a, b) => (a[0] % 1) - (b[0] % 1))) {
+          const c = Math.floor(v);
+          ctx.fillStyle = `rgb(${c & 255},${(c >>> 8) & 255},${(c >>> 16) & 255})`;
+          ctx.beginPath();
+          for (const k of list) { const side = Math.max(2, Math.round(B.sideM[k] * pxPerM)), half = side >> 1; ctx.rect(Math.round(X(P.x[k])) - half, Math.round(Y(P.y[k])) - half, side, side); n++; }
+          ctx.fill();
+        }
+        drawn.plants = n; if (boxes) drawn.plantsAsBoxes = n; else drawn.possibleWeeds = n;
+        return;
+      }
+    }
+    // Many boxes, or the red marks of the zoomed-out view: one buffer the size of the canvas in CSS pixels, each box written into it.
+    const w = Math.max(1, Math.ceil(bx1 - bx0)), h = Math.max(1, Math.ceil(by1 - by0));
+    let St = this.stamp;
+    if (!St || St.w !== w || St.h !== h) {
+      try {
+        const canvas = document.createElement("canvas"); canvas.width = w; canvas.height = h;
+        const g = canvas.getContext("2d"); if (!g) return;
+        const img = g.createImageData(w, h);
+        St = this.stamp = { canvas, g, img, u32: new Uint32Array(img.data.buffer), w, h };
+      } catch { return; }
+    } else St.u32.fill(0);
+    const u32 = St.u32, scale = X(1) - X(0), ox = X(0) - bx0, oy = Y(0) - by0, pad = (S_.boxShare * 0.3) / scene.mpu;
+    let n = 0;
+    // The red marks first, the corn over them.
+    for (const pass of [0, 1]) P.index.each(vx0 - pad, vy0 - pad, vx1 + pad, vy1 + pad, k => {
+      const kind = cert ? plantKind(cert[k], P.sorted) : "row", red = kind === "notCorn";
+      if ((red ? 0 : 1) !== pass) return;
+      if (kind === "double" && !this.showDoubles) return;
+      if (!boxes && !red) return;
+      const side = Math.max(2, Math.round(B.sideM[k] * pxPerM)), half = side >> 1;
+      let x0 = Math.round(P.x[k] * scale + ox) - half, y0 = Math.round(P.y[k] * scale + oy) - half, x1 = x0 + side, y1 = y0 + side;
+      if (x1 <= 0 || y1 <= 0 || x0 >= w || y0 >= h) return;
+      if (x0 < 0) x0 = 0; if (y0 < 0) y0 = 0; if (x1 > w) x1 = w; if (y1 > h) y1 = h;
+      const v = B.px[k];
+      for (let y = y0; y < y1; y++) u32.fill(v, y * w + x0, y * w + x1);
+      n++;
+    });
+    St.g.putImageData(St.img, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(St.canvas, bx0, by0, w, h);
+    ctx.imageSmoothingEnabled = true;
+    drawn.plants = n; if (boxes) drawn.plantsAsBoxes = n; else drawn.possibleWeeds = n;
   }
 
   /** The Realistic view's ground for this twin, built once: the soil colours blended over the twin's box, kept only

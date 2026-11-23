@@ -33,8 +33,9 @@ import { reviewKey, useTwinReviews } from "@/lib/fieldTwin/reviews";
 import { FeedbackButton } from "@/components/pilot/FeedbackDialog";
 import { type RowEdits, NO_ROW_EDITS, loadRowEdits, moveRowEnd, newUid, plantIndex, rowEndsNow, rowLineNow, rowModel, saveRowEdits, snapRow } from "@/lib/fieldTwin/rowEdits";
 import { RowActionCard, RowEditPanel, RowUndoBar } from "./RowEditor";
-import { plotContext } from "@/lib/fieldTwin/plots";
+import { fieldStand, plotContext } from "@/lib/fieldTwin/plots";
 import { weedPatches } from "@/lib/fieldTwin/cornPatches";
+import { rowBars } from "@/lib/fieldTwin/simpleView";
 import { PatchPins, PlotWorkbench } from "./PlotTools";
 
 const NARROW_PX = 820;
@@ -250,6 +251,9 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   // Plots and the corn panel's numbers (plots.ts): the counted plants and the rows, once per twin.
   const plotCtx = useMemo(() => (twin.corn ? measured("twin:plots", () => plotContext(twin)) : null), [twin]);
   const patches = useMemo(() => (plotCtx ? weedPatches(plotCtx) : []), [plotCtx]);
+  // The Simple view's row bars (zoomed out) and the field's average plant colour. Not over a plants.json laid over the twin's own.
+  const fieldPerAcre = useMemo(() => fieldStand(twin)?.perAcre ?? null, [twin]);
+  const simpleBars = useMemo(() => (plotCtx && !plantsOverride ? measured("twin:simple", () => rowBars(plotCtx)) : null), [plotCtx, plantsOverride]);
   const [activePatch, setActivePatch] = useState<number | null>(null);
   // While a plot tool, a plot's name or an edit holds the map, a click on it is not a pick.
   const plotBusy = useRef(false);
@@ -322,7 +326,9 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
       setDetailState(s => ({ busy: false, note: `${r.tiles} tiles from ${r.photographs} photographs in ${(r.ms / 1000).toFixed(1)} s.`, tiles: s.tiles + r.tiles }));
     } catch (e) { setDetailState(s => ({ ...s, busy: false, note: `Could not cut the photographs: ${(e as Error).message}` })); }
   };
-  const effectiveLayers = useMemo<TwinLayers>(() => ({ ...layers, ground: !reference && !photosUnder, surroundings: layers.surroundings && !local, ...(corn ? { pressure: false, zones: false, beyondBoundary: false } : {}) }), [layers, reference, local, corn, photosUnder]);
+  // Simple is drawn on black: no surroundings under it (their tiles are then not fetched at all).
+  const simpleOn = corn && cornView === "simple" && !photosUnder && !reference && !rowEditing;
+  const effectiveLayers = useMemo<TwinLayers>(() => ({ ...layers, ground: !reference && !photosUnder, surroundings: layers.surroundings && !local && !simpleOn, ...(corn ? { pressure: false, zones: false, beyondBoundary: false } : {}) }), [layers, reference, local, corn, photosUnder, simpleOn]);
 
   const onMapPick = (p: TwinPick, pointer: string) => {
     if (plotBusy.current) return;
@@ -462,7 +468,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
       <style>{`.twin-root .leaflet-top.leaflet-right, .twin-root .leaflet-bottom.leaflet-right { right: var(--twin-right, 0); transition: right .15s ease; } .twin-root .leaflet-control-scale-line { background: rgba(24,26,24,.85); color: #d9ddd6; border-color: #8a8f88; } .twin-root .leaflet-control-attribution { background: rgba(24,26,24,.85); color: #9aa09a; }`}</style>
       <TwinMap scene={scene} layers={effectiveLayers} selection={selection} units={units} onPick={onMapPick} onDetail={setDetail} onStats={setStats}
         onMove={c => setCentre(c)} onReady={h => { handle.current = h; setLeafMap(h.map); setStats(h.layer.stats); }} reference={reference} onSwipe={setRefSwipe} findings={findings}
-        operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} rowEdits={rowEditsProp} plants={plantsProp} onRowEnd={onRowEnd} photoGround={photoGroundLayer} cornView={twin.corn && !photosUnder && !reference ? cornView : null} showDoubles={founderView && allLayers} />
+        operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} rowEdits={rowEditsProp} plants={plantsProp} onRowEnd={onRowEnd} photoGround={photoGroundLayer} cornView={twin.corn && !photosUnder && !reference ? cornView : null} showDoubles={founderView && allLayers} simple={simpleBars} />
 
       {plotCtx && !rowEditing && <PatchPins map={leafMap} ctx={plotCtx} patches={patches} active={activePatch} onPick={p => { setSelection(null); setActivePatch(p.number); zoomTo(p.lat, p.lng, Math.max(6, Math.sqrt(p.areaM2) * 2.2)); }} />}
       {/* A corn twin from a late flight: said over the map, closable (twin.corn.stage, from the build). */}
@@ -517,7 +523,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
         {twin.corn && <CornFieldPanel twin={twin} corn={twin.corn} layers={layers} setLayers={setLayers} units={units} view={cornView} technical={founderView && allLayers}
           onSelect={(p, lat, lng, across) => { setActivePatch(null); setSelection(p); zoomTo(lat, lng, across); }}
           plotCtx={plotCtx} patches={patches} blockHa={s.blockHa} activePatch={activePatch} onLookAt={l => { setSelection(null); setActivePatch(l.patch ?? null); zoomTo(l.lat, l.lng, l.across); }}
-          plots={founderView && plotCtx && !rowEditing ? <PlotWorkbench map={leafMap} ctx={plotCtx} twinId={twin.id} onBusy={onPlotBusy} /> : null} />}
+          plots={founderView && plotCtx && !rowEditing ? <PlotWorkbench map={leafMap} ctx={plotCtx} twinId={twin.id} onBusy={onPlotBusy} simple={simpleOn} fieldPerAcre={fieldPerAcre} /> : null} />}
         {twin.corn && founderView && <RowEditPanel edits={rowEdits} editing={rowEditing} onStart={startRowEditing} onDone={finishRowEditing}
           onClearAll={() => { commitRows(NO_ROW_EDITS, "All corrections cleared"); }} hideRows={hideRows} setHideRows={setHideRows}
           plants={plants ? { count: plants.points.length, note: plants.sorted ? SORTED_PLANTS_NOTE : plants.note } : null} showPlants={showPlants} setShowPlants={setShowPlants} photographsOn={!!reference} />}

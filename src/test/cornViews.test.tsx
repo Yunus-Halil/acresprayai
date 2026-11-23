@@ -46,7 +46,12 @@ describe("the View switch on a corn twin", () => {
     expect(screen.getByText("Row, plants seen along it")).toBeInTheDocument();
     expect(screen.queryByText("Corn plant, on a row")).toBeNull();
     fireEvent.click(within(screen.getByRole("group", { name: "View" })).getByRole("button", { name: "Simple" }));
-    expect(screen.getByText("Corn plant, on a row")).toBeInTheDocument();
+    // Simple (2026-11-23): white rows and a box a plant; this twin was built before each plant's colour and size were measured.
+    expect(screen.getByText("Row")).toBeInTheDocument();
+    expect(screen.getByText("Corn plant")).toBeInTheDocument();
+    expect(screen.getByText("Built before each plant's colour and size were measured")).toBeInTheDocument();
+    expect(screen.getByText(/Zoomed out, each row is a bar/)).toBeInTheDocument();
+    expect(screen.queryByText("Corn plant, on a row")).toBeNull();
     expect(screen.queryByText(/^Soil, in/)).toBeNull();
     await close(r);
     r = open(PLANTS_TWIN);

@@ -24,12 +24,15 @@ const CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 
 const browser = await chromium.launch({ executablePath: CHROME, headless: true });
 const page = await browser.newPage({ viewport: { width: Number(arg("width", 1440)), height: Number(arg("height", 900)) }, deviceScaleFactor: DPR });
+// --cpu N: the processor slowed N times (Chrome's own throttle), to stand in for a slower device. Not that device.
+const CPU = Number(arg("cpu", 1));
+if (CPU > 1) { const cdp = await page.context().newCDPSession(page); await cdp.send("Emulation.setCPUThrottlingRate", { rate: CPU }); }
 const errors = [];
 page.on("pageerror", e => errors.push(String(e)));
 // The preview asks for files a twin may not have (reference imagery, photo ground): their 404s are not errors here.
 page.on("console", m => { if (m.type() === "error" && !/status of 404/.test(m.text())) errors.push(m.text()); });
 
-const results = { twin: ID || `synthetic corn, ${SYN} plants`, viewport: page.viewportSize(), dpr: DPR, views: {} };
+const results = { twin: ID || `synthetic corn, ${SYN} plants`, viewport: page.viewportSize(), dpr: DPR, cpuSlowdown: CPU, views: {} };
 for (const view of VIEWS) {
   const t0 = Date.now();
   await page.goto(`${BASE}/dev/field-twin?${SYN ? `syntheticCorn=${SYN}` : `id=${ID}`}&view=${view}&photos=0&audience=${AUDIENCE}`, { waitUntil: "domcontentloaded" });
@@ -73,13 +76,30 @@ for (const view of VIEWS) {
       drawn = r.drawn;
     }
     times.sort((a, b) => a - b);
-    out.stops[name] = { zoom: +zoom.toFixed(2), firstMs: +first.toFixed(1), medianMs: times.length ? +times[times.length >> 1].toFixed(1) : null, maxMs: times.length ? +times[times.length - 1].toFixed(1) : null, drawn };
+    // To the pixels: the same redraw, then one pixel read back from the twin's canvas, which makes the browser finish
+    // painting what the draw only queued (the draw time above is the drawing commands alone). After the draw times, so
+    // the reads never touch them. Median of seven.
+    const paint = [];
+    for (let k = 0; k < 7; k++) {
+      const r = await page.evaluate(async k => {
+        const F = window.__fieldTwin, before = F.stats().draws, c = F.map.getPanes().overlayPane.querySelector("canvas");
+        const t0 = performance.now();
+        F.map.panBy([k % 2 ? 3 : -3, 0], { animate: false });
+        for (let i = 0; i < 30 && F.stats().draws === before; i++) await new Promise(r => requestAnimationFrame(r));
+        const waited = performance.now() - t0, t1 = performance.now();
+        c?.getContext("2d")?.getImageData(0, 0, 1, 1);
+        return { flush: performance.now() - t1, draw: F.stats().lastDrawMs, waited, redrew: F.stats().draws > before };
+      }, k);
+      if (r.redrew) paint.push(r.draw + r.flush);
+    }
+    paint.sort((a, b) => a - b);
+    out.stops[name] = { zoom: +zoom.toFixed(2), firstMs: +first.toFixed(1), medianMs: times.length ? +times[times.length >> 1].toFixed(1) : null, maxMs: times.length ? +times[times.length - 1].toFixed(1) : null, paintMs: paint.length ? +paint[paint.length >> 1].toFixed(1) : null, paintMaxMs: paint.length ? +paint[paint.length - 1].toFixed(1) : null, drawn };
     if (SHOTS) await page.screenshot({ path: join(OUT, `${view}-${name}.png`) });
   }
   results.views[view] = out;
 }
 results.errors = errors;
 writeFileSync(join(OUT, "bench.json"), JSON.stringify(results, null, 1));
-for (const [v, r] of Object.entries(results.views)) for (const [s, q] of Object.entries(r.stops)) console.log(`${v.padEnd(10)} ${s.padEnd(14)} zoom ${String(q.zoom).padEnd(6)} first ${String(q.firstMs).padStart(7)} ms  median ${String(q.medianMs).padStart(6)} ms  max ${String(q.maxMs).padStart(6)} ms  ${JSON.stringify(q.drawn)}`);
+for (const [v, r] of Object.entries(results.views)) for (const [s, q] of Object.entries(r.stops)) console.log(`${v.padEnd(10)} ${s.padEnd(14)} zoom ${String(q.zoom).padEnd(6)} first ${String(q.firstMs).padStart(7)} ms  draw ${String(q.medianMs).padStart(6)} ms  max ${String(q.maxMs).padStart(6)} ms  to pixels ${String(q.paintMs).padStart(6)} ms (max ${String(q.paintMaxMs).padStart(6)})  plants ${q.drawn?.plants ?? "-"}${q.drawn?.plantsAsPlants ? " drawn one by one" : q.drawn?.plantsStamped ? " stamped" : ""}`);
 if (errors.length) { console.error("console errors:\n" + errors.slice(0, 10).join("\n")); process.exitCode = 1; }
 await browser.close();
