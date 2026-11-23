@@ -29,7 +29,9 @@ describe("the corn inspector", () => {
     expect(screen.getByText("What the photographs said")).toBeInTheDocument();
     expect(screen.getByText("746, 747, 748")).toBeInTheDocument();
     expect(await screen.findByAltText("Crop of 746")).toHaveAttribute("src", "blob:atlas-0");
-    expect(screen.getByText(/not a treatment decision/)).toBeInTheDocument();
+    // Review-only is said once, in the corn panel (his brief of 2026-11-23), not again in each inspector.
+    expect(screen.getByText(/The crop is the operator's entry/)).toBeInTheDocument();
+    expect(screen.queryByText(/not a treatment decision/)).toBeNull();
   });
 
   it("keeps an unconfirmed observation inspectable and says why it is not confirmed", () => {
@@ -57,6 +59,8 @@ describe("the corn panel on the open twin", () => {
     const view = render(<div style={{ width: 1200, height: 800 }}><FieldTwinView twin={CORN_TWIN} atlasUrl={async () => ""} /></div>);
     const panel = screen.getByRole("group", { name: "Corn" });
     expect(within(panel).getByText(/Test flight, locally aligned/)).toBeInTheDocument();
+    // The counts and the lists are in Details, closed until opened (option A).
+    fireEvent.click(within(panel).getByRole("button", { name: /^Details/ }));
     expect(within(panel).getByText("Weeds, confirmed").nextSibling?.textContent).toBe("1");
     // A locally aligned twin's boundary is never offered for operations, and it is never put on real map tiles.
     expect(screen.queryByRole("button", { name: "Accept for operations" })).toBeNull();
