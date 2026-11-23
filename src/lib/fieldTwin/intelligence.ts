@@ -56,11 +56,19 @@ export function pointInRing(x: number, y: number, ring: [number, number][]): boo
  * The orchard block: the ground the kept rows occupy, half a row spacing beyond the outer rows and half a plant
  * spacing beyond each row's ends. It follows the rows' actual ends, so a block whose rows stop at different places
  * is not squared off. Null when the twin has no kept rows. In local metres.
+ *
+ * A corn twin whose rows were read from its plants (2026-11-14 on: each row runs from its first plant to its last) is
+ * outlined by every row's own two ends and by its two outer rows (2026-11-23, his rule: "based off where every single
+ * row ends and the sides as well"): no corner is smoothed away. Each end lies half a plant spacing past the row's
+ * last plant (the spacing the rows themselves hold), so that plant is inside and the ground beyond it is not.
  */
 export function orchardBlock(twin: TwinBundle, frame: LocalFrame = localFrame(twin)): [number, number][] | null {
   const rows = twin.rows.filter(r => r.kept && r.line.length >= 2);
   if (!rows.length) return null;
-  const halfAlong = twin.field.plantSpacingM / 2, halfAcross = twin.field.rowSpacingM / 2;
+  const fieldRows = twin.corn?.fieldRows ?? [], everyRowEnd = fieldRows.length > 0;
+  // Plants a metre on the rows, the middle row's: half the distance between two plants, never under 5 cm or over 30.
+  const perM = fieldRows.map(r => r.perM).filter(v => v > 0).sort((a, b) => a - b), endM = perM.length ? Math.max(0.05, Math.min(0.3, 0.5 / perM[perM.length >> 1])) : 0.1;
+  const halfAlong = twin.field.plantSpacingM > 0 ? twin.field.plantSpacingM / 2 : everyRowEnd ? endM : 0, halfAcross = twin.field.rowSpacingM / 2;
   const segs = rows.map(r => {
     const ends = r.line.map(([lat, lng]) => frame.toField(...frame.toLocal(lat, lng)));
     const alongs = ends.map(p => p[0]), across = ends.reduce((s, p) => s + p[1], 0) / ends.length;
@@ -88,8 +96,9 @@ export function orchardBlock(twin: TwinBundle, frame: LocalFrame = localFrame(tw
   // Where rows were joined from pieces their ends are ragged by the pieces, not by the planting: corners that move
   // the outline by less than a row spacing are dropped, so the outline (and its handles, when adjusted) follows the
   // field and not each row's last piece.
-  if (lines.length < segs.length) {
-    const tol = 2 * halfAcross;
+  // With every row's own end kept, only a corner that says nothing goes (two rows ending at the same place).
+  if (lines.length < segs.length || everyRowEnd) {
+    const tol = everyRowEnd ? 0.02 : 2 * halfAcross;
     for (let changed = true; changed && ring.length > 4;) {
       changed = false;
       for (let i = 0; i < ring.length && ring.length > 4; i++) {
