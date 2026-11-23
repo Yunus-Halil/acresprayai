@@ -34,7 +34,7 @@ import { FeedbackButton } from "@/components/pilot/FeedbackDialog";
 import { type RowEdits, NO_ROW_EDITS, loadRowEdits, moveRowEnd, newUid, plantIndex, rowEndsNow, rowLineNow, rowModel, saveRowEdits, snapRow } from "@/lib/fieldTwin/rowEdits";
 import { RowActionCard, RowEditPanel, RowUndoBar } from "./RowEditor";
 import { fieldStand, plotContext } from "@/lib/fieldTwin/plots";
-import { weedPatches } from "@/lib/fieldTwin/cornPatches";
+import { greenInside, weedPatches } from "@/lib/fieldTwin/cornPatches";
 import { rowBars } from "@/lib/fieldTwin/simpleView";
 import { PatchPins, PlotWorkbench } from "./PlotTools";
 
@@ -250,7 +250,16 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const [leafMap, setLeafMap] = useState<L.Map | null>(null);
   // Plots and the corn panel's numbers (plots.ts): the counted plants and the rows, once per twin.
   const plotCtx = useMemo(() => (twin.corn ? measured("twin:plots", () => plotContext(twin)) : null), [twin]);
-  const patches = useMemo(() => (plotCtx ? weedPatches(plotCtx) : []), [plotCtx]);
+  // The boundary in use as latitude/longitude: the correction, else the inferred ring, else the rows' block.
+  const currentRing = useMemo<LatLngPair[] | null>(() => {
+    if (boundary.corrected) return boundary.corrected;
+    if (twin.boundary?.cultivated.ring) return twin.boundary.cultivated.ring;
+    return intel.block ? intel.block.map(([e, n]) => intel.frame.toLatLng(e, n)) : null;
+  }, [boundary.corrected, twin.boundary, intel]);
+  // Corn: weeds are this field's only inside its boundary (while a corner is dragged, inside the boundary as dragged).
+  const weedLimit = twin.corn ? editing ?? currentRing : null;
+  const patches = useMemo(() => (plotCtx ? weedPatches(plotCtx, undefined, weedLimit) : []), [plotCtx, weedLimit]);
+  const weedsOutside = useMemo(() => (plotCtx ? greenInside(plotCtx, weedLimit).outside : 0), [plotCtx, weedLimit]);
   // The Simple view's row bars (zoomed out) and the field's average plant colour. Not over a plants.json laid over the twin's own.
   const fieldPerAcre = useMemo(() => fieldStand(twin)?.perAcre ?? null, [twin]);
   const simpleBars = useMemo(() => (plotCtx && !plantsOverride ? measured("twin:simple", () => rowBars(plotCtx, undefined, twin)) : null), [plotCtx, plantsOverride, twin]);
@@ -413,12 +422,6 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
     return () => { delete window.__fieldTwin; };
   }, [expose, scene, stats, engine, chooseDetail, twin, boundary, intel]);
 
-  // The boundary in use as latitude/longitude: the correction, else the inferred ring, else the rows' block.
-  const currentRing = useMemo<LatLngPair[] | null>(() => {
-    if (boundary.corrected) return boundary.corrected;
-    if (twin.boundary?.cultivated.ring) return twin.boundary.cultivated.ring;
-    return intel.block ? intel.block.map(([e, n]) => intel.frame.toLatLng(e, n)) : null;
-  }, [boundary.corrected, twin.boundary, intel]);
   const operationalRing = operationalBoundary(boundary.operational);
   const startEditing = () => { setSelection(null); setEditing(currentRing); };
   const [boundaryNote, setBoundaryNote] = useState<string | null>(null);
@@ -468,7 +471,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
       <style>{`.twin-root .leaflet-top.leaflet-right, .twin-root .leaflet-bottom.leaflet-right { right: var(--twin-right, 0); transition: right .15s ease; } .twin-root .leaflet-control-scale-line { background: rgba(24,26,24,.85); color: #d9ddd6; border-color: #8a8f88; } .twin-root .leaflet-control-attribution { background: rgba(24,26,24,.85); color: #9aa09a; }`}</style>
       <TwinMap scene={scene} layers={effectiveLayers} selection={selection} units={units} onPick={onMapPick} onDetail={setDetail} onStats={setStats}
         onMove={c => setCentre(c)} onReady={h => { handle.current = h; setLeafMap(h.map); setStats(h.layer.stats); }} reference={reference} onSwipe={setRefSwipe} findings={findings}
-        operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} rowEdits={rowEditsProp} plants={plantsProp} onRowEnd={onRowEnd} photoGround={photoGroundLayer} cornView={twin.corn && !photosUnder && !reference ? cornView : null} showDoubles={founderView && allLayers} simple={simpleBars} />
+        operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} rowEdits={rowEditsProp} plants={plantsProp} onRowEnd={onRowEnd} photoGround={photoGroundLayer} cornView={twin.corn && !photosUnder && !reference ? cornView : null} showDoubles={founderView && allLayers} simple={simpleBars} fieldLimit={weedLimit} />
 
       {plotCtx && !rowEditing && <PatchPins map={leafMap} ctx={plotCtx} patches={patches} active={activePatch} onPick={p => { setSelection(null); setActivePatch(p.number); zoomTo(p.lat, p.lng, Math.max(6, Math.sqrt(p.areaM2) * 2.2)); }} />}
       {/* A corn twin from a late flight: said over the map, closable (twin.corn.stage, from the build). */}
@@ -520,7 +523,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
         </div>}
         {groundAllowed && !groundProp && groundAbsent && <PhotoGroundAbsent />}
         {groundOn && groundProp && <PhotoGroundPanel manifest={groundProp.manifest} shown={groundShown} setShown={setGroundShown} access={photoAccess} setAccess={setPhotoAccess} detail={detailState} onDetail={() => { void requestDetail(); }} />}
-        {twin.corn && <CornFieldPanel twin={twin} corn={twin.corn} layers={layers} setLayers={setLayers} units={units} view={cornView} technical={founderView && allLayers}
+        {twin.corn && <CornFieldPanel twin={twin} corn={twin.corn} weedsOutside={weedsOutside} layers={layers} setLayers={setLayers} units={units} view={cornView} technical={founderView && allLayers}
           onSelect={(p, lat, lng, across) => { setActivePatch(null); setSelection(p); zoomTo(lat, lng, across); }}
           plotCtx={plotCtx} patches={patches} blockHa={s.blockHa} activePatch={activePatch} onLookAt={l => { setSelection(null); setActivePatch(l.patch ?? null); zoomTo(l.lat, l.lng, l.across); }}
           plots={founderView && plotCtx && !rowEditing ? <PlotWorkbench map={leafMap} ctx={plotCtx} twinId={twin.id} onBusy={onPlotBusy} simple={simpleOn} fieldPerAcre={fieldPerAcre} /> : null} />}

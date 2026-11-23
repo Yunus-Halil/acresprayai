@@ -120,6 +120,11 @@ export class TwinCanvasLayer extends L.Canvas {
   /** A sorted twin's doubles (class 7): not counted, and drawn in the views (blue, pickable) only with the founder's
    * "All layers" tick (2026-11-20). In Realistic and Simple as the plants beside them; in Geometry as blue dots. */
   private showDoubles = false;
+  /** Corn twins: the field boundary in use (scene units), and what lies outside it: per plant 1 for green that is not
+   * corn, per weed candidate 1. Not drawn and not picked (they are with the founder's "All layers"): the photographs
+   * see the verge and the ground next door, and green there is not this field's weeds. Counted plants are never hidden. */
+  private limitRing: Float64Array | null = null;
+  private beyond: { plants: Uint8Array | null; weeds: Uint8Array | null } | null | undefined = undefined;
   /** The corn twin's colours and plant size; the Realistic ground and each plant's tint, built when first drawn. */
   private look: CornLook | null = null;
   private soil: HTMLCanvasElement | null | undefined = undefined;
@@ -148,7 +153,7 @@ export class TwinCanvasLayer extends L.Canvas {
     this.heat = scene ? buildHeatLevels(scene.intel, this.layers.heatScale) : null;
     try { performance.measure("twin:heatmap", { start: t0, end: performance.now() }); } catch { /* older browsers */ }
     this.heatCanvas.clear(); this.evidenceCanvas = null; this.findings = null; this.firstDraw = true;
-    this.look = scene?.corn ? cornLookOf(scene.twin.corn, toWorld) : null; this.soil = undefined; this.cover = undefined; this.tints = null; this.sprites.clear();
+    this.look = scene?.corn ? cornLookOf(scene.twin.corn, toWorld) : null; this.soil = undefined; this.cover = undefined; this.beyond = undefined; this.tints = null; this.sprites.clear();
     this.requestRedraw();
   }
   /** The Simple view's row bars and the field's average colour (simpleView.ts rowBars); null: none (boxes at every zoom). */
@@ -172,6 +177,22 @@ export class TwinCanvasLayer extends L.Canvas {
   setCornView(view: CornViewMode | null) { if (view !== this.cornView) { this.cornView = view; this.requestRedraw(); } }
   /** Corn twins: whether the views draw a sorted twin's doubles (the founder's "All layers"). */
   setShowDoubles(show: boolean) { if (show !== this.showDoubles) { this.showDoubles = show; this.requestRedraw(); } }
+  /** Corn twins: the field boundary in use (latitude / longitude), or null: none. */
+  setFieldLimit(ring: LatLngPair[] | null) {
+    this.limitRing = ring && ring.length >= 3 ? Float64Array.from(ring.flatMap(([la, ln]) => toWorld(la, ln))) : null;
+    this.beyond = undefined; this.requestRedraw();
+  }
+  /** What is left out as outside the field boundary now (null: nothing), made once per boundary, plants and scene. */
+  private beyondNow(): { plants: Uint8Array | null; weeds: Uint8Array | null } | null {
+    if (this.showDoubles) return null;
+    if (this.beyond !== undefined) return this.beyond;
+    const ring = this.limitRing, P = this.plants, K = this.scene?.corn;
+    if (!ring || !K) return (this.beyond = null);
+    let plants: Uint8Array | null = null, weeds: Uint8Array | null = null;
+    if (P?.certainty) { plants = new Uint8Array(P.n); for (let k = 0; k < P.n; k++) if (plantKind(P.certainty[k], P.sorted) === "notCorn" && !inFlatRing(P.x[k], P.y[k], ring)) plants[k] = 1; }
+    if (K.weeds.x.length) { weeds = new Uint8Array(K.weeds.x.length); for (let k = 0; k < weeds.length; k++) if (!inFlatRing(K.weeds.x[k], K.weeds.y[k], ring)) weeds[k] = 1; }
+    return (this.beyond = { plants, weeds });
+  }
   /** Whether plant k is a double the views leave out now (a sorted twin, the tick off). */
   private doubleHidden(k: number): boolean { const P = this.plants; return !this.showDoubles && !!P?.sorted && !!P.certainty && P.certainty[k] === 7; }
   /** The view in force: the row editor always works on the rows and plant marks. */
@@ -347,7 +368,7 @@ export class TwinCanvasLayer extends L.Canvas {
       points.forEach(([lat, lng], i) => { const [wx, wy] = toWorld(lat, lng); x[i] = wx; y[i] = wy; });
       this.plants = { n, x, y, index: new GridIndex(x, y, this.scene ? 2 / this.scene.mpu : 1e-7), certainty: certainty && certainty.length === n ? Uint8Array.from(certainty) : null, points, sorted, look: unpackLooks(look, n) };
     } else this.plants = null;
-    this.tints = null; this.simpleBoxes = null;
+    this.tints = null; this.simpleBoxes = null; this.beyond = undefined;
     this.showPlants = show;
     this.requestRedraw();
   }
@@ -955,14 +976,14 @@ export class TwinCanvasLayer extends L.Canvas {
       drawn.plants = nd;
     }
     // Weed observations: a disc of their ground cover, at least a few pixels across so they read at the field level.
-    const idx = K.weeds.index.query(vx0, vy0, vx1, vy1, K.weeds.maxRM / scene.mpu);
+    const idx = K.weeds.index.query(vx0, vy0, vx1, vy1, K.weeds.maxRM / scene.mpu), weedsBeyond = this.beyondNow()?.weeds ?? null;
     let nw = 0;
     for (const [st, colour, dash, fill] of [[S.weed.unconfirmed, C.cornWeedUnconfirmed, [3, 3], 0.08], [S.weed.contested, C.cornWeedContested, [3, 3], 0.08], [S.weed.confirmed, C.cornWeed, [], 0.35]] as const) {
       if (st !== S.weed.confirmed && !unc) continue;
       ctx.beginPath();
       let any = false;
       for (const k of idx) {
-        if (K.weeds.status[k] !== st) continue;
+        if (K.weeds.status[k] !== st || (weedsBeyond && weedsBeyond[k])) continue;
         const x = X(K.weeds.x[k]), y = Y(K.weeds.y[k]);
         // Simple: a red box, its side the same share of the weed's measured size across as a plant's box of its span.
         if (view === "simple") { const h = Math.max(2, SIMPLE.boxShare * K.weeds.rM[k] * pxPerM); ctx.rect(Math.round(x - h), Math.round(y - h), Math.round(2 * h), Math.round(2 * h)); }
@@ -1020,7 +1041,7 @@ export class TwinCanvasLayer extends L.Canvas {
    */
   private drawSimpleView(ctx: Ctx, scene: Scene, X: (u: number) => number, Y: (u: number) => number, pxPerM: number, vx0: number, vy0: number, vx1: number, vy1: number, drawn: Record<string, number>, bx0: number, by0: number, bx1: number, by1: number) {
     const P = this.plants!, K = scene.corn!, S_ = SIMPLE, B = this.simpleBoxesFor(), cert = P.certainty;
-    const boxes = S_.boxShare * B.typicalM * pxPerM >= S_.boxesMinPx || !this.simpleBars;
+    const boxes = S_.boxShare * B.typicalM * pxPerM >= S_.boxesMinPx || !this.simpleBars, beyond = this.beyondNow()?.plants ?? null;
     const inView = (k: number) => { const b = K.rows.box; return !(b[4 * k + 2] < vx0 || b[4 * k] > vx1 || b[4 * k + 3] < vy0 || b[4 * k + 1] > vy1); };
     // The rows: white lines under the boxes (fainter where a row continues but no plant was confirmed); zoomed out, bars.
     ctx.setLineDash([]); ctx.lineCap = "butt";
@@ -1064,7 +1085,7 @@ export class TwinCanvasLayer extends L.Canvas {
       let total = 0;
       for (const k of idx) {
         const kind = cert ? plantKind(cert[k], P.sorted) : "row";
-        if ((kind === "double" && !this.showDoubles) || (!boxes && kind !== "notCorn")) continue;
+        if ((kind === "double" && !this.showDoubles) || (!boxes && kind !== "notCorn") || (beyond && beyond[k])) continue;
         const v = B.px[k] + (kind === "notCorn" ? 0 : 0.5);
         (by.get(v) ?? by.set(v, []).get(v)!).push(k); total++;
       }
@@ -1101,6 +1122,7 @@ export class TwinCanvasLayer extends L.Canvas {
       if ((red ? 0 : 1) !== pass) return;
       if (kind === "double" && !this.showDoubles) return;
       if (!boxes && !red) return;
+      if (beyond && beyond[k]) return;
       const side = Math.max(2, Math.round(B.sideM[k] * pxPerM)), half = side >> 1;
       let x0 = Math.round(P.x[k] * scale + ox) - half, y0 = Math.round(P.y[k] * scale + oy) - half, x1 = x0 + side, y1 = y0 + side;
       if (x1 <= 0 || y1 <= 0 || x0 >= w || y0 >= h) return;
@@ -1218,7 +1240,7 @@ export class TwinCanvasLayer extends L.Canvas {
    * sorted twin's other plants off the rows): a plain dot in its own colour, never a corn plant.
    */
   private drawPlantView(ctx: Ctx, scene: Scene, X: (u: number) => number, Y: (u: number) => number, pxPerM: number, vx0: number, vy0: number, vx1: number, vy1: number, drawn: Record<string, number>, bx0: number, by0: number, bx1: number, by1: number, realistic: boolean) {
-    const P = this.plants!, look = this.look!, R = CORN_RENDER, T = realistic ? this.tintsFor(scene) : null;
+    const P = this.plants!, look = this.look!, R = CORN_RENDER, T = realistic ? this.tintsFor(scene) : null, beyond = this.beyondNow()?.plants ?? null;
     const sizeM = look.plantSizeM, plantPx = sizeM * pxPerM, pad = sizeM / scene.mpu, cert = P.certainty;
     const flat = R.simpleCorn, palette = T?.palette ?? [look.corn];
     const idx = plantPx >= R.spriteMinPx ? P.index.query(vx0, vy0, vx1, vy1, pad) : null;
@@ -1235,7 +1257,7 @@ export class TwinCanvasLayer extends L.Canvas {
       const dots: number[] = [];
       for (const k of idx) {
         const h = plantHash(k), kind = cert ? plantKind(cert[k], P.sorted) : "row";
-        if (kind === "double" && !this.showDoubles) continue;
+        if ((kind === "double" && !this.showDoubles) || (beyond && beyond[k])) continue;
         nd++;
         // The green that is not corn: every dot in one path, filled once after the plants (a fill a dot costs several
         // times a stamped plant: 8.7 ms a frame against 3.7 ms where the scattered ground is in view).
@@ -1276,7 +1298,7 @@ export class TwinCanvasLayer extends L.Canvas {
       const px = Math.round(P.x[k] * scale + ox), py = Math.round(P.y[k] * scale + oy);
       if (px < 0 || py < 0 || px + size > w || py + size > h) return;
       const kind = cert ? plantKind(cert[k], P.sorted) : "row";
-      if (kind === "double" && !this.showDoubles) return;
+      if ((kind === "double" && !this.showDoubles) || (beyond && beyond[k])) return;
       const v = kind === "notCorn" ? notCornPx : kind !== "row" ? offPx : tint ? tintPx[tint[k]] : flatPx;
       for (let dy = 0; dy < size; dy++) { const o = (py + dy) * w + px; for (let dx = 0; dx < size; dx++) u32[o + dx] = v; }
       n++;
@@ -1495,7 +1517,7 @@ export class TwinCanvasLayer extends L.Canvas {
         const reach = plantView ? Math.max(tolU, (sizeM * 0.5) / s.mpu) : tolU;
         for (const k of P.index.query(x - reach, y - reach, x + reach, y + reach, 0)) {
           const c = P.certainty ? P.certainty[k] : 0;
-          if (geometryDoubles ? c !== 7 : plantView ? this.doubleHidden(k) : c >= 2 && !unc) continue;
+          if (geometryDoubles ? c !== 7 : plantView ? this.doubleHidden(k) || !!this.beyondNow()?.plants?.[k] : c >= 2 && !unc) continue;
           const dd = Math.hypot(P.x[k] - x, P.y[k] - y);
           if (dd <= reach && dd < pd) { pd = dd; pb = k; }
         }
