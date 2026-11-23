@@ -2,6 +2,8 @@
 import { describe, expect, it } from "vitest";
 import { boxRing, fieldStand, measurePlot, plotContext, snapRows, llOf, fmtPerAcre } from "@/lib/fieldTwin/plots";
 import { localFrame } from "@/lib/fieldTwin/rowEdits";
+import { SIMPLE, averageColour, fieldColourOf, fmtPerAcreShort, hueOf, plotNumberTone, rowBars, stretched, unreadRows } from "@/lib/fieldTwin/simpleView";
+import { packLooks } from "@/lib/fieldTwin/cornPlantLook";
 import { M2_PER_ACRE } from "@/lib/units";
 import { FIELD_TWIN_FORMAT, type LatLngPair, type TwinBundle, type TwinCornRow } from "@/lib/fieldTwin/types";
 
@@ -129,5 +131,108 @@ describe("snapping a plot to the rows", () => {
     expect(sn.rows).toBe(1);
     expect(sn.box.c1 - sn.box.c0).toBeCloseTo(S, 3);
     expect(llOf(ctx, sn.box.a0, sn.box.c0)[0]).toBeGreaterThan(LAT);
+  });
+});
+
+// The Simple view (2026-11-23): each plant's own green stretched about the field's average, and the rows' bars.
+describe("the Simple view's stretched colours", () => {
+  const F = { hue: hueOf(68, 66, 36), lum: 0.3 * 68 + 0.59 * 66 + 0.11 * 36 };
+  const lum = (c: ArrayLike<number>) => 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
+  it("draw the field's average plant in the one set green", () => {
+    expect(stretched([68, 66, 36], F)).toEqual(averageColour());
+  });
+  it("keep the direction of every difference: paler lighter, darker darker, yellower more yellow, greener greener", () => {
+    const avg = averageColour(), paler = stretched([82, 79, 43], F), darker = stretched([58, 56, 31], F), yellower = stretched([84, 66, 36], F), greener = stretched([60, 70, 36], F);
+    expect(lum(paler)).toBeGreaterThan(lum(avg));
+    expect(lum(darker)).toBeLessThan(lum(avg));
+    expect(Math.abs(hueOf(paler[0], paler[1], paler[2]) - SIMPLE.hue)).toBeLessThan(4);
+    expect(hueOf(yellower[0], yellower[1], yellower[2])).toBeLessThan(SIMPLE.hue - 10);
+    expect(hueOf(greener[0], greener[1], greener[2])).toBeGreaterThan(SIMPLE.hue + 5);
+  });
+  it("widen a difference, and never past its limits", () => {
+    // 10 % brighter than the field: its lightness rises by lightGain x 0.1, far more than 10 % of the average's.
+    const p = stretched([68 * 1.1, 66 * 1.1, 36 * 1.1], F), l = (c: ArrayLike<number>) => (Math.max(c[0], c[1], c[2]) + Math.min(c[0], c[1], c[2])) / 510;
+    expect(l(p) - SIMPLE.light).toBeCloseTo(SIMPLE.lightGain * 0.1, 1);
+    const white = stretched([250, 250, 250], F), orange = stretched([200, 90, 20], F);
+    expect(l(white)).toBeLessThanOrEqual(SIMPLE.lightMax + 0.01);
+    expect(hueOf(orange[0], orange[1], orange[2])).toBeGreaterThanOrEqual(SIMPLE.hueMin - 1);
+  });
+  it("take the field's average from the middle of its plants' measured colours", () => {
+    const pack = (r: number, g: number, b: number) => ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+    const f = fieldColourOf(Uint16Array.from([pack(68, 66, 36), pack(68, 66, 36), pack(92, 86, 52), 0]))!;
+    expect(f.hue).toBeCloseTo(hueOf(68, 66, 36), 0);
+    expect(fieldColourOf(new Uint16Array(4))).toBeNull();
+  });
+  it("word a plot's label, its number amber when the stand is well under the field's or the plot is small", () => {
+    expect(fmtPerAcreShort(29_501)).toBe("29.5k/ac");
+    expect(plotNumberTone(29_000, 29_500, false)).toBe("green");
+    expect(plotNumberTone(25_000, 29_500, false)).toBe("amber");
+    expect(plotNumberTone(31_000, 29_500, true)).toBe("amber");
+  });
+});
+
+describe("the Simple view's row bars", () => {
+  it("cut each stretch with plants seen into pieces, full where the row is as full as the field", () => {
+    const B = rowBars(plotContext(exactTwin())!);
+    // Rows 1 to 3: 10 m in three pieces; row 4: two 4 m stretches, a piece each (the stretch with no plant confirmed has none).
+    expect(B.n).toBe(3 * 3 + 2);
+    expect(Math.min(...B.full)).toBeGreaterThan(0.9);
+    // No colour was measured on this twin: every piece is the neutral colour.
+    expect(B.field).toBeNull();
+    expect(B.rgb.every(c => c.join() === SIMPLE.neutral.join())).toBe(true);
+  });
+  it("make a piece fainter where plants are missing, and colour it by its plants' average", () => {
+    const t = exactTwin(), P = t.corn!.plants!, f = localFrame(LAT, LNG);
+    // Row 2 loses its plants from 4 to 6 m (9 of the 17 or so in its middle piece).
+    const keep = P.points.map(([la, ln], i) => { const [e, n] = f.toEN(la, ln); return !(P.certainty[i] === 0 && Math.abs(n - 2 * S) < 0.05 && e > 4.05 && e < 5.95); });
+    P.points = P.points.filter((_, i) => keep[i]); P.certainty = P.certainty.filter((_, i) => keep[i]); P.photos = P.photos.filter((_, i) => keep[i]);
+    // Every plant the field's olive, row 3's a paler one.
+    P.look = packLooks(P.points.map(([la, ln]) => { const n = f.toEN(la, ln)[1]; return { dirDeg: null, shape: 1 as const, sizeM: 0.12, rgb: (Math.abs(n - 3 * S) < 0.05 ? [92, 86, 44] : [68, 66, 36]) as [number, number, number] }; }));
+    const ctx = plotContext(t)!, B = rowBars(ctx);
+    expect(B.field).not.toBeNull();
+    const at = (k: number) => f.toEN((B.a[k][0] + B.b[k][0]) / 2, (B.a[k][1] + B.b[k][1]) / 2);
+    const piece = (row: number, e: number) => Array.from({ length: B.n }, (_, k) => k).find(k => { const [pe, pn] = at(k); return Math.abs(pn - row * S) < 0.05 && Math.abs(pe - e) < 1.7; })!;
+    expect(B.full[piece(2, 5)]).toBeLessThan(0.6);
+    expect(B.full[piece(2, 1.6)]).toBeGreaterThan(0.9);
+    const lum = (c: ArrayLike<number>) => 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
+    expect(lum(B.rgb[piece(3, 5)])).toBeGreaterThan(lum(B.rgb[piece(1, 5)]) + 20);
+  });
+});
+
+// A stretch with no plant found: bare ground the photographs saw, or ground they could not read (2026-11-23).
+describe("the Simple view's rows the photos couldn't read", () => {
+  const photo = (name: string, e0: number, e1: number) => ({ photo: name, ring: rect(e0, -5, e1, 8) });
+  it("says nothing on a twin that keeps no photograph outlines", () => {
+    const t = exactTwin(), U = unreadRows(plotContext(t)!, t);
+    expect(U.judged).toBe(false);
+    expect(U.n).toBe(0);
+    expect(U.noPlantsM).toBeCloseTo(2, 6);
+    expect(rowBars(plotContext(t)!).unread).toBeNull();
+  });
+  it("calls a no-plant stretch under two or more photographs read: bare ground, not a failed read", () => {
+    const t = exactTwin(); t.footprints = [photo("a", -5, 15), photo("b", -5, 15), photo("c", 2, 8)];
+    const U = unreadRows(plotContext(t)!, t);
+    expect(U.judged).toBe(true);
+    expect(U.n).toBe(0);
+    expect(U.unreadM).toBe(0);
+  });
+  it("marks only the part of a no-plant stretch that fewer than two photographs looked at", () => {
+    // Row 4 has no plant from 4 to 6 m. Two photographs end at 5 m, one goes on: from 5 m a single photograph looks.
+    const t = exactTwin(); t.footprints = [photo("a", -5, 5), photo("b", -5, 5), photo("c", -5, 15)];
+    const ctx = plotContext(t)!, U = unreadRows(ctx, t), f = localFrame(LAT, LNG);
+    expect(U.n).toBe(1);
+    expect(U.unreadM).toBeCloseTo(1, 6);
+    const [e0, n0] = f.toEN(U.a[0][0], U.a[0][1]), [e1] = f.toEN(U.b[0][0], U.b[0][1]);
+    expect(e0).toBeCloseTo(5, 2); expect(e1).toBeCloseTo(6, 2); expect(n0).toBeCloseTo(4 * S, 2);
+    // The stretches with plants are never marked, whatever looked at them; the bars carry the parts for the map.
+    expect(rowBars(ctx, SIMPLE, t).unread!.n).toBe(1);
+  });
+  it("does not count a photograph the build could not read", () => {
+    const t = exactTwin(); t.footprints = [photo("a.JPG", -5, 15), photo("b.JPG", -5, 15)];
+    expect(unreadRows(plotContext(t)!, t).n).toBe(0);
+    t.corn!.photographs.failed = [{ name: "b.jpg", reason: "test" }];
+    const U = unreadRows(plotContext(t)!, t);
+    expect(U.n).toBe(1);
+    expect(U.unreadM).toBeCloseTo(2, 6);
   });
 });

@@ -15,6 +15,7 @@ import { CORN_RENDER, type CornViewMode, cornLookOf, cornPlantCount, isOnRow, pl
 import { toWorld } from "@/lib/fieldTwin/scene";
 import { type PlotContext, fieldStand, fmtAcres, fmtFt, fmtIn, fmtPct, fmtPerAcre, plotContext, readShareOf } from "@/lib/fieldTwin/plots";
 import { WEED_PATCH_COLOUR, type WeedPatch, thinRows, weedPatches } from "@/lib/fieldTwin/cornPatches";
+import { SIMPLE, averageColour, hslRgb } from "@/lib/fieldTwin/simpleView";
 import EvidenceCrop from "./EvidenceCrop";
 import type { TwinPick } from "./TwinCanvasLayer";
 
@@ -171,7 +172,7 @@ export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, view, 
         </div>}
       </div>
 
-      {limits.length > 0 && <div className="flex gap-1.5 rounded border border-[#6b4f1d] bg-[rgba(64,46,14,0.55)] px-2.5 py-1.5 text-[11px] leading-snug text-[#f3c97a]" role="note" aria-label="Flight"><span aria-hidden="true">⚠</span><span>{limits.join(" ")}</span></div>}
+      {limits.length > 0 && <div className="flex gap-1.5 rounded border border-[#6b4f1d] bg-[#2b2110] px-2.5 py-1.5 text-[11px] leading-snug text-[#f3c97a]" role="note" aria-label="Flight"><span aria-hidden="true">⚠</span><span>{limits.join(" ")}</span></div>}
 
       {plots}
 
@@ -249,7 +250,7 @@ function rowListDetail(v: CornFieldRowView, units: UnitSystem): string {
 }
 
 /** What each mark on a corn twin means, for everyone (the key): only what is drawn now. */
-export function CornLegend({ corn, showPlants, uncertain, overPhotos = false, view = null, sampled = false, doubles = false }: { corn: TwinCorn; showPlants: boolean; uncertain: boolean; overPhotos?: boolean; /** The view on the map; null: rows and plant marks together (the row editor, or over the photographs). */ view?: CornViewMode | null; /** Whether the Realistic colours are this field's own. */ sampled?: boolean; /** The founder's "All layers": a sorted twin's doubles are drawn. */ doubles?: boolean }) {
+export function CornLegend({ corn, showPlants, uncertain, overPhotos = false, view = null, sampled = false, doubles = false, notRead = false }: { /** The Simple view: some stretch of row lies under fewer than two photographs (simpleView.ts unreadRows). */ notRead?: boolean; corn: TwinCorn; showPlants: boolean; uncertain: boolean; overPhotos?: boolean; /** The view on the map; null: rows and plant marks together (the row editor, or over the photographs). */ view?: CornViewMode | null; /** Whether the Realistic colours are this field's own. */ sampled?: boolean; /** The founder's "All layers": a sorted twin's doubles are drawn. */ doubles?: boolean }) {
   const plantsFirst = useMemo(() => cornFieldRows(corn).some(r => r.plantsFirst), [corn]);
   const look = useMemo(() => cornLookOf(corn, toWorld), [corn]);
   const item = (key: string, swatch: React.ReactNode, text: string) => <span key={key} className="flex items-center gap-1.5">{swatch}{text}</span>;
@@ -267,6 +268,30 @@ export function CornLegend({ corn, showPlants, uncertain, overPhotos = false, vi
   ] : [];
   const unseen = item("unseen", <span className="inline-block h-2.5 w-3.5 shrink-0 rounded-sm border border-[#3a3f3a]" style={{ background: `repeating-linear-gradient(135deg, ${TWIN_COLOURS.hatch} 0 1px, ${TWIN_COLOURS.imagery} 1px 4px)` }} />, "Not photographed");
   const wrap = (list: React.ReactNode[]) => <div className="mt-1.5 grid grid-cols-1 gap-y-0.5 text-[10px] text-neutral-400 sm:grid-cols-2 sm:gap-x-3" aria-label="Corn legend">{list.filter(Boolean)}</div>;
+  // Simple (his sketch of 2026-11-23): white rows, a box a plant, red boxes for the possible weeds; what the box's
+  // size and colour mean, and that the colours are stretched.
+  if (view === "simple" && corn.plants) {
+    const box = (fill: string, edge: string | null = null, px = 9) => <span className="inline-block shrink-0" style={{ width: px, height: px, background: fill, border: edge ? `1px solid ${edge}` : undefined }} />;
+    const avg = rgbCss(averageColour()), paler = rgbCss(hslRgb(SIMPLE.hue, SIMPLE.sat, SIMPLE.light + 0.24)), yellower = rgbCss(hslRgb(58, SIMPLE.sat, SIMPLE.light)), red = rgbCss(SIMPLE.weed);
+    const measured = !!corn.plants.look, sorted = plantsSorted(corn.plants);
+    return <>
+      {wrap([
+        item("row", line(SIMPLE.row, 1), "Row"),
+        corn.rows.some(r => r.status !== "corn") && item("row0", line("rgba(255,255,255,0.35)", 1), "Row, no plants found (the photos saw this ground)"),
+        notRead && item("row?", line(SIMPLE.unread, 2, true), "Row the photos couldn't read (fewer than two photos saw it)"),
+        item("corn", <span className="flex shrink-0 items-end gap-0.5">{box(avg, null, 9)}{box(avg, null, 6)}</span>, measured ? "Corn plant: the box's size is its measured span" : "Corn plant"),
+        measured && item("pale", <span className="flex shrink-0 gap-0.5">{box(paler)}{box(yellower)}</span>, "Paler, or yellower, than this field's average"),
+        item("none", box(rgbCss(SIMPLE.neutral)), measured ? "No colour or size measured" : "Built before each plant's colour and size were measured"),
+        sorted ? item("weed", box(red), "Possible weed (green that is not corn, unconfirmed)") : item("off", box(rgbCss(CORN_RENDER.offRow)), "Plant off the rows (counted)"),
+        sorted && doubles && item("double", box(rgbCss(CORN_RENDER.offRow)), "Double: very close to a plant on its row (not counted)"),
+        item("w1", box(red, "#ffffff"), "Weed candidate, confirmed"),
+        ...gapItems,
+        item("edge", <span className="inline-block h-2.5 w-3.5 shrink-0 border border-[#6a6f6a]" />, "Edge of the photographed ground"),
+      ])}
+      {measured && <p className="mt-1 text-[10px] leading-snug text-neutral-400">Colours are stretched to show differences between plants: this field's average plant is drawn in one green, a paler plant lighter, a yellower one more yellow.</p>}
+      <p className="mt-0.5 text-[10px] leading-snug text-neutral-500">Zoomed out, each row is a bar in its plants' average colour, fainter where the row is thinner.</p>
+    </>;
+  }
   // Realistic and Simple: the plants (or, with no plants located, the rows as bands), the weeds, the ground.
   if (view === "realistic" || view === "simple") {
     const cornCss = view === "simple" ? rgbCss(CORN_RENDER.simpleCorn) : rgbCss(look.corn), hasPlants = !!corn.plants, sorted = plantsSorted(corn.plants);
