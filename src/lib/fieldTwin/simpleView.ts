@@ -19,9 +19,16 @@
 //
 // How far each is widened. Paleness: a plant 10 % brighter than the field's average is drawn `lightGain` x 0.1 lighter
 // (a real difference of about 3 % of lightness becomes 9 %). Yellowness: the measured hue difference from the field's
-// average, times `hueGain`. The gain on hue is the smaller one on purpose: a twin keeps each plant's colour in 16 bits
-// (5 of red, 6 of green, 5 of blue), and on a dark seedling one step of red is about as large as the difference
-// between two plants, so a larger gain would paint the storage's steps as yellow plants. Brightness has no such limit.
+// average, times a gain that depends on how finely the twin keeps a plant's colour:
+//   `hueGainFine`  a twin with each plant's colour as measured (2026-11-23 on, cornPlantLook.ts `rgb`). On the first
+//                  seedling flight the middle 90 % of plants lie within 4.4 degrees yellower and 6.2 greener of the
+//                  field's average; at this gain they are all drawn plainly green, and a plant 5 degrees or more
+//                  yellower than the field (3 % of them) is drawn yellow-green;
+//   `hueGain`      an older twin, which keeps the colour in 16 bits (5 of red, 6 of green, 5 of blue). On a dark
+//                  seedling one step of red is then about as large as the difference between two plants (the same
+//                  flight read as 11 degrees yellower to 8 greener, most of it the storage's steps), so the gain is
+//                  kept low: a larger one painted the steps as yellow plants.
+// Brightness has no such limit.
 import { lookRgb } from "./cornPlantLook";
 import type { PlotContext } from "./plots";
 import type { LatLngPair, TwinBundle, TwinRgb } from "./types";
@@ -31,7 +38,7 @@ export const SIMPLE = {
   boxShare: 0.6,
   /** The field's average plant: this hue (degrees), saturation and lightness. */
   hue: 100, sat: 0.78, light: 0.42,
-  hueGain: 1.5, hueMin: 48, hueMax: 140,
+  hueGain: 1.5, hueGainFine: 3, hueMin: 48, hueMax: 140,
   lightGain: 0.9, lightMin: 0.2, lightMax: 0.8,
   neutral: [138, 143, 138] as TwinRgb,
   weed: [255, 59, 48] as TwinRgb,
@@ -78,10 +85,11 @@ export function fieldColourOf(colour: ArrayLike<number>, use: (k: number) => boo
   return { hue: hues[hues.length >> 1], lum: lums[lums.length >> 1] };
 }
 
-/** A measured colour as the Simple view draws it: its difference from the field's average, widened (see the header). */
-export function stretched(rgb: ArrayLike<number>, F: FieldColour, o = SIMPLE): TwinRgb {
+/** A measured colour as the Simple view draws it: its difference from the field's average, widened (see the header).
+ * `fine`: the twin keeps each plant's colour as measured (the larger gain on hue). */
+export function stretched(rgb: ArrayLike<number>, F: FieldColour, o = SIMPLE, fine = false): TwinRgb {
   const dHue = hueOf(rgb[0], rgb[1], rgb[2]) - F.hue, rel = F.lum > 0 ? lumOf(rgb[0], rgb[1], rgb[2]) / F.lum - 1 : 0;
-  const h = Math.max(o.hueMin, Math.min(o.hueMax, o.hue + o.hueGain * dHue));
+  const h = Math.max(o.hueMin, Math.min(o.hueMax, o.hue + (fine ? o.hueGainFine : o.hueGain) * dHue));
   const l = Math.max(o.lightMin, Math.min(o.lightMax, o.light + o.lightGain * rel));
   return hslRgb(h, o.sat, l);
 }
@@ -195,7 +203,7 @@ export function rowBars(ctx: PlotContext, o = SIMPLE, twin: Pick<TwinBundle, "fo
     for (let j = 0; j < pieces; j++) {
       const p0 = at(a0 + j * step), p1 = at(a0 + (j + 1) * step);
       a.push(ctx.frame.toLL(p0[0], p0[1])); b.push(ctx.frame.toLL(p1[0], p1[1]));
-      rgb.push(nc[j] && field ? stretched([sr[j] / nc[j], sg[j] / nc[j], sb[j] / nc[j]], field, o) : o.neutral);
+      rgb.push(nc[j] && field ? stretched([sr[j] / nc[j], sg[j] / nc[j], sb[j] / nc[j]], field, o, ctx.pColourFine) : o.neutral);
       full.push(perM > 0 ? Math.min(1, cnt[j] / (step * s.scale) / perM) : 0);
     }
   }

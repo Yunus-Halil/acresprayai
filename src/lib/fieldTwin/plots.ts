@@ -81,8 +81,10 @@ export type PlotContext = {
   fromAC: (a: number, c: number) => [number, number];
   /** Counted plants: east, north, along, the stretch each stands on (-1 none), its span in metres (NaN: not measured). */
   pE: Float64Array; pN: Float64Array; pA: Float64Array; pStretch: Int32Array; pSpan: Float32Array; pIndex: Int32Array; pGrid: Grid;
-  /** Its measured colour, packed as the twin keeps it (cornPlantLook.ts; 0: none). */
-  pColour: Uint16Array;
+  /** Its measured colour, as the twin's looks open it (cornPlantLook.ts lookRgb; 0: none). */
+  pColour: Uint32Array;
+  /** Whether the twin keeps each plant's colour as measured (cornPlantLook.ts `rgb`), not in 5-6-5 bits. */
+  pColourFine: boolean;
   /** Green that is not corn (a sorted twin's plants off the rows). */
   gE: Float64Array; gN: Float64Array; gGrid: Grid;
   weeds: { e: number; n: number; status: TwinCornWeed["status"]; id: number }[];
@@ -142,7 +144,7 @@ export function plotContext(twin: TwinBundle, plantsOverride: { points: LatLngPa
   const gE = new Float64Array(green.length), gN = new Float64Array(green.length);
   green.forEach((i, k) => { const [e, no] = frame.toEN(points[i][0], points[i][1]); gE[k] = e; gN[k] = no; });
   const looks = unpackLooks(K.plants?.look ?? null, n), pSpan = new Float32Array(m).fill(NaN);
-  const pColour = new Uint16Array(m);
+  const pColour = new Uint32Array(m);
   if (looks && !plantsOverride) counted.forEach((i, k) => { if (looks.size[i]) pSpan[k] = looks.size[i] / 200; pColour[k] = looks.colour[i]; });
 
   // Each counted plant to the nearest stretch with plants seen, within half a row spacing across.
@@ -187,7 +189,7 @@ export function plotContext(twin: TwinBundle, plantsOverride: { points: LatLngPa
 
   return {
     twinId: twin.id, frame, d, dirDeg: (th * 180) / Math.PI, spacingM, origin: { ...twin.origin }, toAC, fromAC,
-    pE, pN, pA, pStretch, pSpan, pColour, pIndex, pGrid: gridOf(pE, pN, cell),
+    pE, pN, pA, pStretch, pSpan, pColour, pColourFine: !!looks?.fine && !plantsOverride, pIndex, pGrid: gridOf(pE, pN, cell),
     gE, gN, gGrid: gridOf(gE, gN, cell),
     weeds: K.weeds.map(w => { const [e, no] = frame.toEN(w.lat, w.lng); return { e, n: no, status: w.status, id: w.id }; }),
     stretches, courses, gaps, readShare, sorted,

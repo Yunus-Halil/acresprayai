@@ -944,6 +944,8 @@ export class TwinCanvasLayer extends L.Canvas {
     let typicalM = look.plantSizeM;
     if (own) { const v: number[] = []; for (let k = 0; k < n; k++) if (own.size[k] && kindOf(k) === "row") v.push(own.size[k]); if (v.length) { v.sort((a, b) => a - b); typicalM = v[v.length >> 1] / 200; } }
     const pack = (c: ArrayLike<number>) => ((255 << 24) | (c[2] << 16) | (c[1] << 8) | c[0]) >>> 0;
+    // A drawn colour is kept to 32 levels a channel: the boxes in view are drawn a fill a colour, and a twin with each
+    // plant's colour as measured has thousands of colours (the eye does not tell two of these levels apart on a box).
     const neutral = pack(S_.neutral), weed = pack(S_.weed), off = pack(CORN_RENDER.offRow), cache = new Map<number, number>();
     const px = new Uint32Array(n), sideM = new Float32Array(n);
     for (let k = 0; k < n; k++) {
@@ -952,7 +954,7 @@ export class TwinCanvasLayer extends L.Canvas {
       if (kind === "notCorn") px[k] = weed;
       else if (kind !== "row") px[k] = off;
       else if (!c || !field) px[k] = neutral;
-      else { let v = cache.get(c); if (v === undefined) { v = pack(stretched(lookRgb(c), field)); cache.set(c, v); } px[k] = v; }
+      else { let v = cache.get(c); if (v === undefined) { const t = stretched(lookRgb(c), field, S_, own!.fine); v = pack([(t[0] & 0xf8) | 4, (t[1] & 0xf8) | 4, (t[2] & 0xf8) | 4]); cache.set(c, v); } px[k] = v; }
     }
     return (this.simpleBoxes = { px, sideM, typicalM });
   }
