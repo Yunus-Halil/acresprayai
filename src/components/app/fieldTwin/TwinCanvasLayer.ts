@@ -131,6 +131,8 @@ export class TwinCanvasLayer extends L.Canvas {
    * as the pixel it is stamped with, its side in metres), made when first drawn. */
   private simpleBars: { groups: { css: string; alpha: number; xy: Float64Array }[]; n: number } | null = null;
   private simpleField: FieldColour | null = null;
+  /** The Simple view: the parts of the rows the photographs could not read, two ends each, in scene units. */
+  private simpleUnread: Float64Array | null = null;
   private simpleBoxes: { px: Uint32Array; sideM: Float32Array; typicalM: number } | null = null;
 
   constructor(layers: TwinLayers, options: L.RendererOptions = {}) {
@@ -150,6 +152,8 @@ export class TwinCanvasLayer extends L.Canvas {
   /** The Simple view's row bars and the field's average colour (simpleView.ts rowBars); null: none (boxes at every zoom). */
   setSimple(bars: RowBars | null) {
     this.simpleField = bars?.field ?? null; this.simpleBoxes = null;
+    const U = bars?.unread ?? null;
+    this.simpleUnread = U && U.n ? Float64Array.from(U.a.flatMap((p, k) => [...toWorld(p[0], p[1]), ...toWorld(U.b[k][0], U.b[k][1])])) : null;
     if (!bars || !bars.n) { this.simpleBars = null; this.requestRedraw(); return; }
     // One stroke per colour and fullness: colours to 4 bits a channel, fullness to eighths.
     const by = new Map<string, { css: string; alpha: number; xy: number[] }>();
@@ -984,6 +988,17 @@ export class TwinCanvasLayer extends L.Canvas {
         ctx.strokeStyle = g.css; ctx.globalAlpha = g.alpha; ctx.stroke();
       }
       drawn.rowBars = this.simpleBars!.n;
+    }
+    // A stretch with no plant found where fewer than two photographs looked: not read, so drawn apart from bare ground.
+    if (this.simpleUnread) {
+      const u = this.simpleUnread; let nu = 0;
+      ctx.beginPath();
+      for (let i = 0; i < u.length; i += 4) {
+        if (Math.max(u[i], u[i + 2]) < vx0 || Math.min(u[i], u[i + 2]) > vx1 || Math.max(u[i + 1], u[i + 3]) < vy0 || Math.min(u[i + 1], u[i + 3]) > vy1) continue;
+        ctx.moveTo(X(u[i]), Y(u[i + 1])); ctx.lineTo(X(u[i + 2]), Y(u[i + 3])); nu++;
+      }
+      if (nu) { ctx.strokeStyle = S_.unread; ctx.lineWidth = 2; ctx.globalAlpha = 1; ctx.setLineDash([5, 4]); ctx.stroke(); ctx.setLineDash([]); }
+      drawn.rowsNotRead = nu;
     }
     ctx.globalAlpha = 1;
     // Up to some thousands of boxes in view: each drawn straight onto the canvas, one fill a colour. A screen-sized

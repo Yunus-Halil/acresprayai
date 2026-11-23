@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { boxRing, fieldStand, measurePlot, plotContext, snapRows, llOf, fmtPerAcre } from "@/lib/fieldTwin/plots";
 import { localFrame } from "@/lib/fieldTwin/rowEdits";
-import { SIMPLE, averageColour, fieldColourOf, fmtPerAcreShort, hueOf, plotNumberTone, rowBars, stretched } from "@/lib/fieldTwin/simpleView";
+import { SIMPLE, averageColour, fieldColourOf, fmtPerAcreShort, hueOf, plotNumberTone, rowBars, stretched, unreadRows } from "@/lib/fieldTwin/simpleView";
 import { packLooks } from "@/lib/fieldTwin/cornPlantLook";
 import { M2_PER_ACRE } from "@/lib/units";
 import { FIELD_TWIN_FORMAT, type LatLngPair, type TwinBundle, type TwinCornRow } from "@/lib/fieldTwin/types";
@@ -196,5 +196,43 @@ describe("the Simple view's row bars", () => {
     expect(B.full[piece(2, 1.6)]).toBeGreaterThan(0.9);
     const lum = (c: ArrayLike<number>) => 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
     expect(lum(B.rgb[piece(3, 5)])).toBeGreaterThan(lum(B.rgb[piece(1, 5)]) + 20);
+  });
+});
+
+// A stretch with no plant found: bare ground the photographs saw, or ground they could not read (2026-11-23).
+describe("the Simple view's rows the photos couldn't read", () => {
+  const photo = (name: string, e0: number, e1: number) => ({ photo: name, ring: rect(e0, -5, e1, 8) });
+  it("says nothing on a twin that keeps no photograph outlines", () => {
+    const t = exactTwin(), U = unreadRows(plotContext(t)!, t);
+    expect(U.judged).toBe(false);
+    expect(U.n).toBe(0);
+    expect(U.noPlantsM).toBeCloseTo(2, 6);
+    expect(rowBars(plotContext(t)!).unread).toBeNull();
+  });
+  it("calls a no-plant stretch under two or more photographs read: bare ground, not a failed read", () => {
+    const t = exactTwin(); t.footprints = [photo("a", -5, 15), photo("b", -5, 15), photo("c", 2, 8)];
+    const U = unreadRows(plotContext(t)!, t);
+    expect(U.judged).toBe(true);
+    expect(U.n).toBe(0);
+    expect(U.unreadM).toBe(0);
+  });
+  it("marks only the part of a no-plant stretch that fewer than two photographs looked at", () => {
+    // Row 4 has no plant from 4 to 6 m. Two photographs end at 5 m, one goes on: from 5 m a single photograph looks.
+    const t = exactTwin(); t.footprints = [photo("a", -5, 5), photo("b", -5, 5), photo("c", -5, 15)];
+    const ctx = plotContext(t)!, U = unreadRows(ctx, t), f = localFrame(LAT, LNG);
+    expect(U.n).toBe(1);
+    expect(U.unreadM).toBeCloseTo(1, 6);
+    const [e0, n0] = f.toEN(U.a[0][0], U.a[0][1]), [e1] = f.toEN(U.b[0][0], U.b[0][1]);
+    expect(e0).toBeCloseTo(5, 2); expect(e1).toBeCloseTo(6, 2); expect(n0).toBeCloseTo(4 * S, 2);
+    // The stretches with plants are never marked, whatever looked at them; the bars carry the parts for the map.
+    expect(rowBars(ctx, SIMPLE, t).unread!.n).toBe(1);
+  });
+  it("does not count a photograph the build could not read", () => {
+    const t = exactTwin(); t.footprints = [photo("a.JPG", -5, 15), photo("b.JPG", -5, 15)];
+    expect(unreadRows(plotContext(t)!, t).n).toBe(0);
+    t.corn!.photographs.failed = [{ name: "b.jpg", reason: "test" }];
+    const U = unreadRows(plotContext(t)!, t);
+    expect(U.n).toBe(1);
+    expect(U.unreadM).toBeCloseTo(2, 6);
   });
 });

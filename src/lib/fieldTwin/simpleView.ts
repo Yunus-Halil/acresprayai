@@ -11,6 +11,12 @@
 //           direction of a difference is always the measured one; only its size is widened.
 // A plant with no measured colour or span gets a neutral box at the field's typical span.
 //
+// A stretch of row with no plant found is one of two things, and they are drawn apart (unreadRows):
+//   the photographs saw the ground and found no plant (bare ground, an alley between plots): a faint line;
+//   fewer than two photographs looked at it, so a plant there could not have been confirmed (a build keeps a plant two
+//   photographs located): amber dashes, "the photos couldn't read it". Known from the photographs' outlines the twin
+//   keeps; a twin with no outlines says nothing (no stretch is called not read).
+//
 // How far each is widened. Paleness: a plant 10 % brighter than the field's average is drawn `lightGain` x 0.1 lighter
 // (a real difference of about 3 % of lightness becomes 9 %). Yellowness: the measured hue difference from the field's
 // average, times `hueGain`. The gain on hue is the smaller one on purpose: a twin keeps each plant's colour in 16 bits
@@ -18,7 +24,7 @@
 // between two plants, so a larger gain would paint the storage's steps as yellow plants. Brightness has no such limit.
 import { lookRgb } from "./cornPlantLook";
 import type { PlotContext } from "./plots";
-import type { LatLngPair, TwinRgb } from "./types";
+import type { LatLngPair, TwinBundle, TwinRgb } from "./types";
 
 export const SIMPLE = {
   /** A box's side, as a share of the plant's measured span. */
@@ -41,6 +47,9 @@ export const SIMPLE = {
   barM: 3,
   /** A bar's width as a share of the row spacing, and its faintest (an empty piece). */
   barShare: 0.42, barMinAlpha: 0.18,
+  /** A stretch with no plant found is "not read" where fewer photographs than this looked at it (a plant is kept when
+   * two located it); it is asked every `unreadStepM` along the stretch; and the colour it is drawn in. */
+  readPhotos: 2, unreadStepM: 0.5, unread: "#f0a63a",
 };
 
 /** The field's average plant colour, as measured: the median hue (degrees) and brightness of its counted plants. */
@@ -79,6 +88,64 @@ export function stretched(rgb: ArrayLike<number>, F: FieldColour, o = SIMPLE): T
 /** The colour the field's average plant is drawn in (the legend's swatch). */
 export const averageColour = (o = SIMPLE): TwinRgb => hslRgb(o.hue, o.sat, o.light);
 
+/**
+ * How many photographs looked at a place (metres east / north of the twin's origin): the outlines the twin keeps,
+ * without the photographs the build could not read. Null: no outline to go by, nothing can be said.
+ */
+export function photosOver(footprints: { photo: string; ring: LatLngPair[] }[], failed: string[], frame: PlotContext["frame"]): ((e: number, n: number) => number) | null {
+  const stem = (s: string) => s.replace(/\.[^.\\/]+$/, "").toLowerCase(), bad = new Set(failed.map(stem));
+  const rings = footprints.filter(f => f.ring.length >= 3 && !bad.has(stem(f.photo))).map(f => {
+    const xy = new Float64Array(f.ring.length * 2); let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    f.ring.forEach(([la, ln], i) => { const [e, n] = frame.toEN(la, ln); xy[2 * i] = e; xy[2 * i + 1] = n; if (e < x0) x0 = e; if (e > x1) x1 = e; if (n < y0) y0 = n; if (n > y1) y1 = n; });
+    return { xy, x0, y0, x1, y1 };
+  });
+  if (!rings.length) return null;
+  return (e, n) => {
+    let c = 0;
+    for (const r of rings) {
+      if (e < r.x0 || e > r.x1 || n < r.y0 || n > r.y1) continue;
+      let hit = false; const k = r.xy.length / 2;
+      for (let i = 0, j = k - 1; i < k; j = i++) { const xi = r.xy[2 * i], yi = r.xy[2 * i + 1], xj = r.xy[2 * j], yj = r.xy[2 * j + 1]; if ((yi > n) !== (yj > n) && e < ((xj - xi) * (n - yi)) / (yj - yi) + xi) hit = !hit; }
+      if (hit) c++;
+    }
+    return c;
+  };
+}
+
+/** The parts of the rows with no plant found that the photographs could not read (see the header). */
+export type UnreadRows = {
+  n: number;
+  /** Each part's two ends, latitude / longitude. */
+  a: LatLngPair[]; b: LatLngPair[];
+  /** Metres of row with no plant found: the part not read, and all of it. */
+  unreadM: number; noPlantsM: number;
+  /** False: the twin keeps no photograph outlines, so no stretch could be judged. */
+  judged: boolean;
+};
+
+export function unreadRows(ctx: PlotContext, twin: Pick<TwinBundle, "footprints" | "corn">, o = SIMPLE): UnreadRows {
+  const over = photosOver(twin.footprints ?? [], (twin.corn?.photographs?.failed ?? []).map(f => f.name), ctx.frame);
+  const a: LatLngPair[] = [], b: LatLngPair[] = [];
+  let unreadM = 0, noPlantsM = 0;
+  for (const s of ctx.stretches) {
+    if (s.seen) continue;
+    for (let i = 1; i < s.pts.length / 2; i++) {
+      const e0 = s.pts[2 * i - 2], n0 = s.pts[2 * i - 1], e1 = s.pts[2 * i], n1 = s.pts[2 * i + 1], L = Math.hypot(e1 - e0, n1 - n0);
+      if (L <= 0) continue;
+      const parts = Math.max(1, Math.ceil(L / o.unreadStepM));
+      let from = -1;
+      const close = (to: number) => { if (from < 0) return; a.push(ctx.frame.toLL(e0 + (from / parts) * (e1 - e0), n0 + (from / parts) * (n1 - n0))); b.push(ctx.frame.toLL(e0 + (to / parts) * (e1 - e0), n0 + (to / parts) * (n1 - n0))); from = -1; };
+      for (let j = 0; j < parts; j++) {
+        const tm = (j + 0.5) / parts, len = (L / parts) * s.scale;
+        noPlantsM += len;
+        if (over && over(e0 + tm * (e1 - e0), n0 + tm * (n1 - n0)) < o.readPhotos) { unreadM += len; if (from < 0) from = j; } else close(j);
+      }
+      close(parts);
+    }
+  }
+  return { n: a.length, a, b, unreadM, noPlantsM, judged: !!over };
+}
+
 /** A row's bars for the zoomed-out view: pieces of each stretch with plants seen, their ends, colour and fullness. */
 export type RowBars = {
   n: number;
@@ -89,6 +156,8 @@ export type RowBars = {
   /** 0 to 1: its counted plants per length against the field's (1: as full as the field's average, or fuller). */
   full: Float32Array;
   field: FieldColour | null;
+  /** The parts of the rows the photographs could not read (null: no twin was handed in to ask). */
+  unread: UnreadRows | null;
 };
 
 /**
@@ -96,7 +165,7 @@ export type RowBars = {
  * average of its plants' measured colours, stretched as a plant's is; its fullness its counted plants per metre over
  * the field's (counted plants on the rows per metre of row with plants seen).
  */
-export function rowBars(ctx: PlotContext, o = SIMPLE): RowBars {
+export function rowBars(ctx: PlotContext, o = SIMPLE, twin: Pick<TwinBundle, "footprints" | "corn"> | null = null): RowBars {
   const field = fieldColourOf(ctx.pColour);
   const a: LatLngPair[] = [], b: LatLngPair[] = [], rgb: TwinRgb[] = [], full: number[] = [];
   let plants = 0, seenM = 0;
@@ -130,7 +199,7 @@ export function rowBars(ctx: PlotContext, o = SIMPLE): RowBars {
       full.push(perM > 0 ? Math.min(1, cnt[j] / (step * s.scale) / perM) : 0);
     }
   }
-  return { n: a.length, a, b, rgb, full: Float32Array.from(full), field };
+  return { n: a.length, a, b, rgb, full: Float32Array.from(full), field, unread: twin ? unreadRows(ctx, twin, o) : null };
 }
 
 /** A plots-per-acre figure for a plot's label: "29.5k/ac". */

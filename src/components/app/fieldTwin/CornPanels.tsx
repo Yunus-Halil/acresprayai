@@ -250,7 +250,7 @@ function rowListDetail(v: CornFieldRowView, units: UnitSystem): string {
 }
 
 /** What each mark on a corn twin means, for everyone (the key): only what is drawn now. */
-export function CornLegend({ corn, showPlants, uncertain, overPhotos = false, view = null, sampled = false, doubles = false }: { corn: TwinCorn; showPlants: boolean; uncertain: boolean; overPhotos?: boolean; /** The view on the map; null: rows and plant marks together (the row editor, or over the photographs). */ view?: CornViewMode | null; /** Whether the Realistic colours are this field's own. */ sampled?: boolean; /** The founder's "All layers": a sorted twin's doubles are drawn. */ doubles?: boolean }) {
+export function CornLegend({ corn, showPlants, uncertain, overPhotos = false, view = null, sampled = false, doubles = false, notRead = false }: { /** The Simple view: some stretch of row lies under fewer than two photographs (simpleView.ts unreadRows). */ notRead?: boolean; corn: TwinCorn; showPlants: boolean; uncertain: boolean; overPhotos?: boolean; /** The view on the map; null: rows and plant marks together (the row editor, or over the photographs). */ view?: CornViewMode | null; /** Whether the Realistic colours are this field's own. */ sampled?: boolean; /** The founder's "All layers": a sorted twin's doubles are drawn. */ doubles?: boolean }) {
   const plantsFirst = useMemo(() => cornFieldRows(corn).some(r => r.plantsFirst), [corn]);
   const look = useMemo(() => cornLookOf(corn, toWorld), [corn]);
   const item = (key: string, swatch: React.ReactNode, text: string) => <span key={key} className="flex items-center gap-1.5">{swatch}{text}</span>;
@@ -277,6 +277,8 @@ export function CornLegend({ corn, showPlants, uncertain, overPhotos = false, vi
     return <>
       {wrap([
         item("row", line(SIMPLE.row, 1), "Row"),
+        corn.rows.some(r => r.status !== "corn") && item("row0", line("rgba(255,255,255,0.35)", 1), "Row, no plants found (the photos saw this ground)"),
+        notRead && item("row?", line(SIMPLE.unread, 2, true), "Row the photos couldn't read (fewer than two photos saw it)"),
         item("corn", <span className="flex shrink-0 items-end gap-0.5">{box(avg, null, 9)}{box(avg, null, 6)}</span>, measured ? "Corn plant: the box's size is its measured span" : "Corn plant"),
         measured && item("pale", <span className="flex shrink-0 gap-0.5">{box(paler)}{box(yellower)}</span>, "Paler, or yellower, than this field's average"),
         item("none", box(rgbCss(SIMPLE.neutral)), measured ? "No colour or size measured" : "Built before each plant's colour and size were measured"),

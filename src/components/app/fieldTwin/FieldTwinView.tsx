@@ -253,7 +253,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const patches = useMemo(() => (plotCtx ? weedPatches(plotCtx) : []), [plotCtx]);
   // The Simple view's row bars (zoomed out) and the field's average plant colour. Not over a plants.json laid over the twin's own.
   const fieldPerAcre = useMemo(() => fieldStand(twin)?.perAcre ?? null, [twin]);
-  const simpleBars = useMemo(() => (plotCtx && !plantsOverride ? measured("twin:simple", () => rowBars(plotCtx)) : null), [plotCtx, plantsOverride]);
+  const simpleBars = useMemo(() => (plotCtx && !plantsOverride ? measured("twin:simple", () => rowBars(plotCtx, undefined, twin)) : null), [plotCtx, plantsOverride, twin]);
   const [activePatch, setActivePatch] = useState<number | null>(null);
   // While a plot tool, a plot's name or an edit holds the map, a click on it is not a pick.
   const plotBusy = useRef(false);
@@ -680,7 +680,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
         </div>
         {!twin.corn && <p className="mt-0.5 text-neutral-300">Review-only: these are observations for you to check, not treatment decisions.</p>}
         {!local && <p className="mt-0.5 text-neutral-400">{placementText(twin)}</p>}
-        {twin.corn ? <><p className="mt-0.5 text-neutral-400">{cornView === "geometry" || rowEditing || photosUnder || !!reference ? "Click a row or a weed to inspect it." : "Zoom in to see each plant. Click a plant or a weed to inspect it."}</p><CornLegend corn={twin.corn} showPlants={!!plants && showPlants} uncertain={layers.cornUncertain} overPhotos={photosUnder} view={rowEditing || photosUnder || reference ? null : cornView} sampled={cornLook.sampled} doubles={founderView && allLayers} /></> : <p className="mt-0.5 text-neutral-400">{detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>}
+        {twin.corn ? <><p className="mt-0.5 text-neutral-400">{cornView === "geometry" || rowEditing || photosUnder || !!reference ? "Click a row or a weed to inspect it." : "Zoom in to see each plant. Click a plant or a weed to inspect it."}</p><CornLegend corn={twin.corn} showPlants={!!plants && showPlants} uncertain={layers.cornUncertain} overPhotos={photosUnder} view={rowEditing || photosUnder || reference ? null : cornView} sampled={cornLook.sampled} doubles={founderView && allLayers} notRead={!!simpleBars?.unread?.n} /></> : <p className="mt-0.5 text-neutral-400">{detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>}
         {local && <p className="mt-0.5 text-amber-300/90">Locally aligned test flight: positions relative to each other, scale estimated from the corn rows. Not on the map.</p>}
         {twin.stats.weedTier === "colour" && <p className="mt-0.5 text-amber-300/90">Weeds by colour rules, not a model: green against the soil around it, crowns left out, strips split at their plants. Yellowing plants and plants under 4 cm are missed; a green shoot at a crown's edge can be counted.</p>}
         {twin.stats.weedTier === "none" && !twin.corn && <p className="mt-0.5 text-neutral-500">No weed pass ran on this twin.</p>}
