@@ -39,7 +39,7 @@ describe("the corn panel on a late twin", () => {
     render(<CornFieldPanel twin={t} corn={t.corn} layers={DEFAULT_LAYERS} setLayers={() => undefined} onSelect={() => undefined} units="imperial" view="realistic" />);
     expect(screen.getByRole("group", { name: "Stand" })).toHaveTextContent(/not counted on this flight.*The corn canopy has closed in 31 of the 40 photographs/);
     // One line on the flight, because it limits the result.
-    expect(screen.getByRole("note", { name: "Flight" })).toHaveTextContent(/late: the canopy has closed in 31 of the 40 photographs/);
+    expect(screen.getByRole("note", { name: "Flight" })).toHaveTextContent(/Plants can't be counted on this flight: the corn canopy has closed in 31 of the 40 photos/);
   });
 });
 

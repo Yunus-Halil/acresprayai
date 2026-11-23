@@ -61,6 +61,17 @@ describe("a plot's numbers", () => {
     const P = measurePlot(ctx, rect(1.1, 0.5 * S, 4.1, 2.5 * S));
     expect(P.plants).toBe(2 * 15);
     expect(P.greenNotCorn).toBe(5);
+    expect(P.possibleWeeds).toEqual({ total: 5, confirmed: 0 });
+  });
+  it("give possible weeds as one number: the green that is not corn and the weed candidates, each place once", () => {
+    const t = exactTwin(), f = localFrame(LAT, LNG);
+    const weed = (id: number, e: number, n: number, status: "confirmed" | "unconfirmed") => { const [lat, lng] = f.toLL(e, n); return { id, status, lat, lng, areaM2: 0.01, votes: { weed: 2, crop: 0, unknown: 0 }, seenBy: 2, coveredBy: 3, photos: [], why: "test", evidence: [] }; };
+    // One candidate where a green mark already stands (the same place: counted once), one on its own, confirmed.
+    t.corn!.weeds = [weed(1, 2, 1.5 * S, "unconfirmed"), weed(2, 3.7, 1.2, "confirmed")];
+    const P = measurePlot(plotContext(t)!, rect(1.1, 0.5 * S, 4.1, 2.5 * S));
+    expect(P.greenNotCorn).toBe(5);
+    expect(P.weeds).toEqual({ confirmed: 1, unconfirmed: 1, contested: 0 });
+    expect(P.possibleWeeds).toEqual({ total: 6, confirmed: 1 });
   });
   it("per acre is the plants over the row inside with plants seen times the row spacing", () => {
     const ctx = plotContext(exactTwin())!;
@@ -92,7 +103,7 @@ describe("a plot's numbers", () => {
     const ctx = plotContext(exactTwin())!;
     const P = measurePlot(ctx, rect(0.1, 0.5 * S, 2.1, 1.5 * S));
     expect(P.gaps.measured).toBe(false);
-    expect(P.gaps.measured === false && P.gaps.why).toMatch(/59 %/);
+    expect(P.gaps.measured === false && P.gaps.why).toMatch(/Each photo covers too little of each row/);
     expect(P.small).not.toBeNull();
     expect(P.small!.margin).toBeCloseTo(1 / Math.sqrt(P.plants), 6);
   });

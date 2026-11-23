@@ -43,6 +43,8 @@ export const PLOT = {
   /** A plant is on a stretch when within this share of the row spacing across from it. */
   assignAcross: 0.5,
   cellM: 2,
+  /** A weed candidate this close to a mark of green that is not corn is that mark (counted once). */
+  samePlaceM: 0.1,
 };
 
 type Grid = { x0: number; y0: number; nx: number; ny: number; start: Int32Array; items: Int32Array };
@@ -175,7 +177,7 @@ export function plotContext(twin: TwinBundle, plantsOverride: { points: LatLngPa
   const readShare = readShareOf(K.notes);
   const plantsFirst = cornFieldRows(K).some(r => r.plantsFirst);
   const gaps: PlotContext["gaps"] = readShare != null
-    ? { measured: false, why: `Single photographs held only ${Math.round(100 * readShare)} % of the row length, so a stretch with no plant seen can't be told from plants the photographs missed.` }
+    ? { measured: false, why: "Each photo covers too little of each row, so a missing plant can't be told from one the photos missed." }
     : plantsFirst && !K.gaps.length
       ? { measured: false, why: "Gaps aren't measured yet on rows built from the located plants." }
       : { measured: true, list: K.gaps.map(g => { const [e0, n0] = frame.toEN(g.a[0], g.a[1]), [e1, n1] = frame.toEN(g.b[0], g.b[1]); return { e0, n0, e1, n1, lengthM: g.lengthM, status: g.status }; }) };
@@ -246,6 +248,9 @@ export type PlotNumbers = {
   span: { medianM: number; n: number } | null;
   greenNotCorn: number;
   weeds: { confirmed: number; unconfirmed: number; contested: number };
+  /** Possible weeds, one line (his wording, 2026-11-23): the green that is not corn plus the weed candidates that are
+   * not already one of its marks (none within `samePlaceM`), and of them the confirmed weed candidates. */
+  possibleWeeds: { total: number; confirmed: number };
   gaps: { measured: false; why: string } | { measured: true; confirmed: number; withheld: number; lengthM: number };
   /** Set when the plot is too small for a stable number: the share it could move by (1 / √plants). */
   small: { margin: number; why: "plants" | "row" } | null;
@@ -270,7 +275,15 @@ export function measurePlot(ctx: PlotContext, ring: LatLngPair[]): PlotNumbers {
   let greenNotCorn = 0;
   if (ring.length >= 3) inBox(ctx.gGrid, cell, bx0, by0, bx1, by1, k => { if (inside(R, ctx.gE[k], ctx.gN[k])) greenNotCorn++; });
   const weeds = { confirmed: 0, unconfirmed: 0, contested: 0 };
-  if (ring.length >= 3) for (const w of ctx.weeds) if (w.e >= bx0 && w.e <= bx1 && w.n >= by0 && w.n <= by1 && inside(R, w.e, w.n)) weeds[w.status]++;
+  let extra = 0;
+  if (ring.length >= 3) for (const w of ctx.weeds) {
+    if (!(w.e >= bx0 && w.e <= bx1 && w.n >= by0 && w.n <= by1 && inside(R, w.e, w.n))) continue;
+    weeds[w.status]++;
+    let near = false;
+    const q = PLOT.samePlaceM;
+    inBox(ctx.gGrid, cell, w.e - q, w.n - q, w.e + q, w.n + q, k => { if (Math.hypot(ctx.gE[k] - w.e, ctx.gN[k] - w.n) <= q) near = true; });
+    if (!near) extra++;
+  }
   let seenM = 0, notSeenM = 0;
   const byRow = new Map<number, { spacings: number[]; plants: number; c: number }>(), all: number[] = [];
   if (ring.length >= 3) for (const s of ctx.stretches) {
@@ -303,7 +316,7 @@ export function measurePlot(ctx: PlotContext, ring: LatLngPair[]): PlotNumbers {
   }
   const perAcre = seenM > 0 ? (plants / (seenM * ctx.spacingM)) * M2_PER_ACRE : null;
   const small = plants < PLOT.smallPlants ? { margin: 1 / Math.sqrt(Math.max(1, plants)), why: "plants" as const } : seenM < PLOT.smallRowM ? { margin: 1 / Math.sqrt(Math.max(1, plants)), why: "row" as const } : null;
-  return { areaM2, plants, seenM, notSeenM, readShare: seenM + notSeenM > 0 ? seenM / (seenM + notSeenM) : null, perAcre, spacing, rows, span, greenNotCorn, weeds, gaps, small };
+  return { areaM2, plants, seenM, notSeenM, readShare: seenM + notSeenM > 0 ? seenM / (seenM + notSeenM) : null, perAcre, spacing, rows, span, greenNotCorn, weeds, possibleWeeds: { total: greenNotCorn + extra, confirmed: weeds.confirmed }, gaps, small };
 }
 
 /**

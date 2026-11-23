@@ -103,10 +103,11 @@ export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, view, 
 
   // The flight, in one line, only when something limits the result.
   const limits: string[] = [];
-  if (late) limits.push(`late: the canopy has closed in ${corn.stage!.late} of the ${corn.stage!.looked} photographs, so plants aren't counted`);
-  if (!late && gapsLeftOut && readShare != null) limits.push(`single photographs held only ${Math.round(100 * readShare)} % of the row length, so gaps can't be measured`);
-  if (twin.source.groundPixelCm > 1) limits.push(`flown high (${(twin.source.groundPixelCm / 2.54).toFixed(2)} in a pixel): the smallest seedlings may be missed`);
-  if (count && stand?.readShare != null && stand.readShare < 0.8) limits.push(`plants seen along only ${fmtPct(stand.readShare)} of the row`);
+  // In plain words (his wording, 2026-11-23), a sentence each.
+  if (late) limits.push(`Plants can't be counted on this flight: the corn canopy has closed in ${corn.stage!.late} of the ${corn.stage!.looked} photos.`);
+  if (!late && gapsLeftOut && readShare != null) limits.push("Gaps can't be measured on this flight: each photo covers too little of each row.");
+  if (twin.source.groundPixelCm > 1) limits.push("Flown high: the smallest seedlings may be missed.");
+  if (count && stand?.readShare != null && stand.readShare < 0.8) limits.push(`Plants were seen along only ${fmtPct(stand.readShare)} of the row.`);
 
   const spanIn = span != null ? Math.round(span / 0.0254) : null;
   const patchArea = patches.reduce((t, p) => t + p.areaM2, 0);
@@ -157,7 +158,7 @@ export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, view, 
         </div>}
         <div className="mx-1.5 mt-1 border-t border-[#262a26] pt-1.5">
           <div className="flex items-baseline justify-between gap-2 text-[11.5px]"><span className="text-neutral-200">Gaps in the stand</span><span className={gapsLeftOut ? "text-right text-neutral-400" : "tabular-nums text-neutral-100"}>{gapsLeftOut ? "Not measured on this flight" : confirmedGaps.length ? `${confirmedGaps.length} · ${fmtFt(confirmedGaps.reduce((t, g) => t + g.lengthM, 0))}` : "None"}</span></div>
-          {gapsLeftOut && <p className="mt-0.5 text-[10.5px] leading-snug text-neutral-500">{gapsWhy ?? "A stretch with no plant seen can't be told from plants the photographs missed."}</p>}
+          {gapsLeftOut && <p className="mt-0.5 text-[10.5px] leading-snug text-neutral-500">{gapsWhy ?? "A missing plant can't be told from one the photos missed."}</p>}
           {!gapsLeftOut && confirmedGaps.slice(0, 3).map(g => <button key={g.id} type="button" className="flex w-full items-center gap-2 rounded-sm px-0.5 py-1 text-left text-[11px] text-neutral-300 hover:bg-[#232723]" onClick={() => onSelect({ kind: "cornGap", id: g.id }, (g.a[0] + g.b[0]) / 2, (g.a[1] + g.b[1]) / 2, Math.max(3, g.lengthM * 2.5))}><span className="inline-block h-1 w-3" style={{ background: TWIN_COLOURS.cornGap }} />Row {g.rowId} · {fmtIn(g.lengthM, 0)}{go}</button>)}
         </div>
         {thin && thin.medianPerM != null && <div className="mx-1.5 mt-1.5 border-t border-[#262a26] pt-1.5">
@@ -170,7 +171,7 @@ export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, view, 
         </div>}
       </div>
 
-      {limits.length > 0 && <div className="flex gap-1.5 rounded border border-[#6b4f1d] bg-[rgba(64,46,14,0.55)] px-2.5 py-1.5 text-[11px] leading-snug text-[#f3c97a]" role="note" aria-label="Flight"><span aria-hidden="true">⚠</span><span><b>Flight:</b> {limits.join("; ")}.</span></div>}
+      {limits.length > 0 && <div className="flex gap-1.5 rounded border border-[#6b4f1d] bg-[rgba(64,46,14,0.55)] px-2.5 py-1.5 text-[11px] leading-snug text-[#f3c97a]" role="note" aria-label="Flight"><span aria-hidden="true">⚠</span><span>{limits.join(" ")}</span></div>}
 
       {plots}
 
