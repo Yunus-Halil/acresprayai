@@ -33,6 +33,9 @@ import { reviewKey, useTwinReviews } from "@/lib/fieldTwin/reviews";
 import { FeedbackButton } from "@/components/pilot/FeedbackDialog";
 import { type RowEdits, NO_ROW_EDITS, loadRowEdits, moveRowEnd, newUid, plantIndex, rowEndsNow, rowLineNow, rowModel, saveRowEdits, snapRow } from "@/lib/fieldTwin/rowEdits";
 import { RowActionCard, RowEditPanel, RowUndoBar } from "./RowEditor";
+import { plotContext } from "@/lib/fieldTwin/plots";
+import { weedPatches } from "@/lib/fieldTwin/cornPatches";
+import { PatchPins, PlotWorkbench } from "./PlotTools";
 
 const NARROW_PX = 820;
 /** The row editor's line on a sorted corn twin's located plants (the note its build wrote says every one is counted). */
@@ -242,6 +245,15 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const [refSwipe, setRefSwipe] = useState<number | null>(null);
   const [centre, setCentre] = useState<{ lat: number; lng: number } | null>(null);
   const handle = useRef<TwinMapHandle | null>(null);
+  // The map itself, for what draws on it from outside the canvas (plots, weed patch pins).
+  const [leafMap, setLeafMap] = useState<L.Map | null>(null);
+  // Plots and the corn panel's numbers (plots.ts): the counted plants and the rows, once per twin.
+  const plotCtx = useMemo(() => (twin.corn ? measured("twin:plots", () => plotContext(twin)) : null), [twin]);
+  const patches = useMemo(() => (plotCtx ? weedPatches(plotCtx) : []), [plotCtx]);
+  const [activePatch, setActivePatch] = useState<number | null>(null);
+  // While a plot tool, a plot's name or an edit holds the map, a click on it is not a pick.
+  const plotBusy = useRef(false);
+  const onPlotBusy = useCallback((b: boolean) => { plotBusy.current = b; }, []);
 
   // The row editor (corn twins, founder for now): the operator's corrections, folded over the saved twin, on this device.
   const [rowEdits, setRowEditsState] = useState<RowEdits>(() => loadRowEdits(twin.id));
@@ -313,6 +325,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const effectiveLayers = useMemo<TwinLayers>(() => ({ ...layers, ground: !reference && !photosUnder, surroundings: layers.surroundings && !local, ...(corn ? { pressure: false, zones: false, beyondBoundary: false } : {}) }), [layers, reference, local, corn, photosUnder]);
 
   const onMapPick = (p: TwinPick, pointer: string) => {
+    if (plotBusy.current) return;
     if (!rowEditing) { setSelection(p); return; }
     setRowNote(null);
     if (p?.kind !== "ground") { setSelection(p); return; }
@@ -448,9 +461,10 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
     <div className="twin-root relative h-full w-full min-h-0 overflow-hidden" style={{ background: TWIN_COLOURS.outside, ["--twin-right" as string]: dockOpen && !narrow ? "368px" : "0px" }}>
       <style>{`.twin-root .leaflet-top.leaflet-right, .twin-root .leaflet-bottom.leaflet-right { right: var(--twin-right, 0); transition: right .15s ease; } .twin-root .leaflet-control-scale-line { background: rgba(24,26,24,.85); color: #d9ddd6; border-color: #8a8f88; } .twin-root .leaflet-control-attribution { background: rgba(24,26,24,.85); color: #9aa09a; }`}</style>
       <TwinMap scene={scene} layers={effectiveLayers} selection={selection} units={units} onPick={onMapPick} onDetail={setDetail} onStats={setStats}
-        onMove={c => setCentre(c)} onReady={h => { handle.current = h; setStats(h.layer.stats); }} reference={reference} onSwipe={setRefSwipe} findings={findings}
+        onMove={c => setCentre(c)} onReady={h => { handle.current = h; setLeafMap(h.map); setStats(h.layer.stats); }} reference={reference} onSwipe={setRefSwipe} findings={findings}
         operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} rowEdits={rowEditsProp} plants={plantsProp} onRowEnd={onRowEnd} photoGround={photoGroundLayer} cornView={twin.corn && !photosUnder && !reference ? cornView : null} showDoubles={founderView && allLayers} />
 
+      {plotCtx && !rowEditing && <PatchPins map={leafMap} ctx={plotCtx} patches={patches} active={activePatch} onPick={p => { setSelection(null); setActivePatch(p.number); zoomTo(p.lat, p.lng, Math.max(6, Math.sqrt(p.areaM2) * 2.2)); }} />}
       {/* A corn twin from a late flight: said over the map, closable (twin.corn.stage, from the build). */}
       {twin.corn?.stage?.verdict === "late" && !rowEditing && (
         <div className={`pointer-events-none absolute right-3 top-3 z-[720] flex justify-center ${narrow ? "left-3 top-14" : "left-[300px]"}`}><LateFlightBanner twinId={twin.id} stage={twin.corn.stage} /></div>
@@ -500,7 +514,10 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
         </div>}
         {groundAllowed && !groundProp && groundAbsent && <PhotoGroundAbsent />}
         {groundOn && groundProp && <PhotoGroundPanel manifest={groundProp.manifest} shown={groundShown} setShown={setGroundShown} access={photoAccess} setAccess={setPhotoAccess} detail={detailState} onDetail={() => { void requestDetail(); }} />}
-        {twin.corn && <CornFieldPanel twin={twin} corn={twin.corn} layers={layers} setLayers={setLayers} units={units} view={cornView} technical={founderView && allLayers} onSelect={(p, lat, lng, across) => { setSelection(p); zoomTo(lat, lng, across); }} />}
+        {twin.corn && <CornFieldPanel twin={twin} corn={twin.corn} layers={layers} setLayers={setLayers} units={units} view={cornView} technical={founderView && allLayers}
+          onSelect={(p, lat, lng, across) => { setActivePatch(null); setSelection(p); zoomTo(lat, lng, across); }}
+          plotCtx={plotCtx} patches={patches} blockHa={s.blockHa} activePatch={activePatch} onLookAt={l => { setSelection(null); setActivePatch(l.patch ?? null); zoomTo(l.lat, l.lng, l.across); }}
+          plots={founderView && plotCtx && !rowEditing ? <PlotWorkbench map={leafMap} ctx={plotCtx} twinId={twin.id} onBusy={onPlotBusy} /> : null} />}
         {twin.corn && founderView && <RowEditPanel edits={rowEdits} editing={rowEditing} onStart={startRowEditing} onDone={finishRowEditing}
           onClearAll={() => { commitRows(NO_ROW_EDITS, "All corrections cleared"); }} hideRows={hideRows} setHideRows={setHideRows}
           plants={plants ? { count: plants.points.length, note: plants.sorted ? SORTED_PLANTS_NOTE : plants.note } : null} showPlants={showPlants} setShowPlants={setShowPlants} photographsOn={!!reference} />}
@@ -646,16 +663,16 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
 
       {/* Status strip and legend, bottom left: what this zoom shows, what the colours mean. Closable; a small "Key" pill brings it back. */}
       {!keyOpen && (
-        <button type="button" className={`absolute bottom-3 left-3 z-[700] px-2.5 py-1 text-[11px] text-neutral-300 hover:text-neutral-100 ${panel}`} onClick={() => setKeyOpen(true)} aria-label="Show the key">
+        <button type="button" className={`absolute bottom-3 z-[700] px-2.5 py-1 text-[11px] text-neutral-300 hover:text-neutral-100 ${narrow ? "left-3" : "left-[296px]"} ${panel}`} onClick={() => setKeyOpen(true)} aria-label="Show the key">
           <span className="font-semibold">{detail ? LEVEL_NAME[detail.level] : "Field Twin"}</span><span className="text-neutral-500"> · key</span>
         </button>
       )}
-      {keyOpen && !rowEditing && !(narrow && (dockOpen || panelsOpen)) && <div className={`absolute bottom-3 left-3 right-3 z-[700] max-w-[420px] px-3 py-2 text-[11px] text-neutral-300 sm:right-auto ${panel}`}>
+      {keyOpen && !rowEditing && !(narrow && (dockOpen || panelsOpen)) && <div className={`absolute bottom-3 right-3 z-[700] max-w-[420px] px-3 py-2 text-[11px] text-neutral-300 sm:right-auto ${narrow ? "left-3" : "left-[296px]"} ${panel}`} role="group" aria-label="Key">
         <div className="flex items-start justify-between gap-3">
           <p className="text-xs"><span className="font-semibold text-neutral-100">{detail ? LEVEL_NAME[detail.level] : "Field Twin"}</span><span className="text-neutral-500"> · {twin.name}</span></p>
           <button type="button" className="-mr-1 -mt-0.5 rounded-sm px-1 text-[13px] leading-none text-neutral-500 hover:bg-[#262a26] hover:text-neutral-200" onClick={() => setKeyOpen(false)} aria-label="Close the key" title="Close the key">×</button>
         </div>
-        <p className="mt-0.5 text-neutral-300">Review-only: these are observations for you to check, not treatment decisions.</p>
+        {!twin.corn && <p className="mt-0.5 text-neutral-300">Review-only: these are observations for you to check, not treatment decisions.</p>}
         {!local && <p className="mt-0.5 text-neutral-400">{placementText(twin)}</p>}
         {twin.corn ? <><p className="mt-0.5 text-neutral-400">{cornView === "geometry" || rowEditing || photosUnder || !!reference ? "Click a row or a weed to inspect it." : "Zoom in to see each plant. Click a plant or a weed to inspect it."}</p><CornLegend corn={twin.corn} showPlants={!!plants && showPlants} uncertain={layers.cornUncertain} overPhotos={photosUnder} view={rowEditing || photosUnder || reference ? null : cornView} sampled={cornLook.sampled} doubles={founderView && allLayers} /></> : <p className="mt-0.5 text-neutral-400">{detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>}
         {local && <p className="mt-0.5 text-amber-300/90">Locally aligned test flight: positions relative to each other, scale estimated from the corn rows. Not on the map.</p>}

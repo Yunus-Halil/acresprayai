@@ -80,6 +80,7 @@ describe("the plant count", () => {
     expect(c.onRows + c.offRows).toBe(c.total);
     expect(c.offRows).toBeGreaterThan(0);
     const r = open(PLANTS_TWIN);
+    fireEvent.click(within(screen.getByRole("group", { name: "Corn" })).getByRole("button", { name: /^Details/ }));
     const count = screen.getByRole("group", { name: "Plant count" });
     expect(within(count).getByText("Plants counted").nextSibling?.textContent).toBe(c.total.toLocaleString());
     expect(within(count).getByText("On the rows").nextSibling?.textContent).toBe(c.onRows.toLocaleString());
@@ -93,7 +94,7 @@ describe("the plant count", () => {
     // The fixture twin's rows came from the photographs' lattice: it carries no plants.
     expect(CORN_TWIN.corn!.plants).toBeUndefined();
     const r = open(CORN_TWIN);
-    expect(within(screen.getByRole("group", { name: "Plant count" })).getByText("not counted on this flight")).toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "Stand" })).getByText("not counted on this flight")).toBeInTheDocument();
     expect(screen.getByText("Corn row (plants not counted one by one)")).toBeInTheDocument();
     await close(r);
   });

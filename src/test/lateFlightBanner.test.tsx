@@ -37,7 +37,9 @@ describe("the corn panel on a late twin", () => {
     const t = JSON.parse(JSON.stringify(syntheticCornTwin({ plants: 500 })));
     delete t.corn.plants; t.corn.stage = LATE;
     render(<CornFieldPanel twin={t} corn={t.corn} layers={DEFAULT_LAYERS} setLayers={() => undefined} onSelect={() => undefined} units="imperial" view="realistic" />);
-    expect(screen.getByRole("group", { name: "Plant count" })).toHaveTextContent(/not counted on this flight.*The corn canopy has closed in 31 of the 40 photographs/);
+    expect(screen.getByRole("group", { name: "Stand" })).toHaveTextContent(/not counted on this flight.*The corn canopy has closed in 31 of the 40 photographs/);
+    // One line on the flight, because it limits the result.
+    expect(screen.getByRole("note", { name: "Flight" })).toHaveTextContent(/late: the canopy has closed in 31 of the 40 photographs/);
   });
 });
 

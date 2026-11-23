@@ -13,6 +13,8 @@ import { localFrame } from "@/lib/fieldTwin/intelligence";
 import { CORN_WEED_LABEL, type CornFieldRowView, cornFieldRows, cornGapColour, cornRowColour, cornWeedColour, fieldRowOf, isLocalTwin } from "@/lib/fieldTwin/cornView";
 import { CORN_RENDER, type CornViewMode, cornLookOf, cornPlantCount, isOnRow, plantsSorted, rgbCss } from "@/lib/fieldTwin/cornRender";
 import { toWorld } from "@/lib/fieldTwin/scene";
+import { type PlotContext, fieldStand, fmtAcres, fmtFt, fmtIn, fmtPct, fmtPerAcre, plotContext, readShareOf } from "@/lib/fieldTwin/plots";
+import { WEED_PATCH_COLOUR, type WeedPatch, thinRows, weedPatches } from "@/lib/fieldTwin/cornPatches";
 import EvidenceCrop from "./EvidenceCrop";
 import type { TwinPick } from "./TwinCanvasLayer";
 
@@ -26,11 +28,34 @@ const middle = (line: [number, number][]) => line[line.length >> 1];
 
 type ListKey = "confirmedWeeds" | "otherWeeds" | "gaps" | "withheldGaps" | "rows";
 
-/** The left-column panel for a corn twin. */
-export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, units, view, technical = false }: { twin: TwinBundle; corn: TwinCorn; layers: TwinLayers; setLayers: (f: (l: TwinLayers) => TwinLayers) => void; onSelect: (p: TwinPick, lat: number, lng: number, metresAcross: number) => void; units: UnitSystem; /** The view on the map (its colours are the swatches here). */ view: CornViewMode; /** The founder's "All layers": the finer breakdown and the whole-layer switch. */ technical?: boolean }) {
-  const s = corn.summary;
-  // The count (cornRender.ts cornPlantCount): on a sorted twin the plants on the rows (2026-11-20); before the sort every
-  // located plant. The swatches are the colours on the map.
+/** A finding to fly to from "What to look at": its place, and how much ground to show round it. */
+export type LookAt = { lat: number; lng: number; across: number; patch?: number };
+
+const flown = (twin: TwinBundle) => {
+  const c = twin.source.capturedAt;
+  if (!c) return null;
+  const v = Date.parse(c.replace(/^(\d{4}):(\d{2}):(\d{2})/, "$1-$2-$3"));
+  return Number.isFinite(v) ? new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : null;
+};
+
+/**
+ * The left-column cards for a corn twin (his brief of 2026-11-23, option A): the Stand (plants per acre first, over the
+ * rows the photographs read), What to look at (weed patches, gaps, thin rows, each one a click to its place), a line on
+ * the flight only when it limits the result, then Details, closed, with everything else. US units throughout. `plots`
+ * goes between the flight line and Details (the founder's plot cards).
+ */
+export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, view, technical = false, plotCtx: ctxProp, patches: patchesProp, blockHa = null, onLookAt, activePatch = null, plots = null }: {
+  twin: TwinBundle; corn: TwinCorn; layers: TwinLayers; setLayers: (f: (l: TwinLayers) => TwinLayers) => void;
+  onSelect: (p: TwinPick, lat: number, lng: number, metresAcross: number) => void;
+  /** Kept for the callers; the corn panel speaks US units (his brief). */ units?: UnitSystem;
+  /** The view on the map (its colours are the swatches here). */ view: CornViewMode;
+  /** The founder's "All layers": the finer breakdown and the whole-layer switch. */ technical?: boolean;
+  /** The plot context and weed patches the page already made (made here when absent). */ plotCtx?: PlotContext | null; patches?: WeedPatch[] | null;
+  /** The field boundary's area, hectares. */ blockHa?: number | null;
+  /** A weed patch chosen (the map flies to it and marks it); a gap or a row goes through onSelect. */ onLookAt?: (l: LookAt) => void; activePatch?: number | null;
+  plots?: React.ReactNode;
+}) {
+  const s = corn.summary, U: UnitSystem = "imperial";
   const count = useMemo(() => cornPlantCount(corn), [corn]);
   const look = useMemo(() => cornLookOf(corn, toWorld), [corn]);
   const onRowCss = view === "simple" ? rgbCss(CORN_RENDER.simpleCorn) : rgbCss(look.corn), offRowCss = rgbCss(CORN_RENDER.offRow), notCornCss = rgbCss(CORN_RENDER.notCorn);
@@ -40,19 +65,29 @@ export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, units,
   const R = useMemo(() => ({ n: fieldRows.length, confirmedM: fieldRows.reduce((t, r) => t + r.confirmedM, 0), notConfirmedM: fieldRows.reduce((t, r) => t + r.notConfirmedM, 0), courseOnly: fieldRows.filter(r => r.confirmed === 0).length }), [fieldRows]);
   const P = corn.plants?.summary ?? null;
   const hidden = s.weeds.unconfirmed + s.weeds.contested + s.gaps.withheld;
+  const ctx = useMemo(() => (ctxProp !== undefined ? ctxProp : plotContext(twin)), [ctxProp, twin]);
+  const patches = useMemo(() => patchesProp ?? (ctx ? weedPatches(ctx) : []), [patchesProp, ctx]);
+  const stand = useMemo(() => fieldStand(twin), [twin]);
+  const span = useMemo(() => { if (!ctx) return null; const v = Array.from(ctx.pSpan).filter(x => !Number.isNaN(x)).sort((a, b) => a - b); return v.length ? v[v.length >> 1] : null; }, [ctx]);
+  const thin = useMemo(() => (ctx ? thinRows(ctx) : null), [ctx]);
   const [list, setList] = useState<ListKey>("confirmedWeeds");
-  const [open, setOpen] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [allPatches, setAllPatches] = useState(false);
+  const late = corn.stage?.verdict === "late";
+  const readShare = ctx?.readShare ?? readShareOf(corn.notes);
+  const gapsLeftOut = ctx ? !ctx.gaps.measured : readShare != null;
+  const gapsWhy = ctx && ctx.gaps.measured === false ? ctx.gaps.why : null;
+
   const items = useMemo(() => {
     const byArea = (a: TwinCornWeed, b: TwinCornWeed) => b.areaM2 - a.areaM2;
-    if (list === "confirmedWeeds") return corn.weeds.filter(w => w.status === "confirmed").sort(byArea).map(w => ({ key: `w${w.id}`, colour: cornWeedColour(w.status), title: `Weed ${w.id}`, detail: `${fmtAreaCm2(w.areaM2 * 10_000, units).text}, a weed in ${w.votes.weed} of the ${w.seenBy} photographs that saw it`, pick: { kind: "cornWeed", id: w.id } as TwinPick, lat: w.lat, lng: w.lng, across: 2 }));
-    if (list === "otherWeeds") return corn.weeds.filter(w => w.status !== "confirmed").sort(byArea).map(w => ({ key: `w${w.id}`, colour: cornWeedColour(w.status), title: `${w.status === "contested" ? "Contested" : "Unconfirmed"} ${w.id}`, detail: `${fmtAreaCm2(w.areaM2 * 10_000, units).text}, weed in ${w.votes.weed}, crop in ${w.votes.crop} of the ${w.seenBy} that saw it`, pick: { kind: "cornWeed", id: w.id } as TwinPick, lat: w.lat, lng: w.lng, across: 2 }));
-    if (list === "gaps" || list === "withheldGaps") return corn.gaps.filter(g => (list === "gaps" ? g.status === "confirmed" : g.status === "withheld")).sort((a, b) => b.lengthM - a.lengthM).map(g => ({ key: `g${g.id}`, colour: gapColour(g.status), title: `Gap ${g.id}, row ${g.rowId}`, detail: `${cm(g.lengthM, units)}, reported by ${g.reportedBy.length}`, pick: { kind: "cornGap", id: g.id } as TwinPick, lat: (g.a[0] + g.b[0]) / 2, lng: (g.a[1] + g.b[1]) / 2, across: Math.max(3, g.lengthM * 2.5) }));
-    // One entry per field row (its stretches are one object), longest first.
+    if (list === "confirmedWeeds") return corn.weeds.filter(w => w.status === "confirmed").sort(byArea).map(w => ({ key: `w${w.id}`, colour: cornWeedColour(w.status), title: `Weed ${w.id}`, detail: `${fmtAreaCm2(w.areaM2 * 10_000, U).text}, a weed in ${w.votes.weed} of the ${w.seenBy} photographs that saw it`, pick: { kind: "cornWeed", id: w.id } as TwinPick, lat: w.lat, lng: w.lng, across: 2 }));
+    if (list === "otherWeeds") return corn.weeds.filter(w => w.status !== "confirmed").sort(byArea).map(w => ({ key: `w${w.id}`, colour: cornWeedColour(w.status), title: `${w.status === "contested" ? "Contested" : "Unconfirmed"} ${w.id}`, detail: `${fmtAreaCm2(w.areaM2 * 10_000, U).text}, weed in ${w.votes.weed}, crop in ${w.votes.crop} of the ${w.seenBy} that saw it`, pick: { kind: "cornWeed", id: w.id } as TwinPick, lat: w.lat, lng: w.lng, across: 2 }));
+    if (list === "gaps" || list === "withheldGaps") return corn.gaps.filter(g => (list === "gaps" ? g.status === "confirmed" : g.status === "withheld")).sort((a, b) => b.lengthM - a.lengthM).map(g => ({ key: `g${g.id}`, colour: gapColour(g.status), title: `Gap ${g.id}, row ${g.rowId}`, detail: `${cm(g.lengthM, U)}, reported by ${g.reportedBy.length}`, pick: { kind: "cornGap", id: g.id } as TwinPick, lat: (g.a[0] + g.b[0]) / 2, lng: (g.a[1] + g.b[1]) / 2, across: Math.max(3, g.lengthM * 2.5) }));
     return [...fieldRows].sort((a, b) => b.lengthM - a.lengthM).map(v => {
       const first = corn.rows[v.stretches.find(i => corn.rows[i].status === "corn") ?? v.stretches[0]], line = corn.rows[v.stretches[v.stretches.length >> 1]].line;
-      return { key: `r${v.id}`, colour: v.confirmed ? TWIN_COLOURS.cornRow : TWIN_COLOURS.cornRowCourse, title: `Row ${v.id}${v.confirmed ? "" : v.plantsFirst ? ", no plant confirmed" : ", crop not confirmed"}`, detail: rowListDetail(v, units), pick: { kind: "cornRow", id: first.id } as TwinPick, lat: middle(line)[0], lng: middle(line)[1], across: Math.max(6, v.lengthM * 1.1) };
+      return { key: `r${v.id}`, colour: v.confirmed ? TWIN_COLOURS.cornRow : TWIN_COLOURS.cornRowCourse, title: `Row ${v.id}${v.confirmed ? "" : v.plantsFirst ? ", no plant confirmed" : ", crop not confirmed"}`, detail: rowListDetail(v, U), pick: { kind: "cornRow", id: first.id } as TwinPick, lat: middle(line)[0], lng: middle(line)[1], across: Math.max(6, v.lengthM * 1.1) };
     });
-  }, [list, corn, units, fieldRows]);
+  }, [list, corn, fieldRows, U]);
   const tab = (k: ListKey, label: string, n: number) => (
     <button key={k} type="button" onClick={() => setList(k)} aria-pressed={list === k} className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${list === k ? "bg-[#f0a63a] font-semibold text-[#171a18]" : "text-neutral-300 hover:bg-[#262a26]"}`}>{label} {n}</button>
   );
@@ -62,78 +97,144 @@ export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, units,
       <span>{label}<span className="block text-[10px] leading-snug text-neutral-500">{hint}</span></span>
     </label>
   );
+  const cap = (t: string) => <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-neutral-400">{t}</span>;
+  const go = <span className="ml-auto pl-1 text-[12px] text-[#f0a63a]" aria-hidden="true">›</span>;
+  const date = flown(twin);
+
+  // The flight, in one line, only when something limits the result.
+  const limits: string[] = [];
+  if (late) limits.push(`late: the canopy has closed in ${corn.stage!.late} of the ${corn.stage!.looked} photographs, so plants aren't counted`);
+  if (!late && gapsLeftOut && readShare != null) limits.push(`single photographs held only ${Math.round(100 * readShare)} % of the row length, so gaps can't be measured`);
+  if (twin.source.groundPixelCm > 1) limits.push(`flown high (${(twin.source.groundPixelCm / 2.54).toFixed(2)} in a pixel): the smallest seedlings may be missed`);
+  if (count && stand?.readShare != null && stand.readShare < 0.8) limits.push(`plants seen along only ${fmtPct(stand.readShare)} of the row`);
+
+  const spanIn = span != null ? Math.round(span / 0.0254) : null;
+  const patchArea = patches.reduce((t, p) => t + p.areaM2, 0);
+  const shownPatches = allPatches ? patches : patches.slice(0, 3);
+  const confirmedWeeds = corn.weeds.filter(w => w.status === "confirmed");
+  const confirmedGaps = corn.gaps.filter(g => g.status === "confirmed");
+
   return (
-    <div className={`w-[272px] px-3 py-2 text-xs ${panel}`} role="group" aria-label="Corn">
-      <button type="button" className="flex w-full items-center justify-between text-left" onClick={() => setOpen(o => !o)} aria-expanded={open}>
-        <span className="font-semibold text-neutral-100">Corn</span>
-        <span className="text-[10px] text-neutral-400">{count ? `${count.total.toLocaleString()} plants · ` : ""}{R.n} rows · {s.weeds.confirmed} weeds</span>
-      </button>
-      {open && <>
-        <p className="mt-1 text-[10px] leading-snug text-neutral-400">Every photograph read by Corn V1, combined over the field ({corn.photographs.read} photographs). The crop is your entry. Review-only: a finding is something to look at, not a treatment decision.</p>
+    <div className="flex w-[272px] flex-col gap-2 text-xs" role="group" aria-label="Corn">
+      {/* The stand: plants per acre, over the rows the photographs read. */}
+      <div className={`px-3 pb-2.5 pt-2.5 ${panel}`} role="group" aria-label="Stand">
+        <div className="flex items-baseline justify-between gap-2">{cap("Stand")}<span className="truncate text-[10.5px] text-neutral-500">{[twin.name, date ? `flown ${date}` : null].filter(Boolean).join(" · ")}</span></div>
         {isLocalTwin(twin) && <p className="mt-1 text-[10px] leading-snug text-amber-300/90">Test flight, locally aligned: positions are relative to each other and the scale is estimated from the corn rows. Not a place on the map.</p>}
-        {count ? (
-          <div className="mt-1.5 rounded-sm border border-[#2e322e] bg-[#111311] px-2 py-1.5" role="group" aria-label="Plant count">
-            <div className="flex items-baseline justify-between"><span className="text-[11px] text-neutral-300">Plants counted</span><span className="text-base font-semibold tabular-nums text-neutral-50">{count.total.toLocaleString()}</span></div>
-            {count.sorted ? <>
-              <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
-                <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: onRowCss }} />On the rows</dt><dd className="text-right tabular-nums text-neutral-100">{count.onRows.toLocaleString()}</dd>
-              </dl>
-              <div className="mt-1 flex items-baseline justify-between border-t border-[#262a26] pt-1 text-[11px]"><span className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: notCornCss }} />Green, not corn (not counted)</span><span className="tabular-nums text-neutral-300">{count.notCorn.toLocaleString()}</span></div>
-              {technical && <div className="mt-0.5 flex items-baseline justify-between text-[11px]"><span className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: offRowCss }} />Doubles (not counted)</span><span className="tabular-nums text-neutral-300">{count.doubles.toLocaleString()}</span></div>}
-              <p className="mt-1 text-[10px] leading-snug text-neutral-500">Counted: the plants on the rows. A mark on a row very close to a plant already counted there is left out (mostly the same plant seen twice){technical ? "; with All layers these doubles are drawn in blue" : ""}. Green off the rows (between rows, past the rows' ends, beyond the outer rows) is not corn and is not counted{count.betweenRows ? `; ${count.betweenRows.toLocaleString()} of it stands between two rows` : ""}.</p>
-            </> : <>
-              <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
-                <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: onRowCss }} />On the rows</dt><dd className="text-right tabular-nums text-neutral-100">{count.onRows.toLocaleString()}</dd>
-                <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: offRowCss }} />Off the rows</dt><dd className="text-right tabular-nums text-neutral-100">{count.offRows.toLocaleString()}</dd>
-              </dl>
-              <p className="mt-1 text-[10px] leading-snug text-neutral-500">Every plant two or more photographs located is counted. Plants off the rows are counted too and drawn in their own colour{count.betweenRows ? ` (${count.betweenRows.toLocaleString()} of them stand between two rows)` : ""}. Built before plants off the rows were sorted: building it again counts the corn only.</p>
-            </>}
-          </div>
-        ) : (
-          <div className="mt-1.5 rounded-sm border border-[#2e322e] bg-[#111311] px-2 py-1.5" role="group" aria-label="Plant count">
-            <div className="flex items-baseline justify-between"><span className="text-[11px] text-neutral-300">Plants counted</span><span className="text-[11px] font-semibold text-neutral-200">not counted on this flight</span></div>
-            <p className="mt-1 text-[10px] leading-snug text-neutral-500">{corn.stage?.verdict === "late" ? `The corn canopy has closed in ${corn.stage.late} of the ${corn.stage.looked} photographs, so plants cannot be told apart. The rows are drawn as bands instead of single plants.` : withheld ?? "The photographs gave no plant-by-plant count here (plants too large to tell apart, or no row of plants found). The rows are drawn as bands instead of single plants."}</p>
-          </div>
+        {count && stand?.perAcre != null ? <>
+          <div className="mt-2 flex items-baseline gap-2"><span className="text-[32px] font-bold leading-none tracking-tight tabular-nums text-neutral-50">{fmtPerAcre(stand.perAcre)}</span><span className="text-[13px] text-neutral-300">plants / acre</span></div>
+          <p className="mt-1 text-[10.5px] text-neutral-400">over the {fmtFt(stand.seenM)} of row with plants seen ({fmtAcres(stand.seenM * stand.spacingM)})</p>
+        </> : (
+          <div className="mt-2"><div className="flex items-baseline justify-between gap-2"><span className="text-[11px] text-neutral-300">Plants counted</span><span className="text-[11px] font-semibold text-neutral-200">not counted on this flight</span></div>
+            <p className="mt-1 text-[10px] leading-snug text-neutral-500">{late ? `The corn canopy has closed in ${corn.stage!.late} of the ${corn.stage!.looked} photographs, so plants cannot be told apart. The rows are drawn as bands instead of single plants.` : withheld ?? "The photographs gave no plant-by-plant count here (plants too large to tell apart, or no row of plants found). The rows are drawn as bands instead of single plants."}</p></div>
         )}
-        <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
-          <dt className="text-neutral-400">Rows</dt><dd className="text-right tabular-nums text-neutral-100">{R.n}{R.courseOnly ? ` (${R.courseOnly} ${plantsFirst ? "with no plant confirmed" : "crop not confirmed"})` : ""}</dd>
-          <dt className="text-neutral-400"><span className="mr-1 inline-block h-0.5 w-3 align-middle" style={{ background: TWIN_COLOURS.cornRow }} />{plantsFirst ? "Plants seen along" : "Corn rows"}</dt><dd className="text-right tabular-nums text-neutral-100">{fmtDistance(R.confirmedM, units).text}</dd>
-          <dt className="text-neutral-400"><span className="mr-1 inline-block h-px w-3 align-middle" style={{ background: TWIN_COLOURS.cornRowCourse }} />{plantsFirst ? "No plant confirmed" : "Crop not confirmed"}</dt><dd className="text-right tabular-nums text-neutral-100">{fmtDistance(R.notConfirmedM, units).text}</dd>
-          {technical && P && <><dt className="text-neutral-500">Seen by most photographs / probable</dt><dd className="text-right tabular-nums text-neutral-300">{P.certain.toLocaleString()} / {P.probable.toLocaleString()}</dd></>}
-          {technical && P?.alongRowsTwo != null && <><dt className="text-neutral-500">Second look along rows (2+ / 1 view)</dt><dd className="text-right tabular-nums text-neutral-300">{P.alongRowsTwo.toLocaleString()} / {(P.alongRowsOne ?? 0).toLocaleString()}</dd></>}
-          {technical && P && <><dt className="text-neutral-500">On no row / between rows</dt><dd className="text-right tabular-nums text-neutral-300">{P.onNoRow.toLocaleString()} / {P.betweenRows.toLocaleString()}</dd></>}
-          <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornWeed }} />Weeds, confirmed</dt><dd className="text-right tabular-nums text-neutral-100">{s.weeds.confirmed}</dd>
-          <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornWeedUnconfirmed }} />Not confirmed / contested</dt><dd className="text-right tabular-nums text-neutral-100">{s.weeds.unconfirmed} / {s.weeds.contested}</dd>
-          <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornGap }} />Stand gaps</dt><dd className="text-right tabular-nums text-neutral-100">{s.gaps.confirmed} ({cm(s.gaps.confirmedLengthM, units)})</dd>
-          <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornGapWithheld }} />Gaps withheld</dt><dd className="text-right tabular-nums text-neutral-100">{s.gaps.withheld}</dd>
-          <dt className="text-neutral-400">Row spacing</dt><dd className="text-right tabular-nums text-neutral-100">{corn.rowSpacingM != null ? cm(corn.rowSpacingM, units) : "–"}{isLocalTwin(twin) ? " (scale estimated)" : ""}</dd>
-          <dt className="text-neutral-400">Photographs agree on rows</dt><dd className="text-right tabular-nums text-neutral-100">{corn.rowAgreementM != null ? `within ${cm(corn.rowAgreementM, units)}` : "–"}</dd>
+        <dl className="mt-2.5 grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 text-[11.5px]">
+          {count && <><dt className="text-neutral-400">Plants counted</dt><dd className="text-right tabular-nums text-neutral-100">{count.total.toLocaleString("en-US")}</dd></>}
+          <dt className="text-neutral-400">Stage</dt><dd className="text-right text-neutral-100">{late ? "Late, canopy closing" : count ? `Emergence${spanIn ? ` · ~${spanIn} in tip to tip` : ""}` : "–"}</dd>
+          <dt className="text-neutral-400">Row spacing</dt><dd className="text-right tabular-nums text-neutral-100">{corn.rowSpacingM != null ? `${fmtIn(corn.rowSpacingM)}${isLocalTwin(twin) ? " (estimated)" : ""}` : "–"}</dd>
+          {count && stand?.readShare != null && <><dt className="text-neutral-400">Rows read in the photos</dt><dd className="text-right tabular-nums text-neutral-100">{fmtPct(stand.readShare)}</dd></>}
+          {blockHa != null && <><dt className="text-neutral-400">Field</dt><dd className="text-right tabular-nums text-neutral-100">{fmtAcres(blockHa * 10_000)}</dd></>}
         </dl>
-        {/* What the field combination left out or withheld on this flight, in its own words (the last note is the review-only line above). */}
-        {corn.notes.length > 1 && <ul className="mt-1.5 space-y-1 border-l border-[#2e322e] pl-2 text-[10px] leading-snug text-neutral-400" aria-label="Notes on this flight">{corn.notes.slice(0, -1).map(n => <li key={n}>{n}</li>)}</ul>}
-        <div className="mt-1.5 border-t border-[#2e322e] pt-1">
-          {technical && check("corn", "Corn layer", "everything the corn read found: plants, rows, weeds and gaps")}
-          {check("cornUncertain", `Observations not confirmed${hidden ? ` (${hidden.toLocaleString()})` : ""}`, "weed candidates not repeated or contested, gaps withheld: kept for review, never findings")}
+      </div>
+
+      {/* What to look at: each one a click to its place on the map. */}
+      <div className={`px-1.5 pb-2 pt-2.5 ${panel}`} role="group" aria-label="What to look at">
+        <div className="px-1.5 pb-1">{cap("What to look at")}</div>
+        {ctx && <>
+          <div className="flex items-baseline justify-between gap-2 px-1.5 py-0.5 text-[11.5px]"><span className="text-neutral-200">Weed patches <span className="text-neutral-500">(unconfirmed)</span></span><span className="tabular-nums text-neutral-100">{patches.length ? `${patches.length} · ${fmtAcres(patchArea)}` : "None"}</span></div>
+          {shownPatches.map(p => (
+            <button key={p.number} type="button" className={`flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[11.5px] text-neutral-200 hover:bg-[#232723] ${activePatch === p.number ? "bg-[#232723]" : ""}`}
+              onClick={() => onLookAt?.({ lat: p.lat, lng: p.lng, across: Math.max(6, Math.sqrt(p.areaM2) * 2.2), patch: p.number })} aria-label={`Weed patch ${p.number}: ${fmtAcres(p.areaM2)}, ${p.where}`}>
+              <span className={`inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full text-[10.5px] font-extrabold text-[#1b1d1b] ${activePatch === p.number ? "ring-2 ring-white" : ""}`} style={{ background: WEED_PATCH_COLOUR }}>{p.number}</span>
+              <span>{fmtAcres(p.areaM2)} · {p.where}</span>{go}
+            </button>
+          ))}
+          {patches.length > 3 && <button type="button" className="px-2 pb-1 text-[10.5px] text-neutral-500 hover:text-neutral-300" onClick={() => setAllPatches(o => !o)}>{allPatches ? "Show the largest 3" : `+ ${patches.length - 3} smaller · show all`}</button>}
+          {patches.length > 0 && <p className="px-2 pb-1 text-[10px] leading-snug text-neutral-500">Where the green that is not corn stands thick: often weeds, sometimes dark ground or shadow.</p>}
+        </>}
+        {confirmedWeeds.length > 0 && <div className="mx-1.5 mt-1 border-t border-[#262a26] pt-1.5">
+          <div className="flex items-baseline justify-between text-[11.5px]"><span className="text-neutral-200">Weed candidates, confirmed</span><span className="tabular-nums text-neutral-100">{confirmedWeeds.length}</span></div>
+          {confirmedWeeds.slice(0, 3).map(w => <button key={w.id} type="button" className="flex w-full items-center gap-2 rounded-sm px-0.5 py-1 text-left text-[11px] text-neutral-300 hover:bg-[#232723]" onClick={() => onSelect({ kind: "cornWeed", id: w.id }, w.lat, w.lng, 2)}><span className="inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornWeed }} />Weed {w.id} · {fmtAreaCm2(w.areaM2 * 10_000, U).text}{go}</button>)}
+        </div>}
+        <div className="mx-1.5 mt-1 border-t border-[#262a26] pt-1.5">
+          <div className="flex items-baseline justify-between gap-2 text-[11.5px]"><span className="text-neutral-200">Gaps in the stand</span><span className={gapsLeftOut ? "text-right text-neutral-400" : "tabular-nums text-neutral-100"}>{gapsLeftOut ? "Not measured on this flight" : confirmedGaps.length ? `${confirmedGaps.length} · ${fmtFt(confirmedGaps.reduce((t, g) => t + g.lengthM, 0))}` : "None"}</span></div>
+          {gapsLeftOut && <p className="mt-0.5 text-[10.5px] leading-snug text-neutral-500">{gapsWhy ?? "A stretch with no plant seen can't be told from plants the photographs missed."}</p>}
+          {!gapsLeftOut && confirmedGaps.slice(0, 3).map(g => <button key={g.id} type="button" className="flex w-full items-center gap-2 rounded-sm px-0.5 py-1 text-left text-[11px] text-neutral-300 hover:bg-[#232723]" onClick={() => onSelect({ kind: "cornGap", id: g.id }, (g.a[0] + g.b[0]) / 2, (g.a[1] + g.b[1]) / 2, Math.max(3, g.lengthM * 2.5))}><span className="inline-block h-1 w-3" style={{ background: TWIN_COLOURS.cornGap }} />Row {g.rowId} · {fmtIn(g.lengthM, 0)}{go}</button>)}
         </div>
-        <div className="mt-1.5 border-t border-[#2e322e] pt-1.5">
-          <div className="flex flex-wrap gap-0.5">
-            {tab("confirmedWeeds", "Weeds", s.weeds.confirmed)}
-            {tab("otherWeeds", "Unconfirmed", s.weeds.unconfirmed + s.weeds.contested)}
-            {tab("gaps", "Gaps", s.gaps.confirmed)}
-            {tab("withheldGaps", "Withheld", s.gaps.withheld)}
-            {tab("rows", "Rows", fieldRows.length)}
+        {thin && thin.medianPerM != null && <div className="mx-1.5 mt-1.5 border-t border-[#262a26] pt-1.5">
+          <div className="flex items-baseline justify-between text-[11.5px]"><span className="text-neutral-200">Thin rows</span><span className={thin.rows.length ? "tabular-nums text-neutral-100" : "text-neutral-400"}>{thin.rows.length || "None"}</span></div>
+          {thin.rows.length === 0 && thin.lowestShare != null && <p className="mt-0.5 text-[10.5px] leading-snug text-neutral-500">The thinnest row holds {fmtPct(thin.lowestShare)} of the median row's {(thin.medianPerM * 3.048).toFixed(1)} plants per 10 ft.</p>}
+          {thin.rows.map(r => { const v = fieldRows.find(x => x.id === r.row); const first = v ? corn.rows[v.stretches.find(i => corn.rows[i].status === "corn") ?? v.stretches[0]] : null; return (
+            <button key={r.row} type="button" className="flex w-full items-center gap-2 rounded-sm px-0.5 py-1 text-left text-[11px] text-neutral-300 hover:bg-[#232723]" onClick={() => { if (first) onSelect({ kind: "cornRow", id: first.id }, r.lat, r.lng, Math.max(6, r.lengthM * 1.1)); }}>
+              <span className="inline-block h-0.5 w-3" style={{ background: TWIN_COLOURS.cornRow }} />Row {r.row} · {(r.perM * 3.048).toFixed(1)} plants per 10 ft{go}</button>); })}
+          {thin.rows.length > 0 && <p className="mt-0.5 text-[10px] leading-snug text-neutral-500">Under 70 % of the median row's {(thin.medianPerM * 3.048).toFixed(1)} plants per 10 ft of row with plants seen.</p>}
+        </div>}
+      </div>
+
+      {limits.length > 0 && <div className="flex gap-1.5 rounded border border-[#6b4f1d] bg-[rgba(64,46,14,0.55)] px-2.5 py-1.5 text-[11px] leading-snug text-[#f3c97a]" role="note" aria-label="Flight"><span aria-hidden="true">⚠</span><span><b>Flight:</b> {limits.join("; ")}.</span></div>}
+
+      {plots}
+
+      {/* Everything else, closed. */}
+      <div className={`px-3 py-2 ${panel}`} role="group" aria-label="Details">
+        <button type="button" className="flex w-full items-center justify-between text-left text-[11.5px] text-neutral-100" onClick={() => setDetailsOpen(o => !o)} aria-expanded={detailsOpen}><span>Details</span><span className="text-[11px] text-neutral-500" aria-hidden="true">{detailsOpen ? "▾" : "▸"}</span></button>
+        {!detailsOpen && <p className="mt-0.5 text-[10px] text-neutral-500">How it was counted, weed candidates, rows, notes</p>}
+        {detailsOpen && <>
+          <p className="mt-1.5 text-[10px] leading-snug text-neutral-400">Every photograph read by Corn V1, combined over the field ({corn.photographs.read} photographs). The crop is your entry.</p>
+          {count && (
+            <div className="mt-1.5 rounded-sm border border-[#2e322e] bg-[#111311] px-2 py-1.5" role="group" aria-label="Plant count">
+              <div className="flex items-baseline justify-between"><span className="text-[11px] text-neutral-300">Plants counted</span><span className="text-sm font-semibold tabular-nums text-neutral-50">{count.total.toLocaleString()}</span></div>
+              <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
+                <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: onRowCss }} />On the rows</dt><dd className="text-right tabular-nums text-neutral-100">{count.onRows.toLocaleString()}</dd>
+                {!count.sorted && <><dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: offRowCss }} />Off the rows</dt><dd className="text-right tabular-nums text-neutral-100">{count.offRows.toLocaleString()}</dd></>}
+              </dl>
+              {count.sorted ? <>
+                <div className="mt-1 flex items-baseline justify-between border-t border-[#262a26] pt-1 text-[11px]"><span className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: notCornCss }} />Green, not corn (not counted)</span><span className="tabular-nums text-neutral-300">{count.notCorn.toLocaleString()}</span></div>
+                {technical && <div className="mt-0.5 flex items-baseline justify-between text-[11px]"><span className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: offRowCss }} />Doubles (not counted)</span><span className="tabular-nums text-neutral-300">{count.doubles.toLocaleString()}</span></div>}
+                <p className="mt-1 text-[10px] leading-snug text-neutral-500">Counted: the plants on the rows. A mark on a row very close to a plant already counted there is left out (mostly the same plant seen twice){technical ? "; with All layers these doubles are drawn in blue" : ""}. Green off the rows (between rows, past the rows' ends, beyond the outer rows) is not corn and is not counted{count.betweenRows ? `; ${count.betweenRows.toLocaleString()} of it stands between two rows` : ""}.</p>
+              </> : <p className="mt-1 text-[10px] leading-snug text-neutral-500">Every plant two or more photographs located is counted. Plants off the rows are counted too and drawn in their own colour{count.betweenRows ? ` (${count.betweenRows.toLocaleString()} of them stand between two rows)` : ""}. Built before plants off the rows were sorted: building it again counts the corn only.</p>}
+              {stand?.perAcre != null && stand.lowerPerAcre != null && <p className="mt-1 border-t border-[#262a26] pt-1 text-[10px] leading-snug text-neutral-500">Plants per acre: the plants counted ÷ (the {fmtFt(stand.seenM)} of row with plants seen × the {fmtIn(stand.spacingM)} row spacing). If every stretch with no plant confirmed ({fmtFt(stand.notSeenM)}) were a real gap, it would be {fmtPerAcre(stand.lowerPerAcre)} per acre.</p>}
+            </div>
+          )}
+          <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
+            <dt className="text-neutral-400">Rows</dt><dd className="text-right tabular-nums text-neutral-100">{R.n}{R.courseOnly ? ` (${R.courseOnly} ${plantsFirst ? "with no plant confirmed" : "crop not confirmed"})` : ""}</dd>
+            <dt className="text-neutral-400"><span className="mr-1 inline-block h-0.5 w-3 align-middle" style={{ background: TWIN_COLOURS.cornRow }} />{plantsFirst ? "Plants seen along" : "Corn rows"}</dt><dd className="text-right tabular-nums text-neutral-100">{fmtFt(R.confirmedM)}</dd>
+            <dt className="text-neutral-400"><span className="mr-1 inline-block h-px w-3 align-middle" style={{ background: TWIN_COLOURS.cornRowCourse }} />{plantsFirst ? "No plant confirmed" : "Crop not confirmed"}</dt><dd className="text-right tabular-nums text-neutral-100">{fmtFt(R.notConfirmedM)}</dd>
+            {technical && P && <><dt className="text-neutral-500">Seen by most photographs / probable</dt><dd className="text-right tabular-nums text-neutral-300">{P.certain.toLocaleString()} / {P.probable.toLocaleString()}</dd></>}
+            {technical && P?.alongRowsTwo != null && <><dt className="text-neutral-500">Second look along rows (2+ / 1 view)</dt><dd className="text-right tabular-nums text-neutral-300">{P.alongRowsTwo.toLocaleString()} / {(P.alongRowsOne ?? 0).toLocaleString()}</dd></>}
+            {technical && P && <><dt className="text-neutral-500">On no row / between rows</dt><dd className="text-right tabular-nums text-neutral-300">{P.onNoRow.toLocaleString()} / {P.betweenRows.toLocaleString()}</dd></>}
+            <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornWeed }} />Weeds, confirmed</dt><dd className="text-right tabular-nums text-neutral-100">{s.weeds.confirmed}</dd>
+            <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornWeedUnconfirmed }} />Not confirmed / contested</dt><dd className="text-right tabular-nums text-neutral-100">{s.weeds.unconfirmed} / {s.weeds.contested}</dd>
+            {!gapsLeftOut && <><dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornGap }} />Stand gaps</dt><dd className="text-right tabular-nums text-neutral-100">{s.gaps.confirmed} ({fmtFt(s.gaps.confirmedLengthM)})</dd></>}
+            {!gapsLeftOut && <><dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornGapWithheld }} />Gaps withheld</dt><dd className="text-right tabular-nums text-neutral-100">{s.gaps.withheld}</dd></>}
+            <dt className="text-neutral-400">Photographs agree on rows</dt><dd className="text-right tabular-nums text-neutral-100">{corn.rowAgreementM != null ? `within ${cm(corn.rowAgreementM, U)}` : "–"}</dd>
+          </dl>
+          {/* What the field combination left out or withheld, in its own words (its review-only note is the line below). */}
+          {corn.notes.some(n => !/^Review-only/.test(n)) && <ul className="mt-1.5 space-y-1 border-l border-[#2e322e] pl-2 text-[10px] leading-snug text-neutral-400" aria-label="Notes on this flight">{corn.notes.filter(n => !/^Review-only/.test(n)).map(n => <li key={n}>{n}</li>)}</ul>}
+          <div className="mt-1.5 border-t border-[#2e322e] pt-1">
+            {technical && check("corn", "Corn layer", "everything the corn read found: plants, rows, weeds and gaps")}
+            {check("cornUncertain", `Observations not confirmed${hidden ? ` (${hidden.toLocaleString()})` : ""}`, "weed candidates not repeated or contested, gaps withheld: kept for review, never findings")}
           </div>
-          <ul className="mt-1 max-h-48 overflow-y-auto" aria-label="Corn findings to review">
-            {items.length === 0 && <li className="py-1 text-[10px] text-neutral-500">None.</li>}
-            {items.map(it => (
-              <li key={it.key}><button type="button" className="flex w-full items-start gap-1.5 rounded-sm px-1 py-0.5 text-left hover:bg-[#262a26]" onClick={() => onSelect(it.pick, it.lat, it.lng, it.across)}>
-                <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: it.colour }} />
-                <span className="text-[11px] text-neutral-200">{it.title}<span className="block text-[10px] text-neutral-500">{it.detail}</span></span>
-              </button></li>
-            ))}
-          </ul>
-        </div>
-      </>}
+          <div className="mt-1.5 border-t border-[#2e322e] pt-1.5">
+            <div className="flex flex-wrap gap-0.5">
+              {tab("confirmedWeeds", "Weeds", s.weeds.confirmed)}
+              {tab("otherWeeds", "Unconfirmed", s.weeds.unconfirmed + s.weeds.contested)}
+              {!gapsLeftOut && tab("gaps", "Gaps", s.gaps.confirmed)}
+              {!gapsLeftOut && tab("withheldGaps", "Withheld", s.gaps.withheld)}
+              {tab("rows", "Rows", fieldRows.length)}
+            </div>
+            <ul className="mt-1 max-h-48 overflow-y-auto" aria-label="Corn findings to review">
+              {items.length === 0 && <li className="py-1 text-[10px] text-neutral-500">None.</li>}
+              {items.map(it => (
+                <li key={it.key}><button type="button" className="flex w-full items-start gap-1.5 rounded-sm px-1 py-0.5 text-left hover:bg-[#262a26]" onClick={() => onSelect(it.pick, it.lat, it.lng, it.across)}>
+                  <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: it.colour }} />
+                  <span className="text-[11px] text-neutral-200">{it.title}<span className="block text-[10px] text-neutral-500">{it.detail}</span></span>
+                </button></li>
+              ))}
+            </ul>
+          </div>
+        </>}
+        <p className="mt-1.5 border-t border-[#262a26] pt-1.5 text-[10px] leading-snug text-neutral-500">Review-only: for checking in the field, not a treatment decision.</p>
+      </div>
     </div>
   );
 }
@@ -243,7 +344,7 @@ function Evidence({ evidence, atlasUrl, colour, units }: { evidence: TwinEvidenc
 }
 /** A reason as a sentence (nothing when the bundle carries none). */
 const sentence = (why: string | undefined) => (why ? `${why[0].toUpperCase()}${why.slice(1)}.` : "");
-const ReviewOnly = () => <p className="mt-3 text-[10px] leading-snug text-neutral-500">Review-only: a candidate to look at in the field or in the photographs, not a treatment decision. The crop is the operator's entry; nothing here tells corn from another row crop by its look.</p>;
+const ReviewOnly = () => <p className="mt-3 text-[10px] leading-snug text-neutral-500">The crop is the operator's entry; nothing here tells corn from another row crop by its look.</p>;
 
 /** Distance from a point to the nearest corn row, metres. */
 function nearestCornRowM(twin: TwinBundle, corn: TwinCorn, lat: number, lng: number): { id: number; d: number } | null {

@@ -1,6 +1,6 @@
 // A sorted corn twin's doubles (class 7, 2026-11-20): not in the plant count, not drawn or picked in Realistic, Simple
 // or Geometry, and shown in blue only with the founder's "All layers" (the map's showDoubles, the panel's technical).
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { CornFieldPanel, CornLegend } from "@/components/app/fieldTwin/CornPanels";
 import { TwinCanvasLayer } from "@/components/app/fieldTwin/TwinCanvasLayer";
@@ -25,7 +25,8 @@ const counts = (t: TwinBundle) => {
 describe("the doubles on a sorted corn twin", () => {
   it("are not in the plant count, and are listed only with All layers", () => {
     const t = sortedTwin(20), { onRows, notCorn } = counts(t);
-    const panel = (technical: boolean) => render(<CornFieldPanel twin={t} corn={t.corn!} layers={DEFAULT_LAYERS} setLayers={() => undefined} onSelect={() => undefined} units="imperial" view="realistic" technical={technical} />);
+    // The breakdown is in Details (option A, 2026-11-23): opened here.
+    const panel = (technical: boolean) => { const r = render(<CornFieldPanel twin={t} corn={t.corn!} layers={DEFAULT_LAYERS} setLayers={() => undefined} onSelect={() => undefined} units="imperial" view="realistic" technical={technical} />); fireEvent.click(screen.getByRole("button", { name: /^Details/ })); return r; };
     const a = panel(false), box = () => screen.getByRole("group", { name: "Plant count" });
     expect(box()).toHaveTextContent(new RegExp(`Plants counted${onRows.toLocaleString()}`));
     expect(box()).toHaveTextContent(new RegExp(`Green, not corn \\(not counted\\)${notCorn.toLocaleString()}`));

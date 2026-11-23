@@ -1,6 +1,6 @@
 // The twin viewer opened on a finding (the founder's viewer, from a review): that finding is selected and shown,
 // once; a finding the saved twin does not hold selects nothing and says so. The real viewer, not a stand-in.
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import L from "leaflet";
 
@@ -35,6 +35,8 @@ describe("the viewer opened on a reviewed finding", () => {
     expect(onFocus).toHaveBeenCalledTimes(1);
     expect(onFocus).toHaveBeenCalledWith({ status: "unconfirmed" });
     // An unconfirmed observation is hidden by default: opened on one, the viewer shows them, so it is on the map.
+    // (The switch is in the corn panel's Details, closed until opened.)
+    fireEvent.click(within(screen.getByRole("group", { name: "Corn" })).getByRole("button", { name: /^Details/ }));
     expect(screen.getByRole("checkbox", { name: /Observations not confirmed/ })).toBeChecked();
     expect(centre().lat).toBeCloseTo(40.00007, 5);
     expect(centre().lng).toBeCloseTo(-89.999995, 5);
