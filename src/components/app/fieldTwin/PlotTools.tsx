@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LatLngPair } from "@/lib/fieldTwin/types";
 import { PLOT_COLOURS, type Plot, type PlotBox, type PlotContext, type PlotNumbers, type PlotShape, acOf, boxIn, boxRing, fmtAcres, fmtFt, fmtIn, fmtPct, fmtPerAcre, measurePlot, rowsAt, snapRows } from "@/lib/fieldTwin/plots";
 import { loadPlots, nextPlotNumber, savePlots } from "@/lib/fieldTwin/plotStore";
+import { type PlotBackend, accountPlots, pushChange, syncOnOpen } from "@/lib/fieldTwin/plotSync";
 import { newUid } from "@/lib/fieldTwin/rowEdits";
 import { WEED_PATCH_COLOUR, type WeedPatch } from "@/lib/fieldTwin/cornPatches";
 import { fmtPerAcreShort, plotNumberTone } from "@/lib/fieldTwin/simpleView";
@@ -126,9 +127,27 @@ export function PlotNumbersView({ n, shape }: { n: PlotNumbers; shape: PlotShape
  * The Plots card and everything plots do on the map. `onBusy` says when a tool or an edit holds the map (the twin's own
  * clicks are then not picks).
  */
-export function PlotWorkbench({ map, ctx, twinId, onBusy, simple = false, fieldPerAcre = null }: { map: L.Map | null; ctx: PlotContext; twinId: string; onBusy: (busy: boolean) => void; /** The Simple view is on: plots as outlines in their own colour with a label on their top edge. */ simple?: boolean; /** The field's own plants per acre (a plot well under it gets an amber number). */ fieldPerAcre?: number | null }) {
+export function PlotWorkbench({ map, ctx, twinId, onBusy, simple = false, fieldPerAcre = null, account = null, backend = accountPlots }: { map: L.Map | null; ctx: PlotContext; twinId: string; onBusy: (busy: boolean) => void; /** The twin's record in the account (field_twins.id): plots are then kept in the account too (plotSync.ts); null: on this device only. */ account?: string | null; /** Tests only: the account to use. */ backend?: PlotBackend; /** The Simple view is on: plots as outlines in their own colour with a label on their top edge. */ simple?: boolean; /** The field's own plants per acre (a plot well under it gets an amber number). */ fieldPerAcre?: number | null }) {
   const [plots, setPlots] = useState<Plot[]>(() => loadPlots(twinId));
   useEffect(() => { setPlots(loadPlots(twinId)); setSelected(null); setMode({ kind: "idle" }); }, [twinId]);
+  // In the account: "loading" while this device's plots and the account's are brought together (nothing can be drawn
+  // meanwhile, so a change cannot be lost under the result), then "account" or, when it could not be reached, "device".
+  const [kept, setKept] = useState<"device" | "loading" | "account">(account ? "loading" : "device");
+  const [syncNote, setSyncNote] = useState<string | null>(null);
+  const plotsRef = useRef(plots); plotsRef.current = plots;
+  useEffect(() => {
+    if (!account) { setKept("device"); setSyncNote(null); return; }
+    let live = true;
+    const open = () => { setKept(k => (k === "account" ? k : "loading")); void syncOnOpen(twinId, account, backend).then(r => {
+      if (!live) return;
+      setPlots(r.plots);
+      if (r.where === "account") { setKept("account"); setSyncNote(null); } else { setKept("device"); setSyncNote(r.why); }
+    }); };
+    open();
+    // Back online: send what waited on this device.
+    window.addEventListener("online", open);
+    return () => { live = false; window.removeEventListener("online", open); };
+  }, [account, twinId, backend]);
   const [mode, setMode] = useState<Mode>({ kind: "idle" });
   const [selected, setSelected] = useState<string | null>(null);
   const [live, setLive] = useState<{ ring: LatLngPair[]; shape: PlotShape } | null>(null);
@@ -146,9 +165,12 @@ export function PlotWorkbench({ map, ctx, twinId, onBusy, simple = false, fieldP
   useEffect(() => () => onBusy(false), [onBusy]);
 
   const commit = useCallback((next: Plot[]) => {
+    const prev = plotsRef.current;
     setPlots(next);
-    setNote(savePlots(twinId, next) ? null : "Not saved: this browser blocks storage. The plots are on screen only.");
-  }, [twinId]);
+    if (!savePlots(twinId, next)) { setNote("Not saved: this browser blocks storage. The plots are on screen only."); return; }
+    setNote(null);
+    if (account && kept !== "loading") void pushChange(twinId, account, backend, prev, next).then(why => { setSyncNote(why); if (!why) setKept("account"); });
+  }, [twinId, account, backend, kept]);
   const selectedPlot = plots.find(p => p.uid === selected) ?? null;
   const numbers = useMemo(() => {
     const ring = live?.ring ?? (mode.kind === "naming" || mode.kind === "editing" ? mode.draft.ring : selectedPlot?.ring);
@@ -360,9 +382,11 @@ export function PlotWorkbench({ map, ctx, twinId, onBusy, simple = false, fieldP
       </div>
       {mode.kind === "idle" && <>
         <div className="mt-1.5 grid grid-cols-3 gap-0.5 rounded-sm border border-[#3a3f3a] bg-[#111311] p-0.5" role="group" aria-label="Draw a plot">
-          {(["polygon", "rectangle", "rows"] as Tool[]).map(t => <button key={t} type="button" onClick={() => start(t)} className="rounded-[2px] px-1 py-1.5 text-[10.5px] text-neutral-200 hover:bg-[#262a26]">{TOOL_LABEL[t]}</button>)}
+          {(["polygon", "rectangle", "rows"] as Tool[]).map(t => <button key={t} type="button" disabled={kept === "loading"} onClick={() => start(t)} className="rounded-[2px] px-1 py-1.5 text-[10.5px] text-neutral-200 hover:bg-[#262a26] disabled:opacity-40">{TOOL_LABEL[t]}</button>)}
         </div>
-        {plots.length === 0 && <p className="mt-1.5 text-[10px] leading-snug text-neutral-500">Draw a region to get its numbers: plants, plants per acre, spacing, plant span, green that is not corn. Saved on this device, in ground coordinates.</p>}
+        {kept === "loading" && <p role="status" className="mt-1.5 text-[10px] text-neutral-400">Loading your plots from your account…</p>}
+        {kept === "account" && !syncNote && <p className="mt-1 text-[10px] text-neutral-500">Saved in your account: the same plots on every device you sign in on.</p>}
+        {plots.length === 0 && kept !== "loading" && <p className="mt-1.5 text-[10px] leading-snug text-neutral-500">Draw a region to get its numbers: plants, plants per acre, spacing, plant span, green that is not corn. {account ? "Saved in your account and on this device" : "Saved on this device"}, in ground coordinates.</p>}
         {plots.length > 0 && <ul className="mt-1.5 space-y-0.5" aria-label="Saved plots">
           {plots.map(p => { const n = p.uid === selected ? numbers : null; return (
             <li key={p.uid}><button type="button" onClick={() => { setSelected(p.uid === selected ? null : p.uid); setConfirmDelete(false); if (p.uid !== selected) zoomTo(p); }} className={`flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-left text-[11.5px] hover:bg-[#232723] ${p.uid === selected ? "bg-[#232723]" : ""}`}>
@@ -403,6 +427,7 @@ export function PlotWorkbench({ map, ctx, twinId, onBusy, simple = false, fieldP
         </div>
       </>}
       {note && <p role="alert" className="mt-1 text-[10.5px] text-amber-300/90">{note}</p>}
+      {syncNote && !note && <p role="status" className="mt-1 text-[10.5px] text-amber-300/90">{syncNote}</p>}
     </div>
   );
 }

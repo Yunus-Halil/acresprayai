@@ -526,7 +526,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
         {twin.corn && <CornFieldPanel twin={twin} corn={twin.corn} weedsOutside={weedsOutside} layers={layers} setLayers={setLayers} units={units} view={cornView} technical={founderView && allLayers}
           onSelect={(p, lat, lng, across) => { setActivePatch(null); setSelection(p); zoomTo(lat, lng, across); }}
           plotCtx={plotCtx} patches={patches} blockHa={s.blockHa} activePatch={activePatch} onLookAt={l => { setSelection(null); setActivePatch(l.patch ?? null); zoomTo(l.lat, l.lng, l.across); }}
-          plots={founderView && plotCtx && !rowEditing ? <PlotWorkbench map={leafMap} ctx={plotCtx} twinId={twin.id} onBusy={onPlotBusy} simple={simpleOn} fieldPerAcre={fieldPerAcre} /> : null} />}
+          plots={founderView && plotCtx && !rowEditing ? <PlotWorkbench map={leafMap} ctx={plotCtx} twinId={twin.id} onBusy={onPlotBusy} simple={simpleOn} fieldPerAcre={fieldPerAcre} account={review?.twinId ?? null} /> : null} />}
         {twin.corn && founderView && <RowEditPanel edits={rowEdits} editing={rowEditing} onStart={startRowEditing} onDone={finishRowEditing}
           onClearAll={() => { commitRows(NO_ROW_EDITS, "All corrections cleared"); }} hideRows={hideRows} setHideRows={setHideRows}
           plants={plants ? { count: plants.points.length, note: plants.sorted ? SORTED_PLANTS_NOTE : plants.note } : null} showPlants={showPlants} setShowPlants={setShowPlants} photographsOn={!!reference} />}
