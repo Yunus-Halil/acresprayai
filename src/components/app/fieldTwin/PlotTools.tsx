@@ -36,15 +36,27 @@ function paneOf(map: L.Map): { pane: string; renderer: L.Renderer } {
   if (!m.__plotRenderer) m.__plotRenderer = L.svg({ pane: PANE });
   return { pane: PANE, renderer: m.__plotRenderer };
 }
-/** The Simple view's plot: a blue outline, its label on its top edge (the name, then plants per acre in green or amber). */
-const PLOT_BLUE = "#4d8dff", PLOT_BLUE_ON = "#a9c8ff", TONE = { green: "#4ade80", amber: "#f0a63a" };
+/**
+ * The Simple view's plot: an outline in the plot's own colour (the one picked when it was saved; brighter and thicker
+ * when selected), its label on its top edge (the name, then plants per acre in green or amber). Until 2026-11-24 every
+ * plot was drawn in one blue here, whatever colour was picked: his report, "I make my plot purple and when I save it
+ * turns blue".
+ */
+const TONE = { green: "#4ade80", amber: "#f0a63a" };
+/** A plot's outline in the Simple view: its own colour, lightened toward white and thicker when selected. */
+export function simpleOutline(colour: string, on: boolean): { stroke: string; weight: number } {
+  const m = /^#([0-9a-f]{6})$/i.exec(colour);
+  if (!m || !on) return { stroke: colour, weight: on ? 3 : 1.5 };
+  const v = parseInt(m[1], 16), lift = (c: number) => Math.round(c + (255 - c) * 0.45).toString(16).padStart(2, "0");
+  return { stroke: `#${lift((v >> 16) & 255)}${lift((v >> 8) & 255)}${lift(v & 255)}`, weight: 3 };
+}
 /** Where a plot's label sits: its top-most corner (the western one of two as high as each other). */
 function topCorner(ring: LatLngPair[]): LatLngPair {
   const top = Math.max(...ring.map(p => p[0])), span = Math.max(1e-9, top - Math.min(...ring.map(p => p[0])));
   return ring.filter(p => top - p[0] <= 0.02 * span).reduce((b, p) => (p[1] < b[1] ? p : b));
 }
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
-const labelIcon = (name: string, number: string | null, tone: "green" | "amber", on: boolean) => L.divIcon({ className: "", iconSize: [0, 0], iconAnchor: [0, 0], html: `<div style="position:absolute;left:-1px;bottom:3px;white-space:nowrap;cursor:pointer;background:rgba(0,0,0,.82);border:1px solid ${on ? PLOT_BLUE_ON : PLOT_BLUE};color:${on ? PLOT_BLUE_ON : PLOT_BLUE};font:${on ? 700 : 600} 11px system-ui,sans-serif;padding:1px 5px;border-radius:2px">${esc(name)}${number ? ` <span style="color:#6b7280">·</span> <span style="color:${TONE[tone]}">${number}</span>` : ""}</div>` });
+const labelIcon = (name: string, number: string | null, tone: "green" | "amber", on: boolean, colour: string) => L.divIcon({ className: "", iconSize: [0, 0], iconAnchor: [0, 0], html: `<div style="position:absolute;left:-1px;bottom:3px;white-space:nowrap;cursor:pointer;background:rgba(0,0,0,.82);border:1px solid ${simpleOutline(colour, on).stroke};color:${simpleOutline(colour, on).stroke};font:${on ? 700 : 600} 11px system-ui,sans-serif;padding:1px 5px;border-radius:2px">${esc(name)}${number ? ` <span style="color:#6b7280">·</span> <span style="color:${TONE[tone]}">${number}</span>` : ""}</div>` });
 const centroid = (ring: LatLngPair[]): LatLngPair => [ring.reduce((t, p) => t + p[0], 0) / ring.length, ring.reduce((t, p) => t + p[1], 0) / ring.length];
 const numberIcon = (n: number | string, colour: string, on: boolean) => L.divIcon({ className: "", iconSize: [24, 24], iconAnchor: [12, 12], html: `<div style="width:24px;height:24px;border-radius:50%;background:${colour};color:#1b1d1b;font:800 12px system-ui,sans-serif;display:flex;align-items:center;justify-content:center;border:2px solid #1b1d1b;box-shadow:${on ? "0 0 0 3px #fff,0 0 14px rgba(255,255,255,.6)" : "0 0 0 2px rgba(0,0,0,.35)"};cursor:pointer">${n}</div>` });
 const tipIcon = (text: string) => L.divIcon({ className: "", iconSize: [0, 0], iconAnchor: [-14, 18], html: `<div style="white-space:nowrap;background:rgba(20,22,20,.92);border:1px solid #444;color:#f2f2f2;font:600 11px system-ui,sans-serif;padding:3px 7px;border-radius:3px;pointer-events:none">${text}</div>` });
@@ -114,7 +126,7 @@ export function PlotNumbersView({ n, shape }: { n: PlotNumbers; shape: PlotShape
  * The Plots card and everything plots do on the map. `onBusy` says when a tool or an edit holds the map (the twin's own
  * clicks are then not picks).
  */
-export function PlotWorkbench({ map, ctx, twinId, onBusy, simple = false, fieldPerAcre = null }: { map: L.Map | null; ctx: PlotContext; twinId: string; onBusy: (busy: boolean) => void; /** The Simple view is on: plots as blue outlines with a label on their top edge. */ simple?: boolean; /** The field's own plants per acre (a plot well under it gets an amber number). */ fieldPerAcre?: number | null }) {
+export function PlotWorkbench({ map, ctx, twinId, onBusy, simple = false, fieldPerAcre = null }: { map: L.Map | null; ctx: PlotContext; twinId: string; onBusy: (busy: boolean) => void; /** The Simple view is on: plots as outlines in their own colour with a label on their top edge. */ simple?: boolean; /** The field's own plants per acre (a plot well under it gets an amber number). */ fieldPerAcre?: number | null }) {
   const [plots, setPlots] = useState<Plot[]>(() => loadPlots(twinId));
   useEffect(() => { setPlots(loadPlots(twinId)); setSelected(null); setMode({ kind: "idle" }); }, [twinId]);
   const [mode, setMode] = useState<Mode>({ kind: "idle" });
@@ -189,10 +201,10 @@ export function PlotWorkbench({ map, ctx, twinId, onBusy, simple = false, fieldP
       if (mode.kind === "editing" && mode.uid === p.uid) continue;
       const on = p.uid === selected, pick = (e: L.LeafletEvent) => { L.DomEvent.stop(e as unknown as Event); if (mode.kind === "idle") { setSelected(p.uid); setConfirmDelete(false); } };
       if (simple) {
-        // Simple: a blue outline (brighter and thicker when selected), nothing filled over the boxes, the label on its top edge.
-        const n = plotNumbers.get(p.uid) ?? null;
-        L.polygon(p.ring, { pane, renderer, color: on ? PLOT_BLUE_ON : PLOT_BLUE, weight: on ? 3 : 1.5, opacity: 1, fill: false, interactive: false }).addTo(g);
-        L.marker(topCorner(p.ring), { icon: labelIcon(p.name, n?.perAcre != null ? fmtPerAcreShort(n.perAcre) : null, plotNumberTone(n?.perAcre ?? null, fieldPerAcre, !!n?.small), on), keyboard: false, title: `${p.name}: open its numbers`, zIndexOffset: on ? 500 : 0 }).on("click", pick).addTo(g);
+        // Simple: an outline in the plot's own colour (brighter and thicker when selected), nothing filled over the boxes, the label on its top edge.
+        const n = plotNumbers.get(p.uid) ?? null, line = simpleOutline(p.colour, on);
+        L.polygon(p.ring, { pane, renderer, color: line.stroke, weight: line.weight, opacity: 1, fill: false, interactive: false }).addTo(g);
+        L.marker(topCorner(p.ring), { icon: labelIcon(p.name, n?.perAcre != null ? fmtPerAcreShort(n.perAcre) : null, plotNumberTone(n?.perAcre ?? null, fieldPerAcre, !!n?.small), on, p.colour), keyboard: false, title: `${p.name}: open its numbers`, zIndexOffset: on ? 500 : 0 }).on("click", pick).addTo(g);
         continue;
       }
       L.polygon(p.ring, { pane, renderer, color: p.colour, weight: on ? 3 : 2, opacity: 0.95, fillColor: p.colour, fillOpacity: on ? 0.16 : 0.07, interactive: false }).addTo(g);
