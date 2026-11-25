@@ -456,6 +456,32 @@ describe("a rule that needs the plant spacing, where the spacing is not measured
     expect(cut.rows.length).toBe(12); expect(cut.gaps.cutOverMaxBridge).toBe(6);
   });
 
+  it("with onLineWithoutSpacing a dot on a row's line is still judged, by what needs no spacing (2026-11-25)", () => {
+    const off = readWith(SEQUENCE, notMeasured);
+    const on = readWith({ ...SEQUENCE, onLineWithoutSpacing: "stricter" }, notMeasured);
+    expect(on.spacingRules).toBe(false);
+    // The stricter marks' dot in the gap goes on its row as a probable plant; the candidate beside it is not asked.
+    expect(on.rowOf[n0]).toBeGreaterThanOrEqual(0); expect(on.certainty[n0]).toBe(1); expect(on.settled[n0]).toBe(SETTLED.placedNoSpacing);
+    expect(on.why[n0 + 1]).toBe(7); expect(on.rowOf[n0 + 1]).toBe(-1);
+    // The certain plants and their rows are as without the option.
+    for (let i = 0; i < n0; i++) expect(on.rowOf[i] >= 0).toBe(off.rowOf[i] >= 0);
+    // With "candidates" the candidate is judged too: on the row, a double, or refused by the ground between the rows,
+    // but no longer left for want of a spacing.
+    const both = readWith({ ...SEQUENCE, onLineWithoutSpacing: "candidates" }, notMeasured);
+    expect(both.why[n0 + 1]).not.toBe(7);
+    // A dot as close to a plant on the row as the field's own closest plants stand is a double, not a second plant:
+    // the too-close distance comes from the certain plants' own gaps, never from an assumed spacing.
+    const near = [...gapped, dot(gapped[0].e + 0.01, gapped[0].n, 2)], R2 = reconstruct(near, new Int32Array(near.length).fill(8), 0, S, PLANTS_FIRST, { ...SEQUENCE, onLineWithoutSpacing: "stricter" }, null, null, notMeasured);
+    expect(R2.rowOf[n0]).toBe(-1); expect(R2.settled[n0]).toBe(SETTLED.tooClose);
+    expect(R2.tooCloseM).toBeGreaterThan(0);
+  });
+
+  it("the development switch hides a measured spacing, and both switches are off by default", () => {
+    const R = readWith({ ...SEQUENCE, ignoreSpacing: true }, null);
+    expect(R.spacingRules).toBe(false); expect(R.geometry.seedM).toBeNull();
+    expect(SEQUENCE.onLineWithoutSpacing).toBe(false); expect(SEQUENCE.ignoreSpacing).toBe(false);
+  });
+
   it("runs as ever where the spacing is measured", () => {
     const R = readWith(SEQUENCE, null);
     expect(R.spacingRules).toBe(true);

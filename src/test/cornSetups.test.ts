@@ -14,6 +14,9 @@ describe("the candidate frozen for FINAL-3", () => {
     // 2026-11-20: corn only in runs, off (0) in the frozen setup.
     expect(seq.runReachSeeds).toBe(0); delete seq.runReachSeeds;
     expect(seq.rowNeedsNeighbour).toBe(false); delete seq.rowNeedsNeighbour;
+    // 2026-11-25: a dot on a row's line judged without a plant spacing, and the development switch that hides the
+    // spacing from a flight that has one: both off in the frozen setup.
+    for (const k of ["onLineWithoutSpacing", "ignoreSpacing"]) { expect(seq[k]).toBe(false); delete seq[k]; }
     expect(r).toEqual(CORN_CANDIDATE_FINAL3_FROZEN);
   });
   it("is the cores (new reference), variant A, the guard with its misread check, the sweep off", () => {

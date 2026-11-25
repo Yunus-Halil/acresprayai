@@ -52,7 +52,18 @@ export function judgeDots(dots: Dot[], L4: ObviousPlants, L5: RowProfile, o: Pla
   for (const i of order) {
     if (scattered[i]) { why[i] = 5; settled[i] = SETTLED.scattered; continue; }
     const ri = nearestRow(i, lines); if (ri < 0) { why[i] = 1; settled[i] = SETTLED.noRow; continue; }
-    if (!spacingRules) { why[i] = 7; settled[i] = SETTLED.noSpacing; continue; }
+    if (!spacingRules) {
+      // No plant spacing to count in. With q.onLineWithoutSpacing the dot is still judged by what needs none: it is on
+      // a row's line within the row's length (the reach past a row's end is nothing here), a candidate's row must beat
+      // the ground between the rows, and it must not be a double by the field's own too-close distance.
+      const may = q.onLineWithoutSpacing && (!tier?.[i] || (q.onLineWithoutSpacing === "candidates" && beatsAlley(ri, i)));
+      if (!may) { why[i] = 7; settled[i] = SETTLED.noSpacing; continue; }
+      let nearest = Infinity; for (const a of along[ri]) nearest = Math.min(nearest, Math.abs(a - A[i]));
+      if (nearest < tooClose) { why[i] = 2; settled[i] = SETTLED.tooClose; continue; }
+      if (certainty[i] === 2) certainty[i] = 1;
+      offSpacing[i] = 1; along[ri].push(A[i]); extra[ri].push(i); onCertain[i] = 1; settled[i] = SETTLED.placedNoSpacing;
+      continue;
+    }
     if (tier?.[i] && !beatsAlley(ri, i)) { why[i] = 6; alleyRefused++; settled[i] = SETTLED.alley; continue; }
     let nearest = Infinity; for (const a of along[ri]) nearest = Math.min(nearest, Math.abs(a - A[i]));
     if (nearest < tooClose) { why[i] = 2; settled[i] = SETTLED.tooClose; continue; } // as close as a double, or the same plant twice: not taken on geometry
@@ -235,7 +246,7 @@ export function judgeDots(dots: Dot[], L4: ObviousPlants, L5: RowProfile, o: Pla
   // A probable dot that ended on no row is uncertain again.
   for (let i = 0; i < n; i++) if (certainty[i] === 1 && rowOf[i] < 0) certainty[i] = 2;
   // (Read only.) A dot placed on a row that `build` above left on no row.
-  for (let i = 0; i < n; i++) if (rowOf[i] < 0 && (settled[i] === SETTLED.certainRow || settled[i] === SETTLED.placedAtSpacing || settled[i] === SETTLED.placedOffSpacing || settled[i] === SETTLED.freePlaced || settled[i] === SETTLED.geometryRow || settled[i] === SETTLED.placedOnRetry)) settled[i] = SETTLED.cutFromRow;
+  for (let i = 0; i < n; i++) if (rowOf[i] < 0 && (settled[i] === SETTLED.certainRow || settled[i] === SETTLED.placedAtSpacing || settled[i] === SETTLED.placedOffSpacing || settled[i] === SETTLED.freePlaced || settled[i] === SETTLED.geometryRow || settled[i] === SETTLED.placedOnRetry || settled[i] === SETTLED.placedNoSpacing)) settled[i] = SETTLED.cutFromRow;
   // Between the rows: a dot on no row, with a row on either side of it within a spacing, is not the crop. A dot that
   // stands on a row's line (within the band a row's plants are taken in) is not between two rows: that row is the one
   // it stands on, and why it was left off it is already said (q.betweenOffLines).

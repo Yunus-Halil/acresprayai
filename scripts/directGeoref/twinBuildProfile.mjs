@@ -16,6 +16,9 @@
 // --outputs <dir>: the build's results, for an equivalence check between two builds (outputsDiff.mjs): twin.json,
 // the analysis record (the aligned cameras; the build is asked for one), every file's SHA-256 (plants, atlases, the
 // photo ground's overview when the flag is on). Written to <dir> on this computer only.
+// --bundle <dir> [--id <twin id>] [--name <twin name>]: the twin as the app's own "Add a twin from files" takes it
+// (twin.json and its atlas-N.jpg files), so a twin built here can be added to an account and looked at in the app.
+// --id and --name give it its own folder and title there (the build names every twin of one flight day alike).
 // --shot <file.png>: a screenshot of the built twin in the viewer, and what it drew.
 import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -25,7 +28,7 @@ import { chromium } from "playwright-core";
 const argv = process.argv.slice(2);
 const arg = (k, d) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
 const DIR = resolve(arg("dir", "directtestimagery")), BASE = arg("base", "http://localhost:8081"), HELPERS = arg("helpers", "");
-const SHOT = arg("shot", ""), HEAPS = argv.includes("--heaps"), CROP = arg("crop", "corn"), TRACE = arg("trace", ""), OUTFILE = resolve(arg("out", "profile.json")), OUTPUTS = arg("outputs", ""), DEVICE = arg("device", "");
+const SHOT = arg("shot", ""), HEAPS = argv.includes("--heaps"), CROP = arg("crop", "corn"), TRACE = arg("trace", ""), OUTFILE = resolve(arg("out", "profile.json")), OUTPUTS = arg("outputs", ""), DEVICE = arg("device", ""), BUNDLE = arg("bundle", ""), TWIN_ID = arg("id", ""), TWIN_NAME = arg("name", "");
 const CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const files = readdirSync(DIR).filter(f => /\.jpe?g$/i.test(f)).sort().map(f => join(DIR, f));
 
@@ -92,6 +95,22 @@ if (TRACE) await browser.stopTracing();
 const stages = await page.evaluate(t => Object.fromEntries(Object.entries(window.__twinStages ?? {}).map(([k, v]) => [k, v - t])), t0);
 const result = await page.evaluate(() => window.__twinBuild);
 const hc = await page.evaluate(() => navigator.hardwareConcurrency);
+if (BUNDLE) {
+  if (TWIN_ID && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(TWIN_ID)) throw new Error("--id: lower-case letters, digits and hyphens, 64 at most");
+  const files = await page.evaluate(async () => {
+    const out = window.__twinOut; if (!out) return null;
+    const r = {};
+    for (const [k, v] of out.files) { const u = new Uint8Array(await v.arrayBuffer()); let t = ""; for (let i = 0; i < u.length; i += 0x8000) t += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); r[k] = btoa(t); }
+    return { files: r, twin: JSON.stringify(out.twin) };
+  });
+  if (files) {
+    const dir = resolve(BUNDLE); mkdirSync(dir, { recursive: true });
+    const twin = JSON.parse(files.twin); if (TWIN_ID) twin.id = TWIN_ID; if (TWIN_NAME) twin.name = TWIN_NAME;
+    for (const [k, v] of Object.entries(files.files)) if (k !== "twin.json") writeFileSync(join(dir, k), Buffer.from(v, "base64"));
+    writeFileSync(join(dir, "twin.json"), JSON.stringify(twin));
+    console.log(`bundle: ${Object.keys(files.files).length} files in ${dir} (twin ${twin.id}, "${twin.name}")`);
+  }
+}
 let outputs = null;
 if (OUTPUTS) {
   const got = await page.evaluate(async () => {

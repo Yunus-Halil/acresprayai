@@ -646,6 +646,18 @@ export const SEQUENCE = {
    * plant stands for `maxBridgeM` or where its course crosses ground judged scattered. The certain plants, the rows
    * they make and the rows found in a free slot do not use the spacing and read as before. */
   spacingRulesNeedASpacing: true,
+  /** Off by default (2026-11-25). Where the plant spacing is not measured, `spacingRulesNeedASpacing` stops every rule
+   * counted in spacings, and with them every dot that is not already a certain plant: on a breeding trial (each plot
+   * its own hybrid, no single spacing) 5,677 dots on an existing row's line were refused for that alone. With this,
+   * such a dot on a row's line, within the row's length, is still put on the row as a probable plant unless it is a
+   * double: nearer to a plant already on the row than the field's own too-close distance (the `tooCloseQuantile` of
+   * the gaps between neighbouring certain plants: read from the field, never an assumed spacing). "stricter": the
+   * stricter marks' dots only. "candidates": the second look's candidates too, where the row's band beats the ground
+   * between the rows (`alleyTest`). Nothing changes where a spacing is measured. */
+  onLineWithoutSpacing: false as false | "stricter" | "candidates",
+  /** Development only, off: the plant spacing treated as not measured, so a labelled flight that has one can show
+   * what the rules do on a field without one. */
+  ignoreSpacing: false,
   /** The final sweep (2026-11-16): a mark of the second look that stands alone on its row is taken off it. After every
    * dot is placed and before the rows are built, each candidate on a row (every tier) is asked for company along that
    * row: a plant found without help from a row, within the reach a row already takes dots in (`maxGapSeeds` plant
@@ -727,7 +739,7 @@ export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: fal
  * `cutFromRow`: placed on a row, then left on no row when the row was built (a piece of under three plants, a stretch
  * longer than `maxBridgeM` with no plant, or a stretch over ground judged scattered: `build` in reconstruct).
  */
-export const SETTLED = { none: 0, certainRow: 1, scattered: 2, noRow: 3, noSpacing: 4, alley: 5, tooClose: 6, tooFar: 7, offSpacing: 8, placedAtSpacing: 9, placedOffSpacing: 10, freeAlley: 11, freeTooClose: 12, freePlaced: 13, alone: 14, geometryRow: 15, cutFromRow: 16, secondLook: 17, placedOnRetry: 18, offLine: 19, notInARun: 20, notARow: 21 } as const;
+export const SETTLED = { none: 0, certainRow: 1, scattered: 2, noRow: 3, noSpacing: 4, alley: 5, tooClose: 6, tooFar: 7, offSpacing: 8, placedAtSpacing: 9, placedOffSpacing: 10, freeAlley: 11, freeTooClose: 12, freePlaced: 13, alone: 14, geometryRow: 15, cutFromRow: 16, secondLook: 17, placedOnRetry: 18, offLine: 19, notInARun: 20, notARow: 21, placedNoSpacing: 22 } as const;
 export type GroundJudge = { state: (e: number, n: number) => 0 | 1 | 2; dotState?: Uint8Array | null };
 export type RowSegment = { a0: number; a1: number; confirmed: boolean };
 /** A row's course in the rows' frame: its across position at knots along it, from its first plant to its last, and the dots it was fitted through. */

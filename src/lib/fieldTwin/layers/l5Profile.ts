@@ -123,7 +123,7 @@ export function rowProfile(dots: Dot[], L4: ObviousPlants, directionDeg: number,
   const med = (xs: number[]) => { const t = [...xs].sort((x, y) => x - y); return t.length ? t[t.length >> 1] : NaN; };
   // The plant spacing, and whether the rules counted in spacings may run (q.spacingRulesNeedASpacing): where it is
   // not measured they do not; without that option 0.18 m stands in for it, as before.
-  const seedM = R1.seedM, seed = seedM ?? 0.18, spacingRules = seedM != null || !q.spacingRulesNeedASpacing;
+  const seedM = q.ignoreSpacing ? null : R1.seedM, seed = seedM ?? 0.18, spacingRules = seedM != null || !q.spacingRulesNeedASpacing;
   const geometry = { spacingM: S, directionDeg: R1.directionDeg, seedM, rowLengthMedianM: med(lines.map(r => r.a1 - r.a0)), perMMedian: med(lines.map(r => r.dots.length / Math.max(1e-6, r.a1 - r.a0))), certainDots: cIdx.length, certainRows: lines.length };
   // How close to a plant on its row is a double: half a plant spacing, or (q.tooCloseFromField) the distance under
   // which the lowest `tooCloseQuantile` of the gaps between neighbouring certain plants on the row lines fall.
@@ -132,7 +132,7 @@ export function rowProfile(dots: Dot[], L4: ObviousPlants, directionDeg: number,
   certainGapsM.sort((x, y) => x - y);
   // The spacing's spread (recorded; read by L6 only with LAYERS.tooCloseFromSpread): the single-spacing gaps' quartiles.
   const spread = spacingSpread(certainGapsM, seedM, layers.tooCloseFence);
-  let tooClose = q.tooCloseFromField && certainGapsM.length ? certainGapsM[Math.min(certainGapsM.length - 1, Math.floor(q.tooCloseQuantile * certainGapsM.length))] : 0.5 * seed;
+  let tooClose = (q.tooCloseFromField || (seedM == null && !!q.onLineWithoutSpacing)) && certainGapsM.length ? certainGapsM[Math.min(certainGapsM.length - 1, Math.floor(q.tooCloseQuantile * certainGapsM.length))] : 0.5 * seed;
   // Phase 3b (off by default): the lower fence of the single spacings, held between two shares of the spacing.
   if (layers.tooCloseFromSpread && seedM != null && spread.lowerFenceM != null) tooClose = Math.min(layers.tooCloseMaxShare * seedM, Math.max(layers.tooCloseMinShare * seedM, spread.lowerFenceM));
   return { R1, th, ct, st, S, A, C, scattered, overScattered, course, fit, at, RN, lines, geometry, seedM, seed, spacingRules, certainGapsM, tooClose, spread, groundL4: groundL4 ? groundL4.judged : null };
