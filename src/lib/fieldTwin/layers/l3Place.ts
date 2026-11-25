@@ -13,7 +13,8 @@ import { ROW_POINTS } from "@/lib/rowCrop/greenPoints";
 import { type LatLngAlt, fromEnu, toEnu } from "@/lib/sourceFrames/odm";
 import type { CornFieldResult, CornPhotoRead, FieldGround } from "../cornField";
 import type { LayerOptions } from "./options";
-import { type Dot, PLANTS_FIRST, type PhotoShift, type PlantsFirstOptions, ROW_RECALL, type RowsFromDots, SEQUENCE, certainEvidence, coverage, mergeDots, projectSightings, registerPhotos, rowCandidates, rowsFromDots, type Sight } from "../plantsFirst";
+import { ALIGN_TOGETHER, type AlignReport, type AlignTogetherOptions, alignTogether, repeatSpread } from "../alignTogether";
+import { type Dot, PLANTS_FIRST, type PhotoShift, type PlantsFirstOptions, ROW_RECALL, type RowsFromDots, SEQUENCE, certainEvidence, coverage, mergeDots, projectSightings, registerPhotos, rowCandidates, rowsFromDots, shiftOf, type Sight } from "../plantsFirst";
 
 export type CornPlantsOptions = {
   /** Development: the loosened placement on a row (plantsFirst.ts SEQUENCE.free, ROW_RECALL.anyView). */
@@ -31,6 +32,11 @@ export type CornPlantsOptions = {
   fieldSeed?: boolean;
   /** The layers' own options (layers/options.ts LAYERS, every one off by default): only those given are changed. */
   layers?: Partial<LayerOptions>;
+  /** After the registration, the photographs aligned to each other all together by their plants (alignTogether.ts,
+   * 2026-11-25). Off unless asked: true for its own defaults, or the options that differ. `gate`: "repeat" (default)
+   * takes the merge gate from how tightly the same plant repeats once aligned, as the registration's is taken; "kept"
+   * keeps the gate the registration alone would have given. */
+  together?: boolean | (Partial<AlignTogetherOptions> & { gate?: "repeat" | "kept" });
 };
 
 /**
@@ -60,15 +66,27 @@ export type PlacedDots = { photos: string[]; shifts: PhotoShift[]; repeatM: numb
   groundState?: Uint8Array;
   /** Read only, for the corn inspector: the sightings the dots were merged from (`Dot.members` index them), and the
    * candidates' own sightings (plantsFirst.ts rowCandidates `from`, `members`; candidate i is dot `strict + i`). */
-  sights?: Sight[]; /** Read only: the merging gate used, metres. */ gateM?: number; candidates?: { from: { p: number; u: number; v: number; sight: number }[]; members: number[][] } | null };
+  sights?: Sight[]; /** Read only: the merging gate used, metres. */ gateM?: number; /** Read only: what aligning the photographs together measured, where it was asked (alignTogether.ts). */ together?: AlignReport; candidates?: { from: { p: number; u: number; v: number; sight: number }[]; members: number[][] } | null };
 
 /** Steps 1 to 3 of plantsFirst.ts and the candidates for the rows; null when the photographs make no dot. */
 export function placeDots(reads: CornPhotoRead[], frames: Map<string, GeorefFrame>, F: CornFieldResult, opts: CornPlantsOptions = {}): PlacedDots | null {
   const { sights, photos } = projectSightings(reads, frames, F.origin);
   if (photos.length < 2 || sights.length < 50) return null;
   const o = opts.placing ?? PLANTS_FIRST;
-  const reg = registerPhotos(sights, photos.length, o);
-  const gateM = Math.min(o.gateMax, Math.max(o.gateMin, o.gateTimes * reg.repeatM));
+  let reg = registerPhotos(sights, photos.length, o);
+  let gateM = Math.min(o.gateMax, Math.max(o.gateMin, o.gateTimes * reg.repeatM));
+  // The photographs aligned all together by their plants, where asked; kept only where its own check passes.
+  let together: AlignReport | undefined;
+  if (opts.together) {
+    const { gate, ...own } = opts.together === true ? ({} as { gate?: "repeat" | "kept" }) : opts.together, T = alignTogether(sights, photos.length, reg.shifts, gateM, { ...ALIGN_TOGETHER, ...own });
+    together = T.report;
+    if (T.report.applied) {
+      const xs = new Float64Array(sights.length), ys = new Float64Array(sights.length);
+      sights.forEach((s, i) => { const [de, dn] = shiftOf(T.shifts[s.p], s.u, s.v); xs[i] = s.e + de; ys[i] = s.n + dn; });
+      reg = { ...reg, shifts: T.shifts, repeatM: repeatSpread(sights, xs, ys, o.reachM) };
+      if (gate !== "kept") gateM = Math.min(o.gateMax, Math.max(o.gateMin, o.gateTimes * reg.repeatM));
+    }
+  }
   const dots = mergeDots(sights, reg.shifts, gateM);
   if (!dots.length) return null;
   const q = opts.sequence ?? SEQUENCE;
@@ -91,6 +109,6 @@ export function placeDots(reads: CornPhotoRead[], frames: Map<string, GeorefFram
       candidates = { from: C.from, members: C.members };
     }
   }
-  return { photos, shifts: reg.shifts, repeatM: reg.repeatM, all, strict, tier, covered, pre, sights, gateM, candidates };
+  return { photos, shifts: reg.shifts, repeatM: reg.repeatM, all, strict, tier, covered, pre, sights, gateM, candidates, ...(together ? { together } : {}) };
 }
 

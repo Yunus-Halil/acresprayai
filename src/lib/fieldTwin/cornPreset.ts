@@ -36,6 +36,11 @@ export type CornPresetSettings = {
 };
 
 const F3 = CORN_CANDIDATE_FINAL3;
+/** Development only (2026-11-25), OFF for everyone: VITE_CORN_ALIGN=1 in a local build's environment turns on the step
+ * that aligns the photographs to each other all together by their plants (alignTogether.ts), with the merge gate kept
+ * as the registration alone gives it, so a flight can be built with it and looked at. Not set in any deployment: it
+ * changes which marks become one plant, and that waits for the founder's word. */
+const alignFlag = (): boolean => { try { return ((import.meta.env ?? {}) as { VITE_CORN_ALIGN?: string }).VITE_CORN_ALIGN === "1"; } catch { return false; } };
 export const CORN_PRESET_SETTINGS: Record<CornPreset, CornPresetSettings> = {
   today: {
     read: { rowSpans: false, rowCandidates: false, cores: false, coresReference: "marks", countGuard: false, lateGuard: false, learnedGreen: false, coresWhenTouching: false },
@@ -47,7 +52,7 @@ export const CORN_PRESET_SETTINGS: Record<CornPreset, CornPresetSettings> = {
     keepLook: true, flightGuard: true, ground: true,
     // On top of the frozen FINAL-3 setup (2026-11-19, his word): the "too far" dots tried again once every other is
     // placed, and the doubles told apart from the green that is not corn (plantsFirst.ts SEQUENCE.retryTooFar, doublesApart).
-    plants: { sequence: { ...SEQUENCE, ...F3.field.sequence, retryTooFar: true, doublesApart: true, secondLookAcrossMaxM: 0.05, runReachSeeds: 2, rowNeedsNeighbour: true }, placing: PLANTS_FIRST, layers: {} },
+    plants: { sequence: { ...SEQUENCE, ...F3.field.sequence, retryTooFar: true, doublesApart: true, secondLookAcrossMaxM: 0.05, runReachSeeds: 2, rowNeedsNeighbour: true }, placing: PLANTS_FIRST, layers: {}, ...(alignFlag() ? { together: { gate: "kept" as const } } : {}) },
   },
 };
 
