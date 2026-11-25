@@ -20,6 +20,12 @@
 //                whole field towards a point, which makes every disagreement smaller and means nothing.
 //   3. check     how many marks have another photograph's mark within `checkM`, before and after. Only where that
 //                share rises is the correction kept; otherwise the photographs stay as the registration left them.
+//   4. the trap  plants a spacing apart along a row match each other too, so a photograph could be put a whole plant
+//                along the row from where it belongs and still look matched. The share in 3 does not see that over a
+//                flight (measured: every other flight line slid a plant along the rows still scores above the
+//                registration). A PAIR of photographs does: where they are put right, the sharpest match in their
+//                squares is "no shift"; a plant off, it is a plant spacing away. So after the fit every pair is read
+//                again, and the correction is kept only where nearly all pairs' plants lie on each other (`pairsOn`).
 // Nothing here knows a field or a row: only marks, photographs and the ground squares.
 import { Grid, type PhotoShift, type Sight, shiftOf } from "./plantsFirst";
 
@@ -46,6 +52,15 @@ export const ALIGN_TOGETHER = {
   checkM: 0.02,
   /** The matched share must rise by at least this (a share of the marks) for the correction to be kept. */
   minGain: 0.01,
+  /** The trap (see the header): a pair of photographs with `pairSquares` squares or more is "on each other" when the
+   * sharpest match of at least `pairShare` of them lies within `onM` of no shift; the correction is kept only where at
+   * least `pairsOn` of the pairs are. Measured (2026-11-25): on the first independent flight, whose alignment the
+   * soil's own texture confirmed (scripts/rowCrop/cornAlignSoilCheck.ts), 0.97 of the pairs after aligning (0.74
+   * before); the same flight with every other flight line slid a plant along the rows 0.48, one line slid 0.58, one
+   * photograph in five 0.64. On a held-out flight whose lens is not modelled, 0.54 after aligning (0.13 before): the
+   * soil says that alignment is better than the registration and not a plant off, but it is not finished, and at
+   * this bar it is not kept. */
+  onM: 0.03, pairSquares: 4, pairShare: 0.5, pairsOn: 0.85,
 };
 export type AlignTogetherOptions = typeof ALIGN_TOGETHER;
 
@@ -62,6 +77,8 @@ export type AlignReport = {
   marks: number; matched: [number, number];
   /** How far the correction moves a mark, metres: median and most. */
   movedMedianM: number; movedMostM: number;
+  /** Pairs of photographs read for the trap of a plant spacing, and those whose plants lie on each other, after. */
+  pairs: number; pairsOn: number;
   ms: number;
 };
 
@@ -113,6 +130,20 @@ function measure(sights: Sight[], xs: Float64Array, ys: Float64Array, nP: number
     out.push({ i: Math.floor(ij / nP), j: ij % nP, ui: ui / n, vi: vi / n, uj: uj / n, vj: vj / n, c });
   }
   return out;
+}
+
+/**
+ * The trap of a plant spacing, read on marks as they are placed: of the pairs of photographs with squares enough, how
+ * many have their plants on each other (the sharpest match of most of their squares is no shift at all).
+ */
+export function pairsOnEachOther(sights: Sight[], xs: Float64Array, ys: Float64Array, nPhotos: number, o: AlignTogetherOptions = ALIGN_TOGETHER): { pairs: number; on: number } {
+  return pairsOf(measure(sights, xs, ys, nPhotos, o), nPhotos, o);
+}
+function pairsOf(sq: Square[], nP: number, o: AlignTogetherOptions): { pairs: number; on: number } {
+  const all = new Map<number, [number, number]>();
+  for (const s of sq) { const c = all.get(s.i * nP + s.j) ?? all.set(s.i * nP + s.j, [0, 0]).get(s.i * nP + s.j)!; c[0]++; if (Math.hypot(s.c[0].x, s.c[0].y) <= o.onM) c[1]++; }
+  let pairs = 0, on = 0; for (const [n, ok] of all.values()) { if (n < o.pairSquares) continue; pairs++; if (ok >= o.pairShare * n) on++; }
+  return { pairs, on };
 }
 
 /** Cholesky solve of a symmetric positive system held densely (row-major); null when it is not positive. */
@@ -223,8 +254,11 @@ export function alignTogether(sights: Sight[], nPhotos: number, shifts: PhotoShi
   const m0 = matchedMarks(sights, before.xs, before.ys, o.checkM), m1 = matchedMarks(sights, after.xs, after.ys, o.checkM);
   const moved = Array.from(after.xs, (x, i) => Math.hypot(x - before.xs[i], after.ys[i] - before.ys[i])).sort((a, b) => a - b);
   const s0 = sizeOf(first ?? []), s1 = sizeOf(last);
-  // The check: the share of marks another photograph agrees with must rise.
-  const gain = sights.length ? (m1 - m0) / sights.length : 0;
-  const why = !first?.length ? "no square of ground was marked by two photographs" : gain < o.minGain ? `the marks another photograph agrees with within ${Math.round(o.checkM * 100)} cm did not rise by ${Math.round(o.minGain * 100)} in 100 (${m0} to ${m1} of ${sights.length})` : null;
-  return { shifts: why ? shifts : out, report: { applied: !why, why, squares: [first?.length ?? 0, last.length], overGate: [s0.over, s1.over], medianM: [s0.median, s1.median], marks: sights.length, matched: [m0, m1], movedMedianM: moved.length ? moved[moved.length >> 1] : 0, movedMostM: moved.length ? moved[moved.length - 1] : 0, ms: Date.now() - t0 } };
+  // The check: the share of marks another photograph agrees with must rise, and the pairs' plants must lie on each
+  // other, not a plant along the row.
+  const gain = sights.length ? (m1 - m0) / sights.length : 0, PO = pairsOf(last, nP, o);
+  const why = !first?.length ? "no square of ground was marked by two photographs"
+    : gain < o.minGain ? `the marks another photograph agrees with within ${Math.round(o.checkM * 100)} cm did not rise by ${Math.round(o.minGain * 100)} in 100 (${m0} to ${m1} of ${sights.length})`
+    : PO.pairs > 0 && PO.on < o.pairsOn * PO.pairs ? `only ${PO.on} of ${PO.pairs} pairs of photographs have their plants on each other; the rest match best a step along the row` : null;
+  return { shifts: why ? shifts : out, report: { applied: !why, why, squares: [first?.length ?? 0, last.length], overGate: [s0.over, s1.over], medianM: [s0.median, s1.median], marks: sights.length, matched: [m0, m1], movedMedianM: moved.length ? moved[moved.length >> 1] : 0, movedMostM: moved.length ? moved[moved.length - 1] : 0, pairs: PO.pairs, pairsOn: PO.on, ms: Date.now() - t0 } };
 }

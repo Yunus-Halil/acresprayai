@@ -1,6 +1,6 @@
 // The photographs aligned to each other, all together, by their plants (fieldTwin/alignTogether.ts).
 import { describe, expect, it } from "vitest";
-import { ALIGN_TOGETHER, alignTogether, matchedMarks } from "@/lib/fieldTwin/alignTogether";
+import { ALIGN_TOGETHER, alignTogether, matchedMarks, pairsOnEachOther } from "@/lib/fieldTwin/alignTogether";
 import { type PhotoShift, type Sight, shiftOf } from "@/lib/fieldTwin/plantsFirst";
 
 // A repeatable random number, so a failure can be run again.
@@ -64,6 +64,22 @@ describe("alignTogether", () => {
     // The photographs' corrections differ by the 9 cm put in, not by the 5 cm the other way.
     const d = (p: number) => shiftOf(A.shifts[p], 1200, 900)[0];
     for (let p = 1; p < F.photos; p += 2) { expect(d(p - 1) - d(p)).toBeGreaterThan(0.075); expect(d(p - 1) - d(p)).toBeLessThan(0.105); }
+  });
+
+  it("sees photographs put a whole plant along the row from where they belong, which the matched share alone does not", () => {
+    const rand = rng(5), plants = planting(rand), F = flight(rand, plants, () => ({ de: 0, dn: 0, turn: 0, scale: 0 }));
+    const right = place(F.sights, still(F.photos)), on = pairsOnEachOther(F.sights, right.xs, right.ys, F.photos);
+    expect(on.pairs).toBeGreaterThan(5);
+    expect(on.on).toBe(on.pairs);
+    // Every other photograph slid one plant spacing along the rows: plants still fall on plants, the wrong ones.
+    const slid = { xs: Float64Array.from(right.xs, (x, i) => x + (F.sights[i].p % 2 ? 0.14 : 0)), ys: right.ys }, off = pairsOnEachOther(F.sights, slid.xs, slid.ys, F.photos);
+    expect(off.on).toBeLessThan(0.7 * off.pairs);
+    // The share of marks with a match stays high all the same: it is not the test for this.
+    expect(matchedMarks(F.sights, slid.xs, slid.ys, 0.02)).toBeGreaterThan(0.4 * F.sights.length);
+    // And the alignment reports the pairs it read.
+    const A = alignTogether(F.sights, F.photos, still(F.photos), 0.048);
+    expect(A.report.pairs).toBeGreaterThan(5);
+    expect(A.report.pairsOn).toBeGreaterThanOrEqual(ALIGN_TOGETHER.pairsOn * A.report.pairs);
   });
 
   it("leaves the photographs as they were where their marks share no plants", () => {
