@@ -60,7 +60,7 @@ export const shiftOf = (s: PhotoShift, u: number, v: number): [number, number] =
 };
 
 /** A grid over the ground for neighbour queries. */
-class Grid {
+export class Grid {
   private cells = new Map<number, number[]>();
   constructor(private xs: ArrayLike<number>, private ys: ArrayLike<number>, private size: number) {
     for (let i = 0; i < xs.length; i++) { const k = this.key(Math.floor(xs[i] / size), Math.floor(ys[i] / size)); (this.cells.get(k) ?? this.cells.set(k, []).get(k)!).push(i); }

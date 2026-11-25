@@ -12,6 +12,8 @@
 //             plants are big enough to touch (rowCrop/cornV1.ts CORES_WHEN_TOUCHING). The layers' options (layers/options.ts) all off: 2a
 //             waits for the founder's look at cs19. Since 2026-11-19 also the "too far" dots tried again and the doubles
 //             told apart from the green that is not corn (SEQUENCE.retryTooFar, doublesApart; the frozen setup itself unchanged).
+//             Since 2026-11-25 also the photographs aligned to each other all together by their plants (alignTogether.ts;
+//             kill switch VITE_CORN_ALIGN=0).
 //
 // The settings are read here and passed down (a build's helper workers get the name and look it up); nothing sets a
 // module-wide default, so a "today" read in one tab and a "final3" read in another cannot mix.
@@ -36,6 +38,12 @@ export type CornPresetSettings = {
 };
 
 const F3 = CORN_CANDIDATE_FINAL3;
+/** The photographs aligned to each other all together by their plants (alignTogether.ts), with the merge gate kept as
+ * the registration alone gives it: ON for everyone in "final3" since 2026-11-25 (the founder's word, after his look at
+ * the pictures of two flights). Its own kill switch: VITE_CORN_ALIGN=0 in the deployment's environment, and redeploy;
+ * a build is then exactly as before that day. The step keeps its correction only where its own two checks pass
+ * (alignTogether.ts), so a flight it cannot align is left as the registration has it. */
+export const cornAlignOn = (e: { VITE_CORN_ALIGN?: string } = (() => { try { return (import.meta.env ?? {}) as { VITE_CORN_ALIGN?: string }; } catch { return {}; } })()): boolean => e.VITE_CORN_ALIGN !== "0";
 export const CORN_PRESET_SETTINGS: Record<CornPreset, CornPresetSettings> = {
   today: {
     read: { rowSpans: false, rowCandidates: false, cores: false, coresReference: "marks", countGuard: false, lateGuard: false, learnedGreen: false, coresWhenTouching: false },
@@ -47,7 +55,7 @@ export const CORN_PRESET_SETTINGS: Record<CornPreset, CornPresetSettings> = {
     keepLook: true, flightGuard: true, ground: true,
     // On top of the frozen FINAL-3 setup (2026-11-19, his word): the "too far" dots tried again once every other is
     // placed, and the doubles told apart from the green that is not corn (plantsFirst.ts SEQUENCE.retryTooFar, doublesApart).
-    plants: { sequence: { ...SEQUENCE, ...F3.field.sequence, retryTooFar: true, doublesApart: true, secondLookAcrossMaxM: 0.05, runReachSeeds: 2, rowNeedsNeighbour: true }, placing: PLANTS_FIRST, layers: {} },
+    plants: { sequence: { ...SEQUENCE, ...F3.field.sequence, retryTooFar: true, doublesApart: true, secondLookAcrossMaxM: 0.05, runReachSeeds: 2, rowNeedsNeighbour: true }, placing: PLANTS_FIRST, layers: {}, ...(cornAlignOn() ? { together: { gate: "kept" as const } } : {}) },
   },
 };
 
