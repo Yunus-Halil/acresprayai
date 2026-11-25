@@ -9,11 +9,11 @@
 // those that looked at its ground. Nothing later changes L4's own result: L6 works on a copy.
 import { type Dot, SEQUENCE, certainEvidence } from "../plantsFirst";
 
-export type ObviousPlants = { certainty: Uint8Array; certainIdx: number[] };
+export type ObviousPlants = { certainty: Uint8Array; certainIdx: number[]; /** How many photographs looked at each dot's ground (as given). */ covered?: Int32Array };
 
 export function obviousPlants(dots: Dot[], covered: Int32Array, q: typeof SEQUENCE = SEQUENCE, notCertain: Uint8Array | null = null): ObviousPlants {
   const n = dots.length, certainty = new Uint8Array(n).fill(2);
   for (let i = 0; i < n; i++) if (!notCertain?.[i] && certainEvidence(dots[i], covered[i], q)) certainty[i] = 0;
   const certainIdx: number[] = []; for (let i = 0; i < n; i++) if (certainty[i] === 0) certainIdx.push(i);
-  return { certainty, certainIdx };
+  return { certainty, certainIdx, covered };
 }

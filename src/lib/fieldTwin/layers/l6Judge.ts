@@ -44,6 +44,18 @@ export function judgeDots(dots: Dot[], L4: ObviousPlants, L5: RowProfile, o: Pla
     return bandBeatsControls(band, Math.round(alley * strips.controlScale), len);
   };
   let alleyRefused = 0;
+  // q.agreementConfidence (with q.onLineWithoutSpacing, where no spacing is measured): per step of agreement, what
+  // stands on the rows' lines against what stands on the same area of ground between the rows; see SEQUENCE.
+  const nSteps = q.agreementSteps.length + 1;
+  const stepOf = (i: number) => { const looked = Math.max(dots[i].photos, L4.covered?.[i] ?? 0), share = dots[i].photos / Math.max(1, looked); let k = 0; while (k < q.agreementSteps.length && share >= q.agreementSteps[k]) k++; return k + (tier?.[i] ? nSteps : 0); };
+  let agreement: { band: number[]; alley: number[]; confidence: number[] } | null = null;
+  if (q.agreementConfidence && q.onLineWithoutSpacing && !spacingRules && lines.length) {
+    const onLines = new Uint8Array(n); for (const r of lines) for (const i of r.dots) onLines[i] = 1;
+    const BA = bandAndAlley(lines, A, C, Int8Array.from({ length: n }, (_, i) => (onLines[i] || scattered[i] ? -1 : stepOf(i))), 2 * nSteps, S, onRow, 0, { ...ROW_GUIDED, controlShare: q.alleyControlShare });
+    const band = new Array<number>(2 * nSteps).fill(0), alley = new Array<number>(2 * nSteps).fill(0);
+    for (const s of BA.stretches) for (let k = 0; k < 2 * nSteps; k++) { band[k] += s.band[k]; alley[k] += s.alley[k] * BA.controlScale; }
+    agreement = { band, alley, confidence: band.map((b, k) => (b > 0 ? Math.max(0, 1 - alley[k] / b) : 0)) };
+  }
   const offSpacing = new Uint8Array(n);
   const along = lines.map(r => r.dots.map(i => A[i]));
   const extra = lines.map(() => [] as number[]);
@@ -58,6 +70,8 @@ export function judgeDots(dots: Dot[], L4: ObviousPlants, L5: RowProfile, o: Pla
       // the ground between the rows, and it must not be a double by the field's own too-close distance.
       const may = q.onLineWithoutSpacing && (!tier?.[i] || (q.onLineWithoutSpacing === "candidates" && beatsAlley(ri, i)));
       if (!may) { why[i] = 7; settled[i] = SETTLED.noSpacing; continue; }
+      // Dots that agree as this one does are no more common on the rows' lines than on the ground between them.
+      if (agreement && agreement.confidence[stepOf(i)] < q.agreementMin) { why[i] = 7; settled[i] = SETTLED.lowAgreement; continue; }
       let nearest = Infinity; for (const a of along[ri]) nearest = Math.min(nearest, Math.abs(a - A[i]));
       if (nearest < tooClose) { why[i] = 2; settled[i] = SETTLED.tooClose; continue; }
       if (certainty[i] === 2) certainty[i] = 1;
@@ -260,5 +274,5 @@ export function judgeDots(dots: Dot[], L4: ObviousPlants, L5: RowProfile, o: Pla
   }
   for (let i = 0; i < n; i++) if (rowOf[i] >= 0) why[i] = 0; else if (!why[i]) why[i] = 1;
   const unplantedGround = { dotsOnScattered: scattered.reduce((t, x) => t + x, 0), certainOnScattered: cIdx.reduce((t, i) => t + scattered[i], 0), flatCells: RN.flat };
-  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, unplanted: unplantedGround, alleyRefused, spacingRules, alone, geometry, a: A, c: C, loose, courses: lines, geomCourses: geomLines, offSpacing, tooCloseM: tooClose, certainGaps: certainGapsM.length, settled };
+  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, unplanted: unplantedGround, alleyRefused, spacingRules, alone, agreement, geometry, a: A, c: C, loose, courses: lines, geomCourses: geomLines, offSpacing, tooCloseM: tooClose, certainGaps: certainGapsM.length, settled };
 }

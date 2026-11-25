@@ -82,6 +82,11 @@ export type AlignReport = {
   /** Pairs of photographs read for the trap of a plant spacing, and those whose plants lie on each other (within the
    * merge gate), after. */
   pairs: number; pairsOn: number;
+  /** Per photograph, with the corrections returned: of the squares it shares with any other photograph, the share whose
+   * sharpest match lies within the merge gate of no shift (NaN with no square). A photograph the others do not agree
+   * with reads low: measured on a held-out flight, 0.90 for the median photograph and about 0.40 for a run of three on
+   * one flight line, whose marks landed a step along the rows from everyone else's. */
+  photoOn: number[];
   ms: number;
 };
 
@@ -142,6 +147,12 @@ function measure(sights: Sight[], xs: Float64Array, ys: Float64Array, nP: number
  */
 export function pairsOnEachOther(sights: Sight[], xs: Float64Array, ys: Float64Array, nPhotos: number, onM: number, o: AlignTogetherOptions = ALIGN_TOGETHER): { pairs: number; on: number } {
   return pairsOf(measure(sights, xs, ys, nPhotos, o), nPhotos, onM, o);
+}
+/** Per photograph: the share of its squares (with any other photograph) whose sharpest match is within `onM` of no shift. */
+function photosOn(sq: Square[], nP: number, onM: number): number[] {
+  const on = new Float64Array(nP), all = new Float64Array(nP);
+  for (const s of sq) { const ok = Math.hypot(s.c[0].x, s.c[0].y) <= onM ? 1 : 0; all[s.i]++; all[s.j]++; on[s.i] += ok; on[s.j] += ok; }
+  return Array.from(on, (v, p) => (all[p] ? v / all[p] : NaN));
 }
 function pairsOf(sq: Square[], nP: number, onM: number, o: AlignTogetherOptions): { pairs: number; on: number } {
   const all = new Map<number, [number, number]>();
@@ -264,5 +275,5 @@ export function alignTogether(sights: Sight[], nPhotos: number, shifts: PhotoShi
   const why = !first?.length ? "no square of ground was marked by two photographs"
     : gain < o.minGain ? `the marks another photograph agrees with within ${Math.round(o.checkM * 100)} cm did not rise by ${Math.round(o.minGain * 100)} in 100 (${m0} to ${m1} of ${sights.length})`
     : PO.pairs > 0 && PO.on < o.pairsOn * PO.pairs ? `only ${PO.on} of ${PO.pairs} pairs of photographs have their plants on each other within the merge gate` : null;
-  return { shifts: why ? shifts : out, report: { applied: !why, why, squares: [first?.length ?? 0, last.length], overGate: [s0.over, s1.over], medianM: [s0.median, s1.median], marks: sights.length, matched: [m0, m1], movedMedianM: moved.length ? moved[moved.length >> 1] : 0, movedMostM: moved.length ? moved[moved.length - 1] : 0, pairs: PO.pairs, pairsOn: PO.on, ms: Date.now() - t0 } };
+  return { shifts: why ? shifts : out, report: { applied: !why, why, squares: [first?.length ?? 0, last.length], overGate: [s0.over, s1.over], medianM: [s0.median, s1.median], marks: sights.length, matched: [m0, m1], movedMedianM: moved.length ? moved[moved.length >> 1] : 0, movedMostM: moved.length ? moved[moved.length - 1] : 0, pairs: PO.pairs, pairsOn: PO.on, photoOn: photosOn(why ? first ?? [] : last, nP, gateM), ms: Date.now() - t0 } };
 }

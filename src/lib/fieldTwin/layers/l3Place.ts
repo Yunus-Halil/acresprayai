@@ -36,7 +36,13 @@ export type CornPlantsOptions = {
    * 2026-11-25). Off unless asked: true for its own defaults, or the options that differ. `gate`: "repeat" (default)
    * takes the merge gate from how tightly the same plant repeats once aligned, as the registration's is taken; "kept"
    * keeps the gate the registration alone would have given. */
-  together?: boolean | (Partial<AlignTogetherOptions> & { gate?: "repeat" | "kept" });
+  together?: boolean | (Partial<AlignTogetherOptions> & { gate?: "repeat" | "kept";
+    /** Off unless given (2026-11-25). A photograph the others do not agree with (alignTogether.ts `photoOn` under this)
+     * cannot place a plant on its own: a dot, or a candidate for the rows, all of whose marks come from such photographs
+     * is not made. Its marks still count where a photograph the others agree with marked the same place. Measured on
+     * a held-out flight at 0.6: 1,896 of the 6,059 dots few photographs agreed on were made only by such photographs,
+     * and none of the 24,522 dots most photographs agreed on. */
+    trustMin?: number });
 };
 
 /**
@@ -78,7 +84,7 @@ export function placeDots(reads: CornPhotoRead[], frames: Map<string, GeorefFram
   // The photographs aligned all together by their plants, where asked; kept only where its own check passes.
   let together: AlignReport | undefined;
   if (opts.together) {
-    const { gate, ...own } = opts.together === true ? ({} as { gate?: "repeat" | "kept" }) : opts.together, T = alignTogether(sights, photos.length, reg.shifts, gateM, { ...ALIGN_TOGETHER, ...own });
+    const { gate, trustMin: _t, ...own } = opts.together === true ? ({} as { gate?: "repeat" | "kept"; trustMin?: number }) : opts.together, T = alignTogether(sights, photos.length, reg.shifts, gateM, { ...ALIGN_TOGETHER, ...own });
     together = T.report;
     if (T.report.applied) {
       const xs = new Float64Array(sights.length), ys = new Float64Array(sights.length);
@@ -87,7 +93,10 @@ export function placeDots(reads: CornPhotoRead[], frames: Map<string, GeorefFram
       if (gate !== "kept") gateM = Math.min(o.gateMax, Math.max(o.gateMin, o.gateTimes * reg.repeatM));
     }
   }
-  const dots = mergeDots(sights, reg.shifts, gateM);
+  // Photographs the others do not agree with place nothing on their own (opts.together.trustMin).
+  const trustMin = typeof opts.together === "object" ? opts.together.trustMin : undefined, photoOn = together?.photoOn;
+  const lone = (ps: number[]) => trustMin != null && !!photoOn && ps.length > 0 && ps.every(p => photoOn[p] < trustMin);
+  const merged = mergeDots(sights, reg.shifts, gateM), dots = merged.filter(d => !lone(d.members.map(m => sights[m].p)));
   if (!dots.length) return null;
   const q = opts.sequence ?? SEQUENCE;
   // The first reading of rows, through the certain dots alone (reconstruct takes it as given).
@@ -103,10 +112,11 @@ export function placeDots(reads: CornPhotoRead[], frames: Map<string, GeorefFram
   let all = dots, tier: Uint8Array | null = null, covered = coveredStrict, candidates: PlacedDots["candidates"] = null;
   if (lowReads.length) {
     const C = rowCandidates(lowReads, frames, F.origin, photos, reg.shifts, sights, dots, F.directionDeg ?? 0, opts.free ? { ...ROW_RECALL, anyView: true } : ROW_RECALL);
-    if (C.dots.length) {
-      all = [...dots, ...C.dots]; tier = new Uint8Array(all.length); tier.set(C.tier, strict);
-      covered = new Int32Array(all.length); covered.set(coveredStrict); covered.set(coverage(C.dots, frames, photos, reg.shifts, F.origin), strict);
-      candidates = { from: C.from, members: C.members };
+    const keepC = C.dots.map((_, k) => !lone(C.members[k].map(m => C.from[m].p))), cDots = C.dots.filter((_, k) => keepC[k]), cTier = Uint8Array.from(Array.from(C.tier).filter((_, k) => keepC[k])), cMembers = C.members.filter((_, k) => keepC[k]);
+    if (cDots.length) {
+      all = [...dots, ...cDots]; tier = new Uint8Array(all.length); tier.set(cTier, strict);
+      covered = new Int32Array(all.length); covered.set(coveredStrict); covered.set(coverage(cDots, frames, photos, reg.shifts, F.origin), strict);
+      candidates = { from: C.from, members: cMembers };
     }
   }
   return { photos, shifts: reg.shifts, repeatM: reg.repeatM, all, strict, tier, covered, pre, sights, gateM, candidates, ...(together ? { together } : {}) };

@@ -80,6 +80,14 @@ describe("alignTogether", () => {
     const A = alignTogether(F.sights, F.photos, still(F.photos), 0.048);
     expect(A.report.pairs).toBeGreaterThan(5);
     expect(A.report.pairsOn).toBeGreaterThanOrEqual(ALIGN_TOGETHER.pairsOn * A.report.pairs);
+    // Per photograph, how much of its ground the others agree with: all of them here.
+    expect(A.report.photoOn.length).toBe(F.photos);
+    for (const v of A.report.photoOn) expect(v).toBeGreaterThan(0.8);
+    // One photograph put a plant along the rows from the rest reads low, and only that one.
+    const one = rng(9), P2 = planting(one), F2 = flight(one, P2, p => ({ de: p === 3 ? 0.14 : 0, dn: 0, turn: 0, scale: 0 }));
+    const A2 = alignTogether(F2.sights, F2.photos, still(F2.photos), 0.048, { ...ALIGN_TOGETHER, rounds: 1, holdM: 0.00002, minGain: -Infinity, pairsOn: 0 }); // held so hard that nothing moves: the measure alone
+    expect(A2.report.photoOn[3]).toBeLessThan(0.5);
+    expect(A2.report.photoOn.filter((v, p) => p !== 3 && v < 0.5).length).toBe(0);
   });
 
   it("leaves the photographs as they were where their marks share no plants", () => {

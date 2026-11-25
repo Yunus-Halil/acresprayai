@@ -16,7 +16,9 @@ describe("the candidate frozen for FINAL-3", () => {
     expect(seq.rowNeedsNeighbour).toBe(false); delete seq.rowNeedsNeighbour;
     // 2026-11-25: a dot on a row's line judged without a plant spacing, and the development switch that hides the
     // spacing from a flight that has one: both off in the frozen setup.
-    for (const k of ["onLineWithoutSpacing", "ignoreSpacing"]) { expect(seq[k]).toBe(false); delete seq[k]; }
+    for (const k of ["onLineWithoutSpacing", "ignoreSpacing", "agreementConfidence"]) { expect(seq[k]).toBe(false); delete seq[k]; }
+    // 2026-11-25: the agreement confidence's own numbers (they do nothing while it is off).
+    expect(seq.agreementSteps).toEqual([0.2, 0.35, 0.6]); delete seq.agreementSteps; expect(seq.agreementMin).toBe(0.5); delete seq.agreementMin;
     expect(r).toEqual(CORN_CANDIDATE_FINAL3_FROZEN);
   });
   it("is the cores (new reference), variant A, the guard with its misread check, the sweep off", () => {

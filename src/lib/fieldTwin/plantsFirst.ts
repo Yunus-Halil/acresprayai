@@ -658,6 +658,19 @@ export const SEQUENCE = {
   /** Development only, off: the plant spacing treated as not measured, so a labelled flight that has one can show
    * what the rules do on a field without one. */
   ignoreSpacing: false,
+  /** Off by default (2026-11-25). With `onLineWithoutSpacing`: a dot is put on its row only where dots of its kind are
+   * the planting's and not the bare ground's. On cracked soil the marks on cracks that lie on a row's line were being
+   * counted, and neither their green nor their size tells them from plants; how the photographs agree on them does
+   * (measured on a breeding trial: a certain plant is marked by 0.83 of the photographs that look at it, a dot between
+   * the rows by 0.23). But no fixed bar serves every field (on a flight of small dark seedlings the two figures are 0.53
+   * and 0.35, the dots between its rows being real weeds), so the field sets it itself.
+   * The kind is the dot's agreement: the share of the photographs that looked at its ground that marked it, in steps
+   * (`agreementSteps`); the stricter marks' dots and the second look's candidates apart. For each step the field says
+   * how many such dots stand on the rows' lines and how many on the same area of ground mid-way between the rows
+   * (bandAndAlley). The confidence of a step is the share of the dots on the lines that the ground between the rows
+   * cannot account for; a dot goes on its row where that is at least `agreementMin`. No number of photographs is
+   * asked: a dot only two photographs could see, both of which marked it, is in the highest step. */
+  agreementConfidence: false, agreementSteps: [0.2, 0.35, 0.6] as number[], agreementMin: 0.5,
   /** The final sweep (2026-11-16): a mark of the second look that stands alone on its row is taken off it. After every
    * dot is placed and before the rows are built, each candidate on a row (every tier) is asked for company along that
    * row: a plant found without help from a row, within the reach a row already takes dots in (`maxGapSeeds` plant
@@ -739,7 +752,7 @@ export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: fal
  * `cutFromRow`: placed on a row, then left on no row when the row was built (a piece of under three plants, a stretch
  * longer than `maxBridgeM` with no plant, or a stretch over ground judged scattered: `build` in reconstruct).
  */
-export const SETTLED = { none: 0, certainRow: 1, scattered: 2, noRow: 3, noSpacing: 4, alley: 5, tooClose: 6, tooFar: 7, offSpacing: 8, placedAtSpacing: 9, placedOffSpacing: 10, freeAlley: 11, freeTooClose: 12, freePlaced: 13, alone: 14, geometryRow: 15, cutFromRow: 16, secondLook: 17, placedOnRetry: 18, offLine: 19, notInARun: 20, notARow: 21, placedNoSpacing: 22 } as const;
+export const SETTLED = { none: 0, certainRow: 1, scattered: 2, noRow: 3, noSpacing: 4, alley: 5, tooClose: 6, tooFar: 7, offSpacing: 8, placedAtSpacing: 9, placedOffSpacing: 10, freeAlley: 11, freeTooClose: 12, freePlaced: 13, alone: 14, geometryRow: 15, cutFromRow: 16, secondLook: 17, placedOnRetry: 18, offLine: 19, notInARun: 20, notARow: 21, placedNoSpacing: 22, lowAgreement: 23 } as const;
 export type GroundJudge = { state: (e: number, n: number) => 0 | 1 | 2; dotState?: Uint8Array | null };
 export type RowSegment = { a0: number; a1: number; confirmed: boolean };
 /** A row's course in the rows' frame: its across position at knots along it, from its first plant to its last, and the dots it was fitted through. */
@@ -784,6 +797,9 @@ export type Reconstruction = {
   /** The distance from a plant on its row under which a dot is as close as a double, metres: half a plant spacing, or
    * the limit learned from the field (`tooCloseFromField`); and the gaps between neighbouring certain plants it was read from. */
   tooCloseM: number; certainGaps: number;
+  /** Read only, with `agreementConfidence` where it ran: per step of agreement (the stricter marks' dots first, then the
+   * candidates), the dots on the rows' lines, the dots on the same area between the rows, and the confidence. */
+  agreement?: { band: number[]; alley: number[]; confidence: number[] } | null;
   /** Read only (SETTLED): per dot, the test that settled it. */
   settled: Uint8Array;
   /** Read only (layers/chain.ts, 2026-11-18): what L5 learned beyond the above (layers/l5Profile.ts spacingSpread; the
