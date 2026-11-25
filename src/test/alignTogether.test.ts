@@ -68,11 +68,11 @@ describe("alignTogether", () => {
 
   it("sees photographs put a whole plant along the row from where they belong, which the matched share alone does not", () => {
     const rand = rng(5), plants = planting(rand), F = flight(rand, plants, () => ({ de: 0, dn: 0, turn: 0, scale: 0 }));
-    const right = place(F.sights, still(F.photos)), on = pairsOnEachOther(F.sights, right.xs, right.ys, F.photos);
+    const right = place(F.sights, still(F.photos)), on = pairsOnEachOther(F.sights, right.xs, right.ys, F.photos, 0.048);
     expect(on.pairs).toBeGreaterThan(5);
     expect(on.on).toBe(on.pairs);
     // Every other photograph slid one plant spacing along the rows: plants still fall on plants, the wrong ones.
-    const slid = { xs: Float64Array.from(right.xs, (x, i) => x + (F.sights[i].p % 2 ? 0.14 : 0)), ys: right.ys }, off = pairsOnEachOther(F.sights, slid.xs, slid.ys, F.photos);
+    const slid = { xs: Float64Array.from(right.xs, (x, i) => x + (F.sights[i].p % 2 ? 0.14 : 0)), ys: right.ys }, off = pairsOnEachOther(F.sights, slid.xs, slid.ys, F.photos, 0.048);
     expect(off.on).toBeLessThan(0.7 * off.pairs);
     // The share of marks with a match stays high all the same: it is not the test for this.
     expect(matchedMarks(F.sights, slid.xs, slid.ys, 0.02)).toBeGreaterThan(0.4 * F.sights.length);
@@ -92,10 +92,14 @@ describe("alignTogether", () => {
     expect(A.shifts).toBe(start);
   });
 
-  it("changes nothing a build does unless asked: the options are its own and the default placing does not name it", async () => {
-    const { PLANTS_FIRST } = await import("@/lib/fieldTwin/plantsFirst"), { CORN_PRESET_SETTINGS } = await import("@/lib/fieldTwin/cornPreset");
+  it("is on in the app's preset with the merge gate kept, off in the old path, and has its own kill switch", async () => {
+    const { PLANTS_FIRST } = await import("@/lib/fieldTwin/plantsFirst"), { CORN_PRESET_SETTINGS, cornAlignOn } = await import("@/lib/fieldTwin/cornPreset");
     expect(Object.keys(PLANTS_FIRST)).not.toContain("together");
     expect(CORN_PRESET_SETTINGS.today.plants.together).toBeUndefined();
+    expect(CORN_PRESET_SETTINGS.final3.plants.together).toEqual({ gate: "kept" });
+    expect(cornAlignOn({})).toBe(true);
+    expect(cornAlignOn({ VITE_CORN_ALIGN: "1" })).toBe(true);
+    expect(cornAlignOn({ VITE_CORN_ALIGN: "0" })).toBe(false);
     expect(ALIGN_TOGETHER.checkM).toBe(0.02);
   });
 });
